@@ -47,11 +47,16 @@ fun MainActivity.sectionTitle(t: String): TextView = text(t, 17f, C.TEXT, bold =
 /** صف أفقي من البوسترات (للرئيسية). */
 fun MainActivity.posterRow(items: List<Vod>, posterW: Int, onClick: (Vod) -> Unit): RecyclerView =
     RecyclerView(this).apply {
-        layoutManager = LinearLayoutManager(this@posterRow, LinearLayoutManager.HORIZONTAL, false)
+        layoutManager = LinearLayoutManager(this@posterRow, LinearLayoutManager.HORIZONTAL, false).apply { initialPrefetchItemCount = 5 }
+        setRecycledViewPool(posterPool(posterW))
         adapter = PosterAdapter(this@posterRow, posterW, onClick).also { it.items = items }
         setHasFixedSize(true)
+        itemAnimator = null
         clipToPadding = false
+        overScrollMode = View.OVER_SCROLL_NEVER
+        setPadding(dp(if (tv) 24 else 12), 0, dp(if (tv) 24 else 12), 0)
         layoutDirection = View.LAYOUT_DIRECTION_RTL
+        horizontalInVertical()
     }
 
 fun MainActivity.openDetails(v: Vod) {
@@ -141,124 +146,200 @@ class LoginScreen(private val a: MainActivity, edit: Account?) : Screen {
 // =====================================================================
 /** الرئيسية: متابعة المشاهدة، قنواتك المفضلة، أفلامك ومسلسلاتك المفضلة. بدون طلبات ثقيلة. */
 class HomeScreen(private val a: MainActivity) : Screen, EpgAware {
-    private val col = LinearLayout(a).apply {
-        orientation = LinearLayout.VERTICAL
-        setPadding(a.dp(if (a.tv) 28 else 14), a.dp(16), a.dp(if (a.tv) 28 else 14), a.dp(24))
-    }
-    override val view: View = ScrollView(a).apply { addView(col); isFillViewport = true }
+    private val col = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL; setPadding(0, a.dp(6), 0, a.dp(24)) }
+    override val view: View = ScrollView(a).apply { addView(col); isFillViewport = true; isVerticalScrollBarEnabled = false }
     private var first: View? = null
+    private val padH get() = a.dp(if (a.tv) 28 else 16)
 
-    /** بصمة المحتوى: لو ما تغيّر شي (متابعة/مفضلة) ما نعيد بناء الصفحة. */
+    // القوائم (من الكاش) — نجيبها مرة وحدة
+    private var live: List<Channel>? = null
+    private var newMovies: List<Vod>? = null
+    private var newSeries: List<Vod>? = null
+    private var movieMap: Map<String, Vod> = emptyMap()
+    private var seriesMap: Map<String, Vod> = emptyMap()
+    private var liveSlot: LinearLayout? = null
+
+    /** بصمة المحتوى: لو ما تغيّر شي (سجل/مفضلة/القوائم) ما نعيد بناء الصفحة. */
     private var builtSig = ""
-    private fun sig(): String = Store.continueWatching().joinToString { "${it.key}:${it.pos / 30}" } + "|" +
-        Store.favs("live").joinToString() + "|" + Store.favs("movie").joinToString() + "|" + Store.favs("series").joinToString()
+    private fun sig(): String = Store.history().take(15).joinToString { "${it.key}:${it.pos / 30}" } + "|" +
+        Store.favs("live").joinToString() + "|" + Store.favs("movie").joinToString() + "|" + Store.favs("series").joinToString() +
+        "|" + (live != null) + (newMovies != null) + (newSeries != null)
 
-    override fun onShow() { val s = sig(); if (s != builtSig) { builtSig = s; build() } }
-    override fun onEpgLoaded() { if (a.current == "home") build() }
+    override fun onShow() {
+        refresh()
+        if (live == null || newMovies == null || newSeries == null) loadLists()
+    }
 
-    private fun build() {
-        col.removeAllViews(); first = null
-        val head = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        head.addView(a.text("QuickIPTV", 20f, C.TEXT, bold = true), lp(0, WRAP, 1f))
-        if (!a.tv) head.addView(a.iconButton(R.drawable.ic_search, "بحث") { a.openExtra("search") })
-        col.addView(head)
+    private fun refresh() { val s = sig(); if (s != builtSig) { builtSig = s; build() } }
 
-        val cont = Store.continueWatching()
-        cont.firstOrNull()?.let { h -> col.addView(hero(h)) }
-        if (cont.size > 1) {
-            col.addView(a.sectionTitle("متابعة المشاهدة"))
-            val row = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL }
-            cont.drop(1).take(10).forEach { h -> row.addView(continueCard(h)) }
-            col.addView(HorizontalScrollView(a).apply { addView(row); isHorizontalScrollBarEnabled = false })
-        }
+    override fun onEpgLoaded() { liveSlot?.let { fillLive(it) } }
+
+    private fun loadLists() {
         val api = Session.api ?: return
         a.scope.launch {
-            val favLive = Store.favs("live")
-            val favMovie = Store.favs("movie")
-            val favSeries = Store.favs("series")
-            val (chans, movies, series) = withContext(Dispatchers.IO) {
-                Triple(
-                    if (favLive.isEmpty()) emptyList() else runCatching { api.liveStreams() }.getOrDefault(emptyList()).let { all -> val m = all.associateBy { it.id }; favLive.mapNotNull { m[it] } },
-                    if (favMovie.isEmpty()) emptyList() else runCatching { api.vods(false) }.getOrDefault(emptyList()).let { all -> val m = all.associateBy { it.id }; favMovie.mapNotNull { m[it] } },
-                    if (favSeries.isEmpty()) emptyList() else runCatching { api.vods(true) }.getOrDefault(emptyList()).let { all -> val m = all.associateBy { it.id }; favSeries.mapNotNull { m[it] } },
-                )
+            withContext(Dispatchers.IO) {
+                if (live == null) live = runCatching { api.liveStreams() }.getOrNull()
+                if (newMovies == null) runCatching { api.vods(false) }.getOrNull()?.let { l ->
+                    movieMap = l.associateBy { it.id }; newMovies = l.sortedByDescending { it.added }.take(20)
+                }
+                if (newSeries == null) runCatching { api.vods(true) }.getOrNull()?.let { l ->
+                    seriesMap = l.associateBy { it.id }; newSeries = l.sortedByDescending { it.added }.take(20)
+                }
             }
-            if (chans.isNotEmpty()) {
-                col.addView(a.sectionTitle("قنواتك المفضلة"))
-                val row = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL }
-                chans.take(20).forEachIndexed { i, ch -> row.addView(channelCard(ch, chans, i)) }
-                col.addView(HorizontalScrollView(a).apply { addView(row); isHorizontalScrollBarEnabled = false })
-            }
-            val w = a.dp(if (a.tv) 130 else 108)
-            if (movies.isNotEmpty()) { col.addView(a.sectionTitle("أفلامك المفضلة")); col.addView(a.posterRow(movies, w) { a.openDetails(it) }) }
-            if (series.isNotEmpty()) { col.addView(a.sectionTitle("مسلسلاتك المفضلة")); col.addView(a.posterRow(series, w) { a.openDetails(it) }) }
-            if (cont.isEmpty() && chans.isEmpty() && movies.isEmpty() && series.isEmpty()) {
-                col.addView(a.text("ابدأ من البث المباشر أو الأفلام. اللي تشاهده وتفضّله بيطلع هنا.", 15f, C.MUTED, lines = 3)
-                    .apply { setPadding(0, a.dp(30), 0, a.dp(16)) })
-                col.addView(a.button("البث المباشر", R.drawable.ic_live, primary = true) { a.show("live") }.also { first = it }, lp(WRAP, WRAP))
-            }
-            if (a.current == "home" && a.currentFocus == null) focusDefault()
+            if (a.current == "home") refresh() else builtSig = ""
         }
     }
 
-    private fun hero(h: HistoryItem): View {
-        val box = FrameLayout(a).apply {
-            layoutParams = lp(MATCH, a.dp(if (a.tv) 230 else 190)).apply { topMargin = a.dp(14) }
-            background = rounded(C.SURFACE2, a.dpf(16f))
-            clipToOutline = true
+    private fun header(title: String, dot: Boolean = false, more: String = "الكل", onMore: (() -> Unit)? = null): View {
+        val h = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(padH, a.dp(18), a.dp(8), a.dp(8)) }
+        if (dot) h.addView(View(a).apply { background = rounded(C.LIVE, a.dpf(4f)) }, lp(a.dp(8), a.dp(8)).apply { marginEnd = a.dp(8) })
+        h.addView(a.text(title, 16.5f, C.TEXT, bold = true), lp(0, WRAP, 1f))
+        if (onMore != null) h.addView(a.text("$more  ‹", 13f, C.ACCENT).apply {
+            setPadding(a.dp(10), a.dp(6), a.dp(10), a.dp(6)); background = a.focusBg(radius = 8)
+            isFocusable = true; isClickable = true; setOnClickListener { onMore() }
+        })
+        return h
+    }
+
+    private fun hRow(): Pair<HorizontalScrollView, LinearLayout> {
+        val row = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL; setPadding(padH - a.dp(4), 0, padH - a.dp(4), 0) }
+        return HorizontalScrollView(a).apply { addView(row); isHorizontalScrollBarEnabled = false; overScrollMode = View.OVER_SCROLL_NEVER; clipToPadding = false } to row
+    }
+
+    private fun build() {
+        col.removeAllViews(); first = null; liveSlot = null
+
+        // العنوان: تحية + بحث + تحميلات
+        val head = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(padH, a.dp(8), a.dp(6), 0) }
+        val hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+        head.addView(a.text(if (hour in 4..11) "صباح الخير" else "مساء الخير", 21f, C.TEXT, bold = true), lp(0, WRAP, 1f))
+        if (!a.tv) head.addView(a.iconButton(R.drawable.ic_search, "بحث") { a.openExtra("search") })
+        head.addView(a.iconButton(R.drawable.ic_download, "التحميلات") { a.openExtra("downloads") })
+        col.addView(head)
+
+        // 1) متابعة المشاهدة (السجل)
+        val hist = Store.history()
+        val cont = Store.continueWatching().ifEmpty { hist.filter { it.type != "live" } }.take(15)
+        if (cont.isNotEmpty()) {
+            col.addView(header("متابعة المشاهدة", more = "السجل") { a.openExtra("history") })
+            val (sc, row) = hRow()
+            cont.forEach { row.addView(continueCard(it)) }
+            col.addView(sc)
         }
-        box.addView(ImageView(a).apply {
-            scaleType = ImageView.ScaleType.CENTER_CROP
-            alpha = 0.45f
-            load(h.image.ifEmpty { null }) { size(900, 500) }
-        }, FrameLayout.LayoutParams(MATCH, MATCH))
-        val c = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.BOTTOM; setPadding(a.dp(18), a.dp(14), a.dp(18), a.dp(16)) }
-        c.addView(a.text("متابعة المشاهدة", 12f, C.TEXT2))
-        c.addView(a.text(h.title, 22f, C.TEXT, bold = true, lines = 2).apply { textDirection = View.TEXT_DIRECTION_FIRST_STRONG })
-        if (h.sub.isNotEmpty()) c.addView(a.text(h.sub, 12.5f, C.TEXT2))
-        c.addView(a.text("متبقي ${fmtTime(h.dur - h.pos)}", 12f, C.MUTED).apply { setPadding(0, a.dp(4), 0, a.dp(10)) })
-        val b = a.button("متابعة", R.drawable.ic_play, primary = true) { a.playHistory(h) }
-        first = b
-        c.addView(b, lp(WRAP, WRAP))
-        box.addView(c, FrameLayout.LayoutParams(MATCH, MATCH))
-        return box
+
+        // 2) مباشر الحين
+        val ls = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL }
+        liveSlot = ls
+        col.addView(ls)
+        fillLive(ls)
+
+        // 3) أحدث الأفلام  4) أحدث المسلسلات
+        val w = a.dp(if (a.tv) 124 else 100)      // نفس عرض صفحة الأفلام = نفس الخانات المعاد استخدامها
+        newMovies?.takeIf { it.isNotEmpty() }?.let { l ->
+            col.addView(header("أحدث الأفلام") { a.show("movie") })
+            col.addView(a.posterRow(l, w) { a.openDetails(it) })
+        }
+        newSeries?.takeIf { it.isNotEmpty() }?.let { l ->
+            col.addView(header("أحدث المسلسلات") { a.show("series") })
+            col.addView(a.posterRow(l, w) { a.openDetails(it) })
+        }
+
+        // 5) المفضلة (أفلام + مسلسلات)
+        val favs = Store.favs("movie").mapNotNull { movieMap[it] } + Store.favs("series").mapNotNull { seriesMap[it] }
+        if (favs.isNotEmpty()) {
+            col.addView(header("مفضلتك", more = "الكل") { a.openExtra("favorites") })
+            col.addView(a.posterRow(favs.take(20), w) { a.openDetails(it) })
+        }
+
+        if (newMovies == null || newSeries == null) {
+            col.addView(android.widget.ProgressBar(a).apply { indeterminateTintList = android.content.res.ColorStateList.valueOf(C.ACCENT) },
+                lp(a.dp(32), a.dp(32)).apply { gravity = Gravity.CENTER_HORIZONTAL; topMargin = a.dp(24) })
+        }
+        if (a.current == "home" && a.currentFocus == null) focusDefault()
+    }
+
+    /** المباشر: المفضلة ثم آخر القنوات اللي شاهدتها ثم أول قنوات القائمة. */
+    private fun fillLive(slot: LinearLayout) {
+        slot.removeAllViews()
+        val all = live ?: return
+        if (all.isEmpty()) return
+        val byId = all.associateBy { it.id }
+        val ids = LinkedHashSet<String>()
+        Store.favs("live").forEach { ids.add(it) }
+        Store.history().filter { it.type == "live" }.forEach { ids.add(it.key.removePrefix("live:")) }
+        val picked = ids.mapNotNull { byId[it] }.toMutableList()
+        if (picked.size < 12) all.asSequence().filter { it.id !in ids }.take(12 - picked.size).forEach { picked.add(it) }
+        val list = picked.take(16)
+        slot.addView(header("مباشر الحين", dot = true) { a.show("live") })
+        val (sc, row) = hRow()
+        list.forEachIndexed { i, ch -> row.addView(channelCard(ch, list, i)) }
+        slot.addView(sc)
+    }
+
+    /** شريط تقدّم رفيع (وزن بدل حساب العرض = بدون إعادة رسم). */
+    private fun progressLine(frac: Float, color: Int): View = LinearLayout(a).apply {
+        orientation = LinearLayout.HORIZONTAL
+        background = rounded(C.SURFACE3, a.dpf(2f))
+        val f = frac.coerceIn(0f, 1f)
+        addView(View(a).apply { background = rounded(color, a.dpf(2f)) }, lp(0, MATCH, f))
+        addView(View(a), lp(0, MATCH, 1f - f))
     }
 
     private fun continueCard(h: HistoryItem): View {
-        val w = a.dp(if (a.tv) 220 else 180)
+        val w = a.dp(if (a.tv) 230 else 172)
+        val ih = w * 9 / 16
         val card = LinearLayout(a).apply {
             orientation = LinearLayout.VERTICAL
-            layoutParams = lp(w, WRAP).apply { marginEnd = a.dp(10) }
-            setPadding(a.dp(3), a.dp(3), a.dp(3), a.dp(6))
+            layoutParams = lp(w + a.dp(8), WRAP)
+            setPadding(a.dp(4), a.dp(4), a.dp(4), a.dp(6))
             background = a.focusBg(radius = 12)
             isFocusable = true; isClickable = true
             focusScale()
             setOnClickListener { a.playHistory(h) }
         }
-        card.addView(ImageView(a).apply {
+        if (first == null) first = card
+        val box = FrameLayout(a).apply { background = rounded(C.SURFACE2, a.dpf(9f)); clipToOutline = true }
+        box.addView(ImageView(a).apply {
             scaleType = ImageView.ScaleType.CENTER_CROP
-            background = rounded(C.SURFACE2, a.dpf(9f)); clipToOutline = true
-            load(h.image.ifEmpty { null }) { size(w, w * 9 / 16) }
-        }, lp(MATCH, w * 9 / 16))
-        card.addView(a.text(h.title, 13f, C.TEXT, bold = true).apply { setPadding(a.dp(2), a.dp(6), a.dp(2), 0); textDirection = View.TEXT_DIRECTION_FIRST_STRONG })
-        card.addView(a.text("متبقي ${fmtTime(h.dur - h.pos)}", 11.5f, C.MUTED).apply { setPadding(a.dp(2), a.dp(2), a.dp(2), 0) })
+            load(h.image.ifEmpty { null }) { size(w, ih) }
+        }, FrameLayout.LayoutParams(MATCH, MATCH))
+        box.addView(FrameLayout(a).apply {
+            background = rounded(0xE6F1F3F7.toInt(), a.dpf(17f))
+            addView(a.icon(R.drawable.ic_play, C.PRIMARY_TEXT, 16), FrameLayout.LayoutParams(a.dp(16), a.dp(16), Gravity.CENTER))
+        }, FrameLayout.LayoutParams(a.dp(34), a.dp(34), Gravity.CENTER))
+        if (h.dur > 0) box.addView(progressLine((h.pos.toFloat() / h.dur).coerceIn(0f, 1f), C.ACCENT),
+            FrameLayout.LayoutParams(MATCH, a.dp(3), Gravity.BOTTOM))
+        card.addView(box, lp(MATCH, ih))
+        card.addView(a.text(h.title, 13.5f, C.TEXT, bold = true).apply { setPadding(a.dp(2), a.dp(7), a.dp(2), 0); textDirection = View.TEXT_DIRECTION_FIRST_STRONG })
+        val sub = listOfNotNull(
+            h.sub.replace("الموسم ", "م").replace(" · الحلقة ", " ح").takeIf { it.isNotEmpty() },
+            if (h.dur > 0 && h.pos < h.dur - 60) "متبقي ${fmtTime(h.dur - h.pos)}" else null,
+        ).joinToString(" · ")
+        if (sub.isNotEmpty()) card.addView(a.text(sub, 11.5f, C.MUTED).apply { setPadding(a.dp(2), a.dp(2), a.dp(2), 0) })
         return card
     }
 
     private fun channelCard(ch: Channel, list: List<Channel>, i: Int): View {
+        val w = a.dp(if (a.tv) 150 else 118)
         val card = LinearLayout(a).apply {
             orientation = LinearLayout.VERTICAL
-            layoutParams = lp(a.dp(170), WRAP).apply { marginEnd = a.dp(10) }
+            layoutParams = lp(w, WRAP).apply { marginStart = a.dp(4); marginEnd = a.dp(4) }
             setPadding(a.dp(10), a.dp(10), a.dp(10), a.dp(10))
             background = a.focusBg(normal = C.SURFACE, radius = 12)
             isFocusable = true; isClickable = true
             focusScale()
-            setOnClickListener { PlayerActivity.playLive(a, list, i, "المفضلة") }
+            setOnClickListener { PlayerActivity.playLive(a, list, i, "الرئيسية") }
         }
-        card.addView(ImageView(a).apply { scaleType = ImageView.ScaleType.FIT_CENTER; load(ch.icon.ifEmpty { null }) { size(160, 100) } }, lp(a.dp(60), a.dp(38)))
-        card.addView(a.text(ch.name, 13f, C.TEXT, bold = true).apply { setPadding(0, a.dp(6), 0, 0); textDirection = View.TEXT_DIRECTION_FIRST_STRONG })
+        if (first == null) first = card
+        card.addView(FrameLayout(a).apply {
+            background = rounded(C.SURFACE2, a.dpf(7f))
+            addView(ImageView(a).apply { scaleType = ImageView.ScaleType.FIT_CENTER; load(ch.icon.ifEmpty { null }) { size(200, 120) } },
+                FrameLayout.LayoutParams(MATCH, MATCH).apply { setMargins(a.dp(8), a.dp(5), a.dp(8), a.dp(5)) })
+        }, lp(MATCH, a.dp(46)))
+        card.addView(a.text(ch.name, 12.5f, C.TEXT, bold = true).apply { setPadding(0, a.dp(7), 0, 0); textDirection = View.TEXT_DIRECTION_FIRST_STRONG })
         val now = Epg.nowFor(ch) ?: Live.nowCache[ch.id]?.takeIf { it.isNow }
-        card.addView(a.text(now?.title ?: "مباشر", 11.5f, C.MUTED).apply { setPadding(0, a.dp(2), 0, 0) })
+        card.addView(a.text(now?.title ?: "مباشر", 11.5f, C.MUTED).apply { setPadding(0, a.dp(2), 0, a.dp(6)) })
+        card.addView(progressLine(now?.progress ?: 0f, C.LIVE), lp(MATCH, a.dp(2)))
         return card
     }
 

@@ -42,6 +42,7 @@ class LibraryScreen(private val a: MainActivity, private val series: Boolean) : 
     private var gridItems: List<Vod> = emptyList()
     private var sort = "new"
     private var lastRowFocus = 0
+    private val rowScroll = HashMap<String, Pair<Int, Int>>()     // وين وقفت في كل صف
 
     init {
         val root = FrameLayout(a)
@@ -50,8 +51,11 @@ class LibraryScreen(private val a: MainActivity, private val series: Boolean) : 
         head.addView(a.text(title, 20f, C.TEXT, bold = true), lp(0, WRAP, 1f))
         head.addView(a.iconButton(R.drawable.ic_search, "بحث", 42) { a.openExtra("search") })
         main.addView(head)
-        rows.layoutManager = LinearLayoutManager(a)
+        rows.layoutManager = LinearLayoutManager(a).apply { initialPrefetchItemCount = 3 }
         rows.adapter = shelfAdapter
+        rows.setHasFixedSize(true)
+        rows.itemAnimator = null              // بدون حركات = سحب أنعم
+        rows.setItemViewCacheSize(4)          // الصفوف اللي طلعت للتو تبقى جاهزة لو رجعت لها
         rows.setItemViewCacheSize(4)
         main.addView(rows, lp(MATCH, 0, 1f))
         root.addView(main)
@@ -184,7 +188,21 @@ class LibraryScreen(private val a: MainActivity, private val series: Boolean) : 
         var items: List<Shelf> = emptyList()
             set(v) { field = v; notifyDataSetChanged() }
 
-        inner class VH(root: LinearLayout, val title: TextView, val more: TextView, val strip: RecyclerView, val posters: PosterAdapter) : RecyclerView.ViewHolder(root)
+        inner class VH(root: LinearLayout, val title: TextView, val more: TextView, val strip: RecyclerView, val posters: PosterAdapter) : RecyclerView.ViewHolder(root) {
+            var boundId = ""
+        }
+
+        override fun onViewRecycled(h: VH) {
+            saveRow(h)
+            super.onViewRecycled(h)
+        }
+
+        fun saveRow(h: VH) {
+            if (h.boundId.isEmpty()) return
+            val lm = h.strip.layoutManager as LinearLayoutManager
+            val p = lm.findFirstVisibleItemPosition()
+            if (p >= 0) rowScroll[h.boundId] = p to (lm.findViewByPosition(p)?.let { v -> if (h.strip.layoutDirection == View.LAYOUT_DIRECTION_RTL) h.strip.width - h.strip.paddingRight - v.right else v.left - h.strip.paddingLeft } ?: 0)
+        }
 
         override fun getItemCount() = items.size
 
@@ -208,13 +226,16 @@ class LibraryScreen(private val a: MainActivity, private val series: Boolean) : 
             val posters = PosterAdapter(a, posterW) { a.openDetails(it) }
             // صف أفقي بـ RecyclerView (يدعم الاتجاه من اليمين لليسار تلقائياً ويعيد استخدام الخانات)
             val strip = RecyclerView(a).apply {
-                layoutManager = LinearLayoutManager(a, LinearLayoutManager.HORIZONTAL, false)
+                layoutManager = LinearLayoutManager(a, LinearLayoutManager.HORIZONTAL, false).apply { initialPrefetchItemCount = 5 }
+                setRecycledViewPool(posterPool(posterW))      // خانات مشتركة بين كل الصفوف
                 adapter = posters
                 setHasFixedSize(true)
+                itemAnimator = null
                 isNestedScrollingEnabled = false
                 overScrollMode = View.OVER_SCROLL_NEVER
                 clipToPadding = false
                 setPadding(a.dp(10), 0, a.dp(10), 0)
+                horizontalInVertical()
             }
             root.addView(strip, lp(MATCH, WRAP))
             return VH(root, t, more, strip, posters)
@@ -223,8 +244,12 @@ class LibraryScreen(private val a: MainActivity, private val series: Boolean) : 
         override fun onBindViewHolder(h: VH, pos: Int) {
             val s = items[pos]
             h.title.text = s.title
-            h.posters.items = s.items.take(SHELF_MAX)          // الباقي في "الكل" (صور أقل = أخف)
-            h.strip.scrollToPosition(0)
+            val list = s.items.take(SHELF_MAX)              // الباقي في "الكل" (صور أقل = أخف)
+            if (h.posters.items != list) h.posters.items = list
+            h.boundId = s.id
+            // كل صف يتذكّر وين وقفت فيه (ما يرجع للبداية لما ترجع له)
+            val (p, off) = rowScroll[s.id] ?: (0 to 0)
+            (h.strip.layoutManager as LinearLayoutManager).scrollToPositionWithOffset(p, off)
             h.more.setOnClickListener { lastRowFocus = h.bindingAdapterPosition; openGrid(s) }
         }
     }

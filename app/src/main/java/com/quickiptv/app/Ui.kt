@@ -18,6 +18,7 @@ import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.recyclerview.widget.RecyclerView
 
 /** ألوان التطبيق (نفس ثيم نسخة الكمبيوتر الداكن). */
 object C {
@@ -217,4 +218,89 @@ fun hhmm(epochSec: Long): String {
     val c = java.util.Calendar.getInstance()
     c.timeInMillis = epochSec * 1000
     return "%02d:%02d".format(java.util.Locale.US, c.get(java.util.Calendar.HOUR_OF_DAY), c.get(java.util.Calendar.MINUTE))
+}
+
+// ---------------------------------------------------------------------
+// أشرطة النظام (الساعة فوق، أزرار الجوال تحت، نتوء الكاميرا)
+// أندرويد 15 يرسم التطبيق خلفها إجبارياً، فنسوّيها كذا على كل الإصدارات ونحسب المسافات بنفسنا.
+
+/** يخلي النافذة ترسم خلف أشرطة النظام (نفس السلوك على كل إصدارات أندرويد). */
+fun android.app.Activity.edgeToEdge() {
+    val w = window
+    @Suppress("DEPRECATION")
+    w.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
+        View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+    @Suppress("DEPRECATION")
+    w.statusBarColor = Color.TRANSPARENT
+    @Suppress("DEPRECATION")
+    w.navigationBarColor = if (android.os.Build.VERSION.SDK_INT >= 26) Color.TRANSPARENT else 0x99000000.toInt()
+    if (android.os.Build.VERSION.SDK_INT >= 28) {
+        w.attributes = w.attributes.apply { layoutInDisplayCutoutMode = 1 /* SHORT_EDGES */ }
+    }
+}
+
+/** يستقبل مسافات أشرطة النظام (يسار، فوق، يمين، تحت) كل ما تتغيّر (مثلاً لما تقلب الجوال). */
+fun View.onSystemInsets(cb: (l: Int, t: Int, r: Int, b: Int) -> Unit) {
+    setOnApplyWindowInsetsListener { _, ins ->
+        if (android.os.Build.VERSION.SDK_INT >= 30) {
+            val i = ins.getInsets(android.view.WindowInsets.Type.systemBars() or android.view.WindowInsets.Type.displayCutout())
+            cb(i.left, i.top, i.right, i.bottom)
+        } else {
+            @Suppress("DEPRECATION")
+            cb(ins.systemWindowInsetLeft, ins.systemWindowInsetTop, ins.systemWindowInsetRight, ins.systemWindowInsetBottom)
+        }
+        ins
+    }
+    if (isAttachedToWindow) requestApplyInsets()
+    else addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+        override fun onViewAttachedToWindow(v: View) { v.removeOnAttachStateChangeListener(this); v.requestApplyInsets() }
+        override fun onViewDetachedFromWindow(v: View) {}
+    })
+}
+
+/** يضيف مسافات الأشرطة فوق الـ padding الأصلي (يحفظ الأصلي عشان ما تتراكم مع كل تغيير). */
+fun View.padForSystemBars(left: Boolean = true, top: Boolean = true, right: Boolean = true, bottom: Boolean = true) {
+    val pl = paddingLeft; val pt = paddingTop; val pr = paddingRight; val pb = paddingBottom
+    onSystemInsets { l, t, r, b ->
+        setPadding(pl + (if (left) l else 0), pt + (if (top) t else 0), pr + (if (right) r else 0), pb + (if (bottom) b else 0))
+    }
+}
+
+/** الجوال مقلوب أفقي؟ */
+val Context.landscape: Boolean
+    get() = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+
+// ---------------------------------------------------------------------
+// سحب ناعم
+
+/** مخزن مشترك لخانات البوسترات بين كل الصفوف (ما نسوي خانات جديدة لكل صف). */
+private val posterPoolInst = RecyclerView.RecycledViewPool()
+private val pooledWidths = HashSet<Int>()
+fun posterPool(posterW: Int): RecyclerView.RecycledViewPool {
+    if (pooledWidths.add(posterW)) posterPoolInst.setMaxRecycledViews(posterW, 48)
+    return posterPoolInst
+}
+
+/**
+ * صف أفقي داخل قائمة رأسية: لو السحب أفقي أكثر، الصف ياخذه ولا تسرقه القائمة الكبيرة
+ * (هذا اللي يخلي السحب "يقطع" خصوصاً بالوضع الأفقي).
+ */
+fun RecyclerView.horizontalInVertical() {
+    val slop = android.view.ViewConfiguration.get(context).scaledTouchSlop
+    addOnItemTouchListener(object : RecyclerView.OnItemTouchListener {
+        var x0 = 0f; var y0 = 0f
+        override fun onInterceptTouchEvent(rv: RecyclerView, e: android.view.MotionEvent): Boolean {
+            when (e.actionMasked) {
+                android.view.MotionEvent.ACTION_DOWN -> { x0 = e.x; y0 = e.y; rv.parent?.requestDisallowInterceptTouchEvent(true) }
+                android.view.MotionEvent.ACTION_MOVE -> {
+                    val dx = Math.abs(e.x - x0); val dy = Math.abs(e.y - y0)
+                    if (dy > slop && dy > dx) rv.parent?.requestDisallowInterceptTouchEvent(false)   // رأسي: للقائمة الكبيرة
+                }
+                android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> rv.parent?.requestDisallowInterceptTouchEvent(false)
+            }
+            return false
+        }
+        override fun onTouchEvent(rv: RecyclerView, e: android.view.MotionEvent) {}
+        override fun onRequestDisallowInterceptTouchEvent(disallowIntercept: Boolean) {}
+    })
 }

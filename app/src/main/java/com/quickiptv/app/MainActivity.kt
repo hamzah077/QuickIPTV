@@ -60,6 +60,7 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.decorView.layoutDirection = View.LAYOUT_DIRECTION_RTL
+        edgeToEdge()
         val acc = Store.current
         intent?.getStringExtra("open")?.let { pendingOpen = it }
         if (acc == null) showLogin() else enter(acc, checkLogin = true)
@@ -79,7 +80,7 @@ class MainActivity : Activity() {
     fun showLogin(edit: Account? = null) {
         screens.values.forEach { it.onHide() }
         screens.clear(); navButtons.clear(); current = ""
-        setContentView(LoginScreen(this, edit).view)
+        setContentView(LoginScreen(this, edit).view.apply { padForSystemBars() })
     }
 
     /** يفتح الحساب فوراً من الكاش، ويتحقق من الاشتراك بالخلفية. */
@@ -119,8 +120,12 @@ class MainActivity : Activity() {
             root.addView(content, lp(0, MATCH, 1f))
         } else {
             root.addView(content, lp(MATCH, 0, 1f))
-            root.addView(nav, lp(MATCH, dp(58)))
+            root.addView(nav, lp(MATCH, WRAP))
+            // الشريط السفلي يمتد خلف أزرار الجوال (بنفس لونه) والأزرار نفسها فوقها
+            nav.onSystemInsets { _, _, _, b -> nav.setPadding(0, 0, 0, b) }
         }
+        // المحتوى ما يدخل تحت الساعة ولا تحت نتوء الكاميرا (وعلى التلفزيون ولا تحت)
+        root.padForSystemBars(bottom = tv)
         for ((key, label, ic) in sections) {
             val b = if (tv) railButton(key, label, ic) else tabButton(key, label, ic)
             navButtons[key] = b
@@ -143,7 +148,7 @@ class MainActivity : Activity() {
     private fun tabButton(key: String, label: String, ic: Int): View = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
         gravity = Gravity.CENTER
-        layoutParams = lp(0, MATCH, 1f)
+        layoutParams = lp(0, dp(if (landscape) 50 else 58), 1f)
         isClickable = true
         background = focusBg(radius = 0, selected = 0)
         addView(icon(ic, C.MUTED, 22).apply { tag = "ic" })

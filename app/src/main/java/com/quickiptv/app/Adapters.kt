@@ -117,6 +117,9 @@ class PosterAdapter(
 
     override fun getItemCount() = items.size
 
+    /** نوع الخانة = عرضها: المخزن المشترك ما يخلط بين بوسترات بأحجام مختلفة. */
+    override fun getItemViewType(position: Int) = posterW
+
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH = with(ctx) {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
