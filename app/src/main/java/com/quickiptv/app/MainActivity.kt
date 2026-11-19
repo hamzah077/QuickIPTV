@@ -75,7 +75,16 @@ class MainActivity : Activity() {
         intent?.getStringExtra("open")?.let { pendingOpen = it }
     }
 
+    /** يغيّر شكل الواجهة (تلقائي/جوال/تلفزيون) ويعيد فتح الشاشة بالشكل الجديد. */
+    fun setUiMode(mode: String) {
+        Store.uiMode = mode
+        Device.reset()
+        recreate()
+    }
+
     companion object {
+        private val DPAD_KEYS = setOf(KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_DPAD_CENTER)
+
         /** شاشة نفتحها أول ما نرجع (مثلاً التحميلات من صفحة الفيلم أو الإشعار). */
         var pendingOpen: String? = null
     }
@@ -117,11 +126,6 @@ class MainActivity : Activity() {
 
     private fun buildShell() {
         screens.clear(); navButtons.clear()
-        val root = LinearLayout(this).apply {
-            orientation = if (tv) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
-            setBackgroundColor(C.BG)
-            layoutDirection = View.LAYOUT_DIRECTION_RTL
-        }
         content = FrameLayout(this)
         nav = LinearLayout(this).apply {
             orientation = if (tv) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
@@ -129,34 +133,70 @@ class MainActivity : Activity() {
             gravity = Gravity.CENTER
         }
         if (tv) {
-            nav.setPadding(dp(10), dp(16), dp(10), dp(16))
-            root.addView(nav, lp(dp(76), MATCH))
-            root.addView(content, lp(0, MATCH, 1f))
-        } else {
-            root.addView(content, lp(MATCH, 0, 1f))
-            root.addView(nav, lp(MATCH, WRAP))
-            // الشريط السفلي يمتد خلف أزرار الجوال (بنفس لونه) والأزرار نفسها فوقها
-            nav.onSystemInsets { _, _, _, b -> nav.setPadding(0, 0, 0, b) }
+            // التلفزيون: قائمة جانبية فوق المحتوى — أيقونات بس، وتتوسّع بأسمائها لما توقف عليها (مثل Google TV)
+            val root = FrameLayout(this).apply { setBackgroundColor(C.BG); layoutDirection = View.LAYOUT_DIRECTION_RTL }
+            nav.gravity = Gravity.CENTER_VERTICAL or Gravity.START
+            nav.setPadding(dp(12), dp(16), dp(12), dp(16))
+            // حواف آمنة: بعض التلفزيونات تقص أطراف الصورة
+            content.setPadding(0, dp(18), dp(28), dp(14))
+            root.addView(content, FrameLayout.LayoutParams(MATCH, MATCH).apply { marginStart = dp(RAIL_W) })
+            root.addView(nav, FrameLayout.LayoutParams(WRAP, MATCH, Gravity.START))
+            root.padForSystemBars()
+            for ((key, label, ic) in sections) {
+                val b = railButton(key, label, ic)
+                navButtons[key] = b
+                nav.addView(b)
+            }
+            setContentView(root)
+            return
         }
-        // المحتوى ما يدخل تحت الساعة ولا تحت نتوء الكاميرا (وعلى التلفزيون ولا تحت)
-        root.padForSystemBars(bottom = tv)
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(C.BG)
+            layoutDirection = View.LAYOUT_DIRECTION_RTL
+        }
+        root.addView(content, lp(MATCH, 0, 1f))
+        root.addView(nav, lp(MATCH, WRAP))
+        // الشريط السفلي يمتد خلف أزرار الجوال (بنفس لونه) والأزرار نفسها فوقها
+        nav.onSystemInsets { _, _, _, b -> nav.setPadding(0, 0, 0, b) }
+        // المحتوى ما يدخل تحت الساعة ولا تحت نتوء الكاميرا
+        root.padForSystemBars(bottom = false)
         for ((key, label, ic) in sections) {
-            val b = if (tv) railButton(key, label, ic) else tabButton(key, label, ic)
+            val b = tabButton(key, label, ic)
             navButtons[key] = b
             nav.addView(b)
         }
         setContentView(root)
     }
 
-    private fun railButton(key: String, label: String, ic: Int): View = FrameLayout(this).apply {
-        layoutParams = LinearLayout.LayoutParams(dp(52), dp(48)).apply { bottomMargin = dp(6) }
+    private val RAIL_W = 76
+    private var railOpen = false
+
+    /** القائمة الجانبية: تتوسّع بأسماء الأقسام لما يوقف عليها الريموت، وترجع أيقونات لما يطلع منها. */
+    private fun railExpand(open: Boolean) {
+        if (open == railOpen) return
+        railOpen = open
+        navButtons.values.forEach { b -> b.findViewWithTag<View?>("tx")?.visibility = if (open) View.VISIBLE else View.GONE }
+        nav.setBackgroundColor(if (open) 0xF20C0E11.toInt() else C.RAIL)
+        nav.elevation = if (open) dp(12).toFloat() else 0f
+    }
+
+    private fun railButton(key: String, label: String, ic: Int): View = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        layoutParams = LinearLayout.LayoutParams(WRAP, dp(48)).apply { bottomMargin = dp(6) }
+        setPadding(dp(14), 0, dp(14), 0)
+        minimumWidth = dp(52)
         background = focusBg(radius = 12)
         isFocusable = true
         isClickable = true
         contentDescription = label
-        addView(icon(ic, C.MUTED, 24).apply { layoutParams = FrameLayout.LayoutParams(dp(24), dp(24), Gravity.CENTER); tag = "ic" })
+        addView(icon(ic, C.MUTED, 24).apply { tag = "ic" })
+        addView(text(label, 15f, C.MUTED, bold = true).apply { tag = "tx"; setPadding(dp(12), 0, dp(6), 0); visibility = View.GONE })
         setOnClickListener { show(key) }
-        focusScale(1.08f)
+        setOnFocusChangeListener { _, has ->
+            if (has) railExpand(true) else nav.post { if (!nav.hasFocus()) railExpand(false) }
+        }
     }
 
     private fun tabButton(key: String, label: String, ic: Int): View = LinearLayout(this).apply {
@@ -221,6 +261,14 @@ class MainActivity : Activity() {
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (event.action == KeyEvent.ACTION_DOWN && !tv && Store.uiMode == "auto" && !Store.tvAsked && event.keyCode in DPAD_KEYS) {
+            Store.tvAsked = true
+            android.app.AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+                .setTitle("واجهة التلفزيون")
+                .setMessage("شكلك تستخدم ريموت. تبغى واجهة التلفزيون؟ (خط أكبر وتنقّل بالأسهم)\nتقدر تغيّرها بعدين من الإعدادات ← شكل الواجهة.")
+                .setPositiveButton("نعم") { _, _ -> setUiMode("tv") }
+                .setNegativeButton("لا", null).show()
+        }
         if (event.action == KeyEvent.ACTION_DOWN && screens[current]?.onKey(event.keyCode, event) == true) return true
         return super.dispatchKeyEvent(event)
     }

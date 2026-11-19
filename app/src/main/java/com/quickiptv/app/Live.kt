@@ -178,7 +178,7 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
             right.addView(screenBox, lp(MATCH, a.dp(120)))
             right.addView(title.apply { setPadding(a.dp(2), a.dp(10), 0, a.dp(2)); textDirection = View.TEXT_DIRECTION_FIRST_STRONG })
             right.addView(nowText.apply { setPadding(a.dp(2), 0, 0, 0) })
-            right.addView(a.text("دليل البرامج", 12f, C.MUTED).apply { setPadding(a.dp(2), a.dp(10), 0, a.dp(6)) })
+            right.addView(a.text("برامج اليوم", 12.5f, C.MUTED, bold = true).apply { setPadding(a.dp(2), a.dp(10), 0, a.dp(6)) })
             right.addView(epgScroll, lp(MATCH, 0, 1f))
             row.addView(right, lp(0, MATCH, if (a.tv) 1.4f else 1.15f))
             root.addView(row)
@@ -377,8 +377,10 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
             now?.let { Live.nowCache[ch.id] = it; chAdapter.notifyItemChanged(visible.indexOfFirst { c -> c.id == ch.id }) }
             nowText.text = now?.let { "الآن: ${it.title}   ${hhmm(it.start)} – ${hhmm(it.end)}" } ?: "لا يتوفر دليل برامج"
             epgBox.removeAllViews()
-            if (!a.tv) return@launch
-            progs.filter { it.end > System.currentTimeMillis() / 1000 }.take(8).forEach { p ->
+            if (!(a.tv || a.landscape)) return@launch
+            val upcoming = progs.filter { it.end > System.currentTimeMillis() / 1000 }.take(14)
+            if (upcoming.isEmpty()) epgBox.addView(a.text("ما فيه برامج لهذي القناة بالدليل", 13f, C.MUTED).apply { setPadding(a.dp(4), a.dp(6), 0, 0) })
+            upcoming.forEach { p ->
                 val row = LinearLayout(a).apply {
                     orientation = LinearLayout.HORIZONTAL
                     setPadding(a.dp(10), a.dp(8), a.dp(10), a.dp(8))

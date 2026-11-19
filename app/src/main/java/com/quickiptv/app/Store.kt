@@ -85,6 +85,16 @@ object Store {
     }
 
     // ---------- إعدادات عامة ----------
+    /** شكل الواجهة: auto | phone | tv */
+    var uiMode: String
+        get() = p.getString("uiMode", "auto") ?: "auto"
+        set(v) = p.edit().putString("uiMode", v).apply()
+
+    /** سألناه مرة عن واجهة التلفزيون (لما استخدم الريموت على جهاز انكشف جوال)؟ */
+    var tvAsked: Boolean
+        get() = p.getString("tvAsked", "") == "1"
+        set(v) = p.edit().putString("tvAsked", if (v) "1" else "").apply()
+
     /** المسرّع: عدد الاتصالات لكل ملف. */
     var dlConnections: Int
         get() = p.getInt("dlConnections", 4)

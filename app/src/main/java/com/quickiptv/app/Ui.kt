@@ -57,11 +57,31 @@ fun Context.dp(v: Int): Int = (v * resources.displayMetrics.density + 0.5f).toIn
 fun Context.dpf(v: Float): Float = v * resources.displayMetrics.density
 
 /** تلفزيون؟ (وضع التلفزيون أو جهاز بدون شاشة لمس مثل TV Box). */
-fun Context.isTv(): Boolean {
-    val ui = getSystemService(Context.UI_MODE_SERVICE) as? UiModeManager
-    if (ui?.currentModeType == Configuration.UI_MODE_TYPE_TELEVISION) return true
-    return !packageManager.hasSystemFeature("android.hardware.touchscreen")
+/**
+ * واجهة التلفزيون؟ (كشف متدرّج)
+ * 1) اختيارك من الإعدادات (جوال/تلفزيون) لو حددته.
+ * 2) تلقائي: النظام يقول إنه تلفزيون، أو يدعم واجهات التلفزيون (Leanback)، أو ما فيه شاشة لمس.
+ * 3) ولو انكشف جوال وبديت تستخدم أسهم الريموت، نسألك مرة وحدة (في MainActivity).
+ */
+object Device {
+    @Volatile private var cache: Boolean? = null
+    fun reset() { cache = null }
+    fun isTv(ctx: Context): Boolean = cache ?: when (Store.uiMode) {
+        "tv" -> true
+        "phone" -> false
+        else -> autoTv(ctx)
+    }.also { cache = it }
+
+    fun autoTv(ctx: Context): Boolean {
+        val ui = ctx.getSystemService(Context.UI_MODE_SERVICE) as? UiModeManager
+        if (ui?.currentModeType == Configuration.UI_MODE_TYPE_TELEVISION) return true
+        val pm = ctx.packageManager
+        if (pm.hasSystemFeature("android.software.leanback")) return true
+        return !pm.hasSystemFeature("android.hardware.touchscreen")
+    }
 }
+
+fun Context.isTv(): Boolean = Device.isTv(this)
 
 fun rounded(color: Int, radius: Float, strokeColor: Int = 0, stroke: Int = 0): GradientDrawable =
     GradientDrawable().apply {
@@ -107,7 +127,7 @@ fun Context.text(
     lines: Int = 1,
 ): TextView = TextView(this).apply {
     text = s
-    setTextSize(TypedValue.COMPLEX_UNIT_SP, size)
+    setTextSize(TypedValue.COMPLEX_UNIT_SP, if (isTv()) size * 1.18f else size)
     setTextColor(color)
     typeface = if (bold) Fonts.bold else Fonts.regular
     if (lines > 0) {

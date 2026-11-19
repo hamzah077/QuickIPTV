@@ -536,6 +536,8 @@ class SettingsScreen(private val a: MainActivity) : Screen {
         add(a.listRow(R.drawable.ic_history, "سجل المشاهدة") { a.openExtra("history") })
 
         col.addView(a.sectionHeader("الإعدادات"))
+        add(a.listRow(R.drawable.ic_settings, "شكل الواجهة", when (Store.uiMode) { "tv" -> "تلفزيون"; "phone" -> "جوال"; else -> "تلقائي" },
+            subtitle = "تلقائي: يعرف لحاله إذا الجهاز تلفزيون") { chooseUiMode() })
         add(a.listRow(R.drawable.ic_live, "صيغة البث المباشر", if (Store.liveFormat == "ts") "MPEG-TS" else "HLS") { chooseFormat() })
         add(a.listRow(R.drawable.ic_guide, "دليل البرامج", Epg.status.ifEmpty { "—" }) { a.openExtra("epg") })
         add(a.listRow(R.drawable.ic_refresh, "تحديث القوائم", subtitle = "يجيب آخر القنوات والأفلام من السيرفر") {
@@ -551,6 +553,17 @@ class SettingsScreen(private val a: MainActivity) : Screen {
                 .setPositiveButton("حذف") { _, _ -> acc?.let { Store.removeAccount(it.id) }; Store.current?.let { a.enter(it, true) } ?: a.showLogin() }
                 .setNegativeButton("إلغاء", null).show()
         })
+    }
+
+    private fun chooseUiMode() {
+        val keys = arrayOf("auto", "phone", "tv")
+        val opts = arrayOf("تلقائي (موصى به)", "جوال", "تلفزيون")
+        AlertDialog.Builder(a, android.R.style.Theme_Material_Dialog_Alert)
+            .setTitle("شكل الواجهة")
+            .setSingleChoiceItems(opts, keys.indexOf(Store.uiMode).coerceAtLeast(0)) { d, w ->
+                d.dismiss()
+                if (keys[w] != Store.uiMode) a.setUiMode(keys[w])
+            }.show()
     }
 
     private fun chooseFormat() {
