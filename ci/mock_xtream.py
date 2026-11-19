@@ -57,7 +57,7 @@ class H(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(data) - start)); self.end_headers()
         try:
             for i in range(start, len(data), 32768):       # ~250KB/ث عشان يبين التقدّم
-                self.wfile.write(data[i:i + 32768]); time.sleep(0.12)
+                self.wfile.write(data[i:i + 32768]); time.sleep(0.35)
         except (BrokenPipeError, ConnectionResetError):
             pass
 

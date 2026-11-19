@@ -162,7 +162,7 @@ object Downloads {
             val e = Regex("[^a-zA-Z0-9]").replace(ext, "").ifEmpty { "mp4" }
             var folder = directory
             if (kind == "episode" && group.isNotEmpty()) folder = File(folder, sanitize(group)).also { it.mkdirs() }
-            val name = if (kind == "episode") sanitize("$group S%02dE%02d".format(season, epNum)) else sanitize(title)
+            val name = if (kind == "episode") sanitize("$group S%02dE%02d".format(java.util.Locale.US, season, epNum)) else sanitize(title)
             val d = Dl(UUID.randomUUID().toString().take(10), acc, key, kind, title, group, seriesId, season, epNum,
                 poster, url, e, uniquePath(folder, name, e), "queued")
             items.add(0, d)
@@ -382,9 +382,9 @@ object Downloads {
 }
 
 fun fmtBytes(b: Long): String = when {
-    b >= 1L shl 30 -> "%.2f GB".format(b / (1L shl 30).toDouble())
-    b >= 1L shl 20 -> "%.1f MB".format(b / (1L shl 20).toDouble())
-    b >= 1024 -> "%d KB".format(b / 1024)
+    b >= 1L shl 30 -> "%.2f GB".format(java.util.Locale.US, b / (1L shl 30).toDouble())
+    b >= 1L shl 20 -> "%.1f MB".format(java.util.Locale.US, b / (1L shl 20).toDouble())
+    b >= 1024 -> "%d KB".format(java.util.Locale.US, b / 1024)
     else -> "$b B"
 }
 

@@ -54,5 +54,6 @@ for i in range(30):
     time.sleep(5)
 shot("13_downloads_done")
 open(f"{OUT}/ui_downloads.xml", "w").write(dump())
-tap_text("تشغيل"); time.sleep(8); shot("14_play_offline")
+tap_text("تشغيل"); time.sleep(3); tap_text("حسنًا", tries=2); time.sleep(6); shot("14_play_offline")
+sh("shell", "input", "tap", "540", "300"); time.sleep(1); shot("15_play_offline_controls")
 open(f"{OUT}/ui_player.xml", "w").write(dump())
