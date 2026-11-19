@@ -368,13 +368,23 @@ class PlayerActivity : Activity() {
     }
 
     // ---------- الريموت ----------
+    /** زر تعاملنا مع ضغطته: نبلع رفعته بعد (وإلا الرفعة توصل للعنصر المحدد وتعتبر ضغطة عليه). */
+    private var swallowUp = -1
+
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (event.action == KeyEvent.ACTION_UP && event.keyCode == swallowUp) { swallowUp = -1; return true }
         if (event.action != KeyEvent.ACTION_DOWN) return super.dispatchKeyEvent(event)
+        val handled = handleKey(event)
+        if (handled) swallowUp = event.keyCode
+        return handled || super.dispatchKeyEvent(event)
+    }
+
+    private fun handleKey(event: KeyEvent): Boolean {
         val k = event.keyCode
         if (live && panelOpen) {
             // القائمة مفتوحة: الأسهم والاختيار للقائمة نفسها (الرجوع يقفلها)
             if (k == KeyEvent.KEYCODE_DPAD_LEFT || k == KeyEvent.KEYCODE_DPAD_RIGHT) { closePanel(); return true }
-            return super.dispatchKeyEvent(event)
+            return false
         }
         if (live) {
             when (k) {
@@ -384,7 +394,7 @@ class PlayerActivity : Activity() {
                     when {
                         topBar.visibility == View.VISIBLE && liveBtn.isFocused -> { goLive(); showBar() }
                         topBar.visibility == View.VISIBLE && pauseBtn.isFocused -> { togglePause(); showBar() }
-                        topBar.visibility == View.VISIBLE && currentFocus?.parent === topBar -> return super.dispatchKeyEvent(event)
+                        topBar.visibility == View.VISIBLE && currentFocus?.parent === topBar -> return false
                         else -> openPanel()          // OK = قائمة القنوات (زي أجهزة الرسيفر)
                     }
                     return true
@@ -400,7 +410,7 @@ class PlayerActivity : Activity() {
             }
             if (k in KeyEvent.KEYCODE_0..KeyEvent.KEYCODE_9) { digit(k - KeyEvent.KEYCODE_0); return true }
         }
-        return super.dispatchKeyEvent(event)
+        return false
     }
 
     private fun digit(d: Int) {
