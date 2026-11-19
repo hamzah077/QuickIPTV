@@ -202,7 +202,11 @@ class MainActivity : Activity() {
         addView(text(label, 15f, C.MUTED, bold = true).apply { tag = "tx"; setPadding(dp(12), 0, dp(6), 0); visibility = View.GONE })
         setOnClickListener { show(key) }
         setOnFocusChangeListener { _, has ->
-            if (has) railExpand(true) else nav.post { if (!nav.hasFocus()) railExpand(false) }
+            if (has) {
+                // دخلت القائمة من المحتوى؟ نوقّفك على القسم اللي أنت فيه (مثل Google TV)
+                if (!railOpen && key != current) navButtons[current]?.let { cur -> post { cur.requestFocus() } }
+                railExpand(true)
+            } else nav.post { if (!nav.hasFocus()) railExpand(false) }
         }
     }
 
