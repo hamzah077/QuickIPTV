@@ -26,6 +26,8 @@ interface Screen {
     /** رجوع داخل الشاشة نفسها (مثل الرجوع من "الكل" لصفوف الأفلام). true = تعامل معه. */
     fun onBack(): Boolean = false
     fun focusDefault() { view.requestFocus() }
+    /** الجوال انقلب (عمودي ↔ أفقي). */
+    fun onConfig() {}
 }
 
 /**
@@ -93,6 +95,16 @@ class MainActivity : Activity() {
             delay(2500)      // نخلي الواجهة تفتح وتستقر أول
             withContext(Bg.io) { Epg.load(Store.epgUrls, cacheDir) }
             screens.values.forEach { (it as? EpgAware)?.onEpgLoaded() }
+        }
+        // تجهيز مسبق: نقرا القوائم بالخلفية (بأولوية منخفضة) عشان المباشر والأفلام والمسلسلات تفتح فوراً
+        scope.launch {
+            delay(1500)
+            val api = Session.api ?: return@launch
+            withContext(Bg.io) {
+                runCatching { api.liveCategories(); api.liveStreams() }
+                runCatching { api.vodCategories(); api.vods(false) }
+                runCatching { api.seriesCategories(); api.vods(true) }
+            }
         }
         if (checkLogin) scope.launch {
             try {
@@ -220,6 +232,13 @@ class MainActivity : Activity() {
             current != "home" -> show("home")
             else -> super.onBackPressed()
         }
+    }
+
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        screens.values.forEach { it.onConfig() }
+        // ارتفاع الشريط السفلي يتغيّر مع الاتجاه
+        if (!tv) navButtons.values.forEach { b -> (b.layoutParams as? LinearLayout.LayoutParams)?.let { it.height = dp(if (landscape) 50 else 58); b.layoutParams = it } }
     }
 
     override fun onResume() {

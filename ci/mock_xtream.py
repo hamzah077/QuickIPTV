@@ -72,6 +72,13 @@ class H(BaseHTTPRequestHandler):
     def do_GET(self):
         u = urlparse(self.path); q = {k: v[0] for k, v in parse_qs(u.query).items()}
         if u.path.startswith("/movie/") or u.path.startswith("/series/"): return self.video()
+        if u.path.startswith("/live/"):
+            import os
+            hls = os.path.join(os.path.dirname(os.path.abspath(__file__)), "hls")
+            name = u.path.rsplit("/", 1)[-1]
+            if name.endswith(".m3u8"): return self.send(open(os.path.join(hls, "index.m3u8"), "rb").read(), "application/vnd.apple.mpegurl")
+            p = os.path.join(hls, name)
+            if os.path.exists(p): return self.send(open(p, "rb").read(), "video/mp2t")
         if u.path.startswith("/img/"):
             k = int(u.path.split("/")[-1].split(".")[0])
             return self.send(png(200, 290, ((k * 47) % 255, (k * 91) % 255, (k * 23) % 255)), "image/png")

@@ -29,6 +29,8 @@ jobs:
           sudo apt-get install -y -qq ffmpeg > /dev/null 2>&1 || true
           ffmpeg -loglevel error -f lavfi -i testsrc=size=640x360:rate=25 -t 40 -c:v libx264 -pix_fmt yuv420p -b:v 600k ci/test.mp4 || head -c 3000000 /dev/urandom > ci/test.mp4
           ls -la ci/test.mp4
+          mkdir -p ci/hls && ffmpeg -loglevel error -f lavfi -i testsrc=size=640x360:rate=25 -t 120 -c:v libx264 -pix_fmt yuv420p -b:v 400k -f hls -hls_time 4 -hls_list_size 0 -hls_segment_filename ci/hls/seg%03d.ts ci/hls/index.m3u8 || true
+          ls ci/hls | head -3
           nohup python3 ci/mock_xtream.py > mock.log 2>&1 &
       - name: Run on emulator
         uses: reactivecircus/android-emulator-runner@v2

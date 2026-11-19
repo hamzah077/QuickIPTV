@@ -57,6 +57,15 @@ class PlayerActivity : Activity() {
     private var digitJob: Job? = null
     private var hideJob: Job? = null
 
+    // قائمة القنوات الجانبية (المشغّل التفاعلي للمباشر)
+    private lateinit var panel: LinearLayout
+    private lateinit var panelTitle: android.widget.TextView
+    private lateinit var panelList: androidx.recyclerview.widget.RecyclerView
+    private val panelAdapter by lazy {
+        ChannelAdapter(this, { _, i -> playChannel(i); closePanel() }, { _, _ -> })
+    }
+    private val panelOpen get() = ::panel.isInitialized && panel.visibility == View.VISIBLE
+
     companion object {
         fun playLive(ctx: Context, list: List<Channel>, index: Int, category: String) {
             Session.playlist = list
@@ -111,9 +120,42 @@ class PlayerActivity : Activity() {
             setOnClickListener { togglePause() }
             visibility = if (live) View.VISIBLE else View.GONE
         }
+        if (live) topBar.addView(FrameLayout(this).apply {
+            background = StateListFocus.make(this@PlayerActivity, 0x33FFFFFF)
+            isFocusable = true; isClickable = true
+            contentDescription = "القنوات"
+            addView(icon(R.drawable.ic_list, 0xFFFFFFFF.toInt(), 24), FrameLayout.LayoutParams(dp(24), dp(24), Gravity.CENTER))
+            setOnClickListener { openPanel() }
+        }, lp(dp(46), dp(40)).apply { marginEnd = dp(10) })
         topBar.addView(pauseBtn, lp(dp(46), dp(40)).apply { marginEnd = dp(10) })
         topBar.addView(liveBtn)
         root.addView(topBar, FrameLayout.LayoutParams(MATCH, WRAP, Gravity.TOP))
+
+        if (live) {
+            // لوحة القنوات: تطلع من الجنب فوق البث (البث يكمل وراها)
+            panel = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setBackgroundColor(0xF2111317.toInt())
+                visibility = View.GONE
+                isClickable = true          // اللمس داخل اللوحة ما يوصل للبث
+            }
+            val ph = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(dp(14), dp(12), dp(6), dp(8)) }
+            panelTitle = text("", 15f, C.TEXT, bold = true)
+            ph.addView(panelTitle, lp(0, WRAP, 1f))
+            ph.addView(iconButton(R.drawable.ic_close, "إغلاق") { closePanel() })
+            panel.addView(ph)
+            panelList = androidx.recyclerview.widget.RecyclerView(this).apply {
+                layoutManager = androidx.recyclerview.widget.LinearLayoutManager(this@PlayerActivity)
+                adapter = panelAdapter
+                setHasFixedSize(true)
+                itemAnimator = null
+                setItemViewCacheSize(12)
+                setPadding(dp(6), 0, dp(6), dp(10)); clipToPadding = false
+            }
+            panel.addView(panelList, lp(MATCH, 0, 1f))
+            val pw = minOf(dp(if (isTv()) 420 else 360), resources.displayMetrics.widthPixels * 55 / 100)
+            root.addView(panel, FrameLayout.LayoutParams(pw, MATCH, Gravity.START))
+        }
 
         loading = ProgressBar(this).apply { indeterminateTintList = ColorStateList.valueOf(C.ACCENT) }
         root.addView(loading, FrameLayout.LayoutParams(dp(48), dp(48), Gravity.CENTER))
@@ -126,7 +168,7 @@ class PlayerActivity : Activity() {
             background = rounded(C.ACCENT, dpf(12f)); setPadding(dp(20), dp(6), dp(20), dp(6)); visibility = View.GONE
         }
         root.addView(numBadge, FrameLayout.LayoutParams(WRAP, WRAP, Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply { topMargin = dp(80) })
-        root.setOnClickListener { showBar() }
+        root.setOnClickListener { if (panelOpen) closePanel() else showBar() }
         setContentView(root)
 
         // المباشر: نفس مشغّل الشاشة الصغيرة (ما ينقطع ولا يعيد التحميل). الأفلام: مشغّل خاص.
@@ -190,6 +232,7 @@ class PlayerActivity : Activity() {
         val idx = ((i % list.size) + list.size) % list.size
         Session.playIndex = idx
         val ch = list[idx]
+        if (::panel.isInitialized) panelAdapter.playingId = ch.id
         triedTs = false
         title.text = "${idx + 1}. ${ch.name}"
         sub.text = Session.playCategory
@@ -210,6 +253,35 @@ class PlayerActivity : Activity() {
                 sub.text = "الآن: ${now.title}  ${hhmm(now.start)}–${hhmm(now.end)}" + (next?.let { "\nبعده: ${it.title}  ${hhmm(it.start)}" } ?: "")
             }
         }
+    }
+
+    /** يفتح قائمة القنوات فوق البث (نفس التصنيف اللي جيت منه) ويحدد القناة الحالية. */
+    private fun openPanel() {
+        if (!live || !::panel.isInitialized) return
+        panelTitle.text = Session.playCategory.ifEmpty { "القنوات" } + "  ·  ${Session.playlist.size}"
+        if (panelAdapter.items !== Session.playlist) panelAdapter.items = Session.playlist
+        val cur = Session.playlist.getOrNull(Session.playIndex)
+        panelAdapter.playingId = cur?.id ?: ""
+        panel.visibility = View.VISIBLE
+        topBar.visibility = View.GONE
+        hideJob?.cancel()
+        val i = Session.playIndex
+        (panelList.layoutManager as androidx.recyclerview.widget.LinearLayoutManager).scrollToPositionWithOffset(i, dp(120))
+        panelList.post { (panelList.findViewHolderForAdapterPosition(i)?.itemView ?: panelList).requestFocus() }
+    }
+
+    private fun closePanel() {
+        if (!panelOpen) return
+        panel.visibility = View.GONE
+        showBar()
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onBackPressed() {
+        // رجوع: يقفل قائمة القنوات أول، وبعدها يرجّعك لصفحة المباشر
+        if (panelOpen) { closePanel(); return }
+        @Suppress("DEPRECATION")
+        super.onBackPressed()
     }
 
     /** زر "مباشر": لو البث متوقف أو راجع لورا يرجّعك للحظة الحالية. */
@@ -251,7 +323,7 @@ class PlayerActivity : Activity() {
     private fun showBar() {
         topBar.visibility = View.VISIBLE
         hideJob?.cancel()
-        hideJob = scope.launch { delay(5000); if (live && player?.playWhenReady != false) topBar.visibility = View.GONE }
+        hideJob = scope.launch { delay(5000); if (live && player?.playWhenReady != false && !panelOpen) topBar.visibility = View.GONE }
     }
 
     // ---------- الأفلام والحلقات ----------
@@ -291,17 +363,22 @@ class PlayerActivity : Activity() {
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (event.action != KeyEvent.ACTION_DOWN) return super.dispatchKeyEvent(event)
         val k = event.keyCode
+        if (live && panelOpen) {
+            // القائمة مفتوحة: الأسهم والاختيار للقائمة نفسها (الرجوع يقفلها)
+            if (k == KeyEvent.KEYCODE_DPAD_LEFT || k == KeyEvent.KEYCODE_DPAD_RIGHT) { closePanel(); return true }
+            return super.dispatchKeyEvent(event)
+        }
         if (live) {
             when (k) {
                 KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_CHANNEL_UP -> { playChannel(Session.playIndex - 1); return true }
                 KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_CHANNEL_DOWN -> { playChannel(Session.playIndex + 1); return true }
                 KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
                     when {
-                        topBar.visibility == View.VISIBLE && liveBtn.isFocused -> goLive()
-                        topBar.visibility == View.VISIBLE && pauseBtn.isFocused -> togglePause()
-                        else -> { showBar(); pauseBtn.requestFocus() }
+                        topBar.visibility == View.VISIBLE && liveBtn.isFocused -> { goLive(); showBar() }
+                        topBar.visibility == View.VISIBLE && pauseBtn.isFocused -> { togglePause(); showBar() }
+                        topBar.visibility == View.VISIBLE && currentFocus != null && currentFocus !== pv -> return super.dispatchKeyEvent(event)
+                        else -> openPanel()          // OK = قائمة القنوات (زي أجهزة الرسيفر)
                     }
-                    showBar()
                     return true
                 }
                 KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT -> {

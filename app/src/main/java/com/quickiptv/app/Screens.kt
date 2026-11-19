@@ -161,20 +161,81 @@ class HomeScreen(private val a: MainActivity) : Screen, EpgAware {
     private var seriesMap: Map<String, Vod> = emptyMap()
     private var liveSlot: LinearLayout? = null
 
-    /** بصمة المحتوى: لو ما تغيّر شي (سجل/مفضلة/القوائم) ما نعيد بناء الصفحة. */
-    private var builtSig = ""
-    private fun sig(): String = Store.history().take(15).joinToString { "${it.key}:${it.pos / 30}" } + "|" +
-        Store.favs("live").joinToString() + "|" + Store.favs("movie").joinToString() + "|" + Store.favs("series").joinToString() +
-        "|" + (live != null) + (quickLive != null) + (newMovies != null) + (newSeries != null) + movieMap.size + seriesMap.size
+    // الصفحة تنبني مرة وحدة، وكل قسم يتحدّث لحاله بس لو تغيّر محتواه (ما ترمش ولا تعيد تحميل الصور).
+    private var shell = false
+    private val sigs = HashMap<String, String>()
+    private val contSlot = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL }
+    private val movSlot = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL }
+    private val serSlot = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL }
+    private val favSlot = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL }
+    private val spinner by lazy {
+        android.widget.ProgressBar(a).apply { indeterminateTintList = android.content.res.ColorStateList.valueOf(C.ACCENT) }
+    }
 
     override fun onShow() {
         refresh()
         if (live == null || movieMap.isEmpty() || seriesMap.isEmpty()) loadLists()
     }
 
-    private fun refresh() { val s = sig(); if (s != builtSig) { builtSig = s; build() } }
+    private fun refresh() {
+        if (!shell) buildShell()
+        val hist = Store.history()
+        val cont = Store.continueWatching().ifEmpty { hist.filter { it.type != "live" } }.take(15)
+        slot("cont", cont.joinToString { "${it.key}:${it.pos / 30}" }, contSlot) { v ->
+            if (cont.isNotEmpty()) {
+                v.addView(header("متابعة المشاهدة", more = "السجل") { a.openExtra("history") })
+                val (sc, row) = hRow()
+                cont.forEach { row.addView(continueCard(it)) }
+                v.addView(sc)
+            }
+        }
+        slot("live", hist.filter { it.type == "live" }.take(16).joinToString { it.key } + "|" + Store.favs("live").joinToString() +
+            "|" + (live?.size ?: -1) + "|" + (quickLive?.size ?: -1), liveSlot!!) { fillLive(it) }
+        val w = a.dp(if (a.tv) 124 else 100)      // نفس عرض صفحة الأفلام = نفس الخانات المعاد استخدامها
+        slot("mov", newMovies?.joinToString { it.id } ?: "", movSlot) { v ->
+            newMovies?.takeIf { it.isNotEmpty() }?.let { l ->
+                v.addView(header("أحدث الأفلام") { a.show("movie") }); v.addView(a.posterRow(l, w) { a.openDetails(it) })
+            }
+        }
+        slot("ser", newSeries?.joinToString { it.id } ?: "", serSlot) { v ->
+            newSeries?.takeIf { it.isNotEmpty() }?.let { l ->
+                v.addView(header("أحدث المسلسلات") { a.show("series") }); v.addView(a.posterRow(l, w) { a.openDetails(it) })
+            }
+        }
+        val favs = Store.favs("movie").mapNotNull { movieMap[it] } + Store.favs("series").mapNotNull { seriesMap[it] }
+        slot("fav", favs.joinToString { it.id }, favSlot) { v ->
+            if (favs.isNotEmpty()) {
+                v.addView(header("مفضلتك", more = "الكل") { a.openExtra("favorites") }); v.addView(a.posterRow(favs.take(20), w) { a.openDetails(it) })
+            }
+        }
+        spinner.visibility = if (newMovies == null && newSeries == null && quickLive == null && live == null) View.VISIBLE else View.GONE
+        if (a.current == "home" && a.currentFocus == null) focusDefault()
+    }
 
-    override fun onEpgLoaded() { liveSlot?.let { fillLive(it) } }
+    /** يعيد بناء قسم واحد بس لو تغيّرت بصمته. */
+    private fun slot(name: String, sig: String, v: LinearLayout, fill: (LinearLayout) -> Unit) {
+        if (sigs[name] == sig) return
+        sigs[name] = sig
+        v.removeAllViews()
+        fill(v)
+    }
+
+    private fun buildShell() {
+        shell = true
+        col.removeAllViews()
+        val head = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(padH, a.dp(8), a.dp(6), 0) }
+        val hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+        head.addView(a.text(if (hour in 4..11) "صباح الخير" else "مساء الخير", 21f, C.TEXT, bold = true), lp(0, WRAP, 1f))
+        if (!a.tv) head.addView(a.iconButton(R.drawable.ic_search, "بحث") { a.openExtra("search") })
+        head.addView(a.iconButton(R.drawable.ic_download, "التحميلات") { a.openExtra("downloads") })
+        col.addView(head)
+        val ls = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL }
+        liveSlot = ls
+        for (v in listOf(contSlot, ls, movSlot, serSlot, favSlot)) col.addView(v, lp(MATCH, WRAP))
+        col.addView(spinner, lp(a.dp(32), a.dp(32)).apply { gravity = Gravity.CENTER_HORIZONTAL; topMargin = a.dp(40) })
+    }
+
+    override fun onEpgLoaded() { sigs.remove("live"); if (shell) refresh() }
 
     /**
      * 1) فوراً: الملخص الصغير (20 فيلم، 20 مسلسل، أول القنوات) — الرئيسية تفتح بدون ما نقرا القوائم الكاملة.
@@ -203,7 +264,7 @@ class HomeScreen(private val a: MainActivity) : Screen, EpgAware {
                         seriesMap = l.associateBy { it.id }; newSeries = api.newest(true)
                     }
                 }
-                if (a.current == "home") refresh() else builtSig = ""
+                if (a.current == "home") refresh()
             } finally {
                 loadingLists = false
             }
@@ -224,58 +285,6 @@ class HomeScreen(private val a: MainActivity) : Screen, EpgAware {
     private fun hRow(): Pair<HorizontalScrollView, LinearLayout> {
         val row = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL; setPadding(padH - a.dp(4), 0, padH - a.dp(4), 0) }
         return HorizontalScrollView(a).apply { addView(row); isHorizontalScrollBarEnabled = false; overScrollMode = View.OVER_SCROLL_NEVER; clipToPadding = false } to row
-    }
-
-    private fun build() {
-        col.removeAllViews(); first = null; liveSlot = null
-
-        // العنوان: تحية + بحث + تحميلات
-        val head = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(padH, a.dp(8), a.dp(6), 0) }
-        val hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
-        head.addView(a.text(if (hour in 4..11) "صباح الخير" else "مساء الخير", 21f, C.TEXT, bold = true), lp(0, WRAP, 1f))
-        if (!a.tv) head.addView(a.iconButton(R.drawable.ic_search, "بحث") { a.openExtra("search") })
-        head.addView(a.iconButton(R.drawable.ic_download, "التحميلات") { a.openExtra("downloads") })
-        col.addView(head)
-
-        // 1) متابعة المشاهدة (السجل)
-        val hist = Store.history()
-        val cont = Store.continueWatching().ifEmpty { hist.filter { it.type != "live" } }.take(15)
-        if (cont.isNotEmpty()) {
-            col.addView(header("متابعة المشاهدة", more = "السجل") { a.openExtra("history") })
-            val (sc, row) = hRow()
-            cont.forEach { row.addView(continueCard(it)) }
-            col.addView(sc)
-        }
-
-        // 2) مباشر الحين
-        val ls = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL }
-        liveSlot = ls
-        col.addView(ls)
-        fillLive(ls)
-
-        // 3) أحدث الأفلام  4) أحدث المسلسلات
-        val w = a.dp(if (a.tv) 124 else 100)      // نفس عرض صفحة الأفلام = نفس الخانات المعاد استخدامها
-        newMovies?.takeIf { it.isNotEmpty() }?.let { l ->
-            col.addView(header("أحدث الأفلام") { a.show("movie") })
-            col.addView(a.posterRow(l, w) { a.openDetails(it) })
-        }
-        newSeries?.takeIf { it.isNotEmpty() }?.let { l ->
-            col.addView(header("أحدث المسلسلات") { a.show("series") })
-            col.addView(a.posterRow(l, w) { a.openDetails(it) })
-        }
-
-        // 5) المفضلة (أفلام + مسلسلات)
-        val favs = Store.favs("movie").mapNotNull { movieMap[it] } + Store.favs("series").mapNotNull { seriesMap[it] }
-        if (favs.isNotEmpty()) {
-            col.addView(header("مفضلتك", more = "الكل") { a.openExtra("favorites") })
-            col.addView(a.posterRow(favs.take(20), w) { a.openDetails(it) })
-        }
-
-        if (newMovies == null || newSeries == null) {
-            col.addView(android.widget.ProgressBar(a).apply { indeterminateTintList = android.content.res.ColorStateList.valueOf(C.ACCENT) },
-                lp(a.dp(32), a.dp(32)).apply { gravity = Gravity.CENTER_HORIZONTAL; topMargin = a.dp(24) })
-        }
-        if (a.current == "home" && a.currentFocus == null) focusDefault()
     }
 
     /** المباشر: المفضلة ثم آخر القنوات اللي شاهدتها ثم أول قنوات القائمة. */
@@ -368,7 +377,15 @@ class HomeScreen(private val a: MainActivity) : Screen, EpgAware {
         return card
     }
 
-    override fun focusDefault() { (first ?: view).requestFocus() }
+    override fun focusDefault() {
+        // أول عنصر يتركّز عليه (للريموت)
+        fun find(v: View): View? {
+            if (v.isFocusable && v.visibility == View.VISIBLE && v !is ScrollView) return v
+            if (v is android.view.ViewGroup) for (i in 0 until v.childCount) find(v.getChildAt(i))?.let { return it }
+            return null
+        }
+        (listOf(contSlot, liveSlot, movSlot).firstNotNullOfOrNull { it?.let { s -> find(s) } } ?: view).requestFocus()
+    }
 }
 
 // =====================================================================

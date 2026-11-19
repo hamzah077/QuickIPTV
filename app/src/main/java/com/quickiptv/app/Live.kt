@@ -5,6 +5,7 @@ import android.content.res.ColorStateList
 import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
+import android.view.ViewGroup
 import android.widget.ArrayAdapter
 import android.widget.EditText
 import android.widget.FrameLayout
@@ -87,6 +88,13 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
         background = rounded(C.ACCENT, a.dpf(12f)); setPadding(a.dp(18), a.dp(6), a.dp(18), a.dp(6)); visibility = View.GONE
     }
 
+    // ملاحظة: لازم تكون قبل init (كوتلن يهيّئ الخصائص بالترتيب)
+    private val root = FrameLayout(a)
+    private lateinit var screenBox: FrameLayout
+    private val phoneBar = LinearLayout(a)
+    private val epgScroll by lazy { ScrollView(a).apply { addView(epgBox); isFocusable = false } }
+    private var arrangedWide: Boolean? = null
+
     init {
         catList.layoutManager = LinearLayoutManager(a, if (a.tv) LinearLayoutManager.VERTICAL else LinearLayoutManager.HORIZONTAL, false)
         catList.adapter = catAdapter
@@ -116,52 +124,86 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
         screen.addView(loading, FrameLayout.LayoutParams(a.dp(36), a.dp(36), Gravity.CENTER))
         screen.addView(status, FrameLayout.LayoutParams(MATCH, WRAP, Gravity.CENTER).apply { setMargins(a.dp(16), 0, a.dp(16), 0) })
 
-        val root = FrameLayout(a)
-        if (a.tv) {
-            val row = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL; setPadding(a.dp(12), a.dp(14), a.dp(12), a.dp(12)) }
-            row.addView(catList, lp(a.dp(200), MATCH).apply { marginEnd = a.dp(10) })
-            row.addView(chList, lp(0, MATCH, 1.1f).apply { marginEnd = a.dp(12) })
+        screenBox = screen
+        // سطر الجوال: "القنوات" + زر التصنيف (يفتح قائمة) + بحث داخل القسم
+        phoneBar.apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(a.dp(12), a.dp(8), a.dp(8), a.dp(4)) }
+        phoneBar.addView(a.text("القنوات", 17f, C.TEXT, bold = true), lp(WRAP, WRAP))
+        phoneBar.addView(View(a), lp(0, 1, 1f))
+        catBtn.apply {
+            background = a.focusBg(normal = C.SURFACE2, radius = 9)
+            setPadding(a.dp(12), a.dp(7), a.dp(12), a.dp(7))
+            isFocusable = true; isClickable = true
+            setOnClickListener { pickCategory() }
+        }
+        phoneBar.addView(catBtn, lp(WRAP, WRAP).apply { marginEnd = a.dp(6) })
+        phoneBar.addView(a.iconButton(R.drawable.ic_search, "بحث في القنوات", 40) { toggleSearch() })
+        searchBox.visibility = View.GONE
+        arrange()
+        view = root
+        load()
+    }
+
+
+    /**
+     * ترتيب الشاشة حسب الاتجاه:
+     * - عمودي (جوال): الشاشة فوق والقنوات تحت.
+     * - أفقي (جوال) والتلفزيون: عمودين — القنوات بجنب، والشاشة والدليل بجنب (القنوات تبقى ظاهرة دايماً).
+     */
+    private fun arrange() {
+        val wide = a.tv || a.landscape
+        if (arrangedWide == wide) return
+        arrangedWide = wide
+        listOf<View>(catList, chList, screenBox, title, nowText, phoneBar, searchBox, epgScroll, numBadge).forEach { (it.parent as? ViewGroup)?.removeView(it) }
+        root.removeAllViews()
+        if (wide) {
+            val row = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL; setPadding(a.dp(12), a.dp(if (a.tv) 14 else 6), a.dp(12), a.dp(8)) }
+            if (a.tv) row.addView(catList, lp(a.dp(200), MATCH).apply { marginEnd = a.dp(10) })
+            val mid = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL }
+            if (!a.tv) {
+                phoneBar.setPadding(a.dp(4), a.dp(2), a.dp(4), a.dp(4))
+                mid.addView(phoneBar)
+                mid.addView(searchBox, lp(MATCH, WRAP).apply { setMargins(a.dp(4), 0, a.dp(4), a.dp(6)) })
+            }
+            mid.addView(chList, lp(MATCH, 0, 1f))
+            row.addView(mid, lp(0, MATCH, if (a.tv) 1.1f else 1f).apply { marginEnd = a.dp(12) })
             val right = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL }
-            right.addView(screen, lp(MATCH, 0).apply { height = 0; weight = 0f })
+            right.addView(screenBox, lp(MATCH, a.dp(120)))
             right.addView(title.apply { setPadding(a.dp(2), a.dp(10), 0, a.dp(2)); textDirection = View.TEXT_DIRECTION_FIRST_STRONG })
-            right.addView(nowText)
+            right.addView(nowText.apply { setPadding(a.dp(2), 0, 0, 0) })
             right.addView(a.text("دليل البرامج", 12f, C.MUTED).apply { setPadding(a.dp(2), a.dp(10), 0, a.dp(6)) })
-            right.addView(ScrollView(a).apply { addView(epgBox); isFocusable = false }, lp(MATCH, 0, 1f))
-            row.addView(right, lp(0, MATCH, 1.4f))
+            right.addView(epgScroll, lp(MATCH, 0, 1f))
+            row.addView(right, lp(0, MATCH, if (a.tv) 1.4f else 1.15f))
             root.addView(row)
             // الشاشة 16:9 حسب عرض العمود
             right.addOnLayoutChangeListener { v, l, _, r, _, _, _, _, _ ->
                 val h = (r - l) * 9 / 16
-                val p = screen.layoutParams as LinearLayout.LayoutParams
-                if (p.height != h) { p.height = h; v.post { screen.layoutParams = p } }
+                val p = screenBox.layoutParams as? LinearLayout.LayoutParams ?: return@addOnLayoutChangeListener
+                if (p.height != h) { p.height = h; v.post { screenBox.layoutParams = p } }
             }
         } else {
             val colm = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL }
-            val w = a.resources.displayMetrics.widthPixels
-            colm.addView(screen, lp(MATCH, w * 9 / 16))
+            val w = minOf(a.resources.displayMetrics.widthPixels, a.resources.displayMetrics.heightPixels)
+            colm.addView(screenBox, lp(MATCH, w * 9 / 16))
             colm.addView(title.apply { setPadding(a.dp(12), a.dp(8), a.dp(12), 0); textDirection = View.TEXT_DIRECTION_FIRST_STRONG })
             colm.addView(nowText.apply { setPadding(a.dp(12), a.dp(2), a.dp(12), 0) })
-            // سطر: "القنوات" + زر التصنيف (يفتح قائمة) + بحث داخل القسم
-            val bar = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(a.dp(12), a.dp(8), a.dp(8), a.dp(4)) }
-            bar.addView(a.text("القنوات", 17f, C.TEXT, bold = true), lp(WRAP, WRAP))
-            bar.addView(View(a), lp(0, 1, 1f))
-            catBtn.apply {
-                background = a.focusBg(normal = C.SURFACE2, radius = 9)
-                setPadding(a.dp(12), a.dp(7), a.dp(12), a.dp(7))
-                isFocusable = true; isClickable = true
-                setOnClickListener { pickCategory() }
-            }
-            bar.addView(catBtn, lp(WRAP, WRAP).apply { marginEnd = a.dp(6) })
-            bar.addView(a.iconButton(R.drawable.ic_search, "بحث في القنوات", 40) { toggleSearch() })
-            colm.addView(bar)
-            colm.addView(searchBox.apply { visibility = View.GONE }, lp(MATCH, WRAP).apply { setMargins(a.dp(12), a.dp(2), a.dp(12), a.dp(6)) })
+            phoneBar.setPadding(a.dp(12), a.dp(8), a.dp(8), a.dp(4))
+            colm.addView(phoneBar)
+            colm.addView(searchBox, lp(MATCH, WRAP).apply { setMargins(a.dp(12), a.dp(2), a.dp(12), a.dp(6)) })
             colm.addView(a.divider())
             colm.addView(chList, lp(MATCH, 0, 1f))
             root.addView(colm)
         }
         root.addView(numBadge, FrameLayout.LayoutParams(WRAP, WRAP, Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply { topMargin = a.dp(24) })
-        view = root
-        load()
+    }
+
+    override fun onConfig() {
+        arrange()
+        current?.let { ch -> chList.post { visible.indexOfFirst { it.id == ch.id }.takeIf { it >= 0 }?.let { chList.scrollToPosition(it) } } }
+    }
+
+    override fun onBack(): Boolean {
+        if (searchBox.visibility == View.VISIBLE) { toggleSearch(); return true }
+        return false
     }
 
     // ---------- البيانات ----------
@@ -198,8 +240,8 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
     }
 
     private fun applyFilter() {
-        val k = Epg.keys(searchBox.text?.toString() ?: "").first
-        visible = if (k.isEmpty()) inCat else inCat.filter { Epg.keys(it.name).first.contains(k) }
+        val k = SearchIndex.norm(searchBox.text?.toString() ?: "")
+        visible = if (k.isEmpty()) inCat else inCat.filter { SearchIndex.norm(it.name).contains(k) }
         chAdapter.items = visible
     }
 

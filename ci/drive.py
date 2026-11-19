@@ -90,3 +90,20 @@ tap_text("مسلسل 1", contains=True); time.sleep(5); shot("24_series_land")
 sh("shell", "input", "swipe", "600", "850", "600", "350", "250"); time.sleep(2); shot("24b_series_land_scrolled")
 sh("shell", "settings", "put", "system", "user_rotation", "0"); time.sleep(4); shot("25_series_portrait")
 sh("shell", "input", "swipe", "540", "1800", "540", "600", "250"); time.sleep(2); shot("25b_series_portrait_scrolled")
+
+# ---------- المباشر: عمودي ← أفقي ← ملء الشاشة ← قائمة القنوات ← رجوع ----------
+sh("shell", "input", "keyevent", "4"); time.sleep(2)
+tap_text("مباشر"); time.sleep(5); shot("30_live_portrait")
+tap_text("قناة 1"); time.sleep(5); shot("30b_live_preview")
+sh("shell", "settings", "put", "system", "user_rotation", "1"); time.sleep(4); shot("31_live_land")
+tap_text("قناة 1"); time.sleep(6); shot("32_player_full")
+sh("shell", "input", "tap", "1170", "700"); time.sleep(1)
+if not tap_text("القنوات", tries=3):
+    sh("shell", "input", "keyevent", "23")          # OK بالريموت = قائمة القنوات
+time.sleep(2); shot("33_player_panel")
+tap_text("قناة 3", tries=4); time.sleep(5); shot("34_player_switched")
+sh("shell", "input", "keyevent", "4"); time.sleep(4); shot("35_back_to_live")
+sh("shell", "input", "keyevent", "4"); time.sleep(3); shot("36_back_again")
+sh("shell", "settings", "put", "system", "user_rotation", "0"); time.sleep(3)
+tap_text("الرئيسية"); time.sleep(2); shot("37_home_again")
+tap_text("أفلام"); time.sleep(1); shot("38_movies_instant")
