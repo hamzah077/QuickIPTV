@@ -137,7 +137,7 @@ class Xtream(val acc: Account, private val cacheDir: File) {
         }
 
         private fun md5(s: String): String =
-            MessageDigest.getInstance("MD5").digest(s.toByteArray()).joinToString("") { "%02x".format(it) }
+            MessageDigest.getInstance("MD5").digest(s.toByteArray()).joinToString("") { "%02x".format(java.util.Locale.US, it) }
     }
 
     private fun apiUrl(action: String?, extra: Map<String, String> = emptyMap()): String {

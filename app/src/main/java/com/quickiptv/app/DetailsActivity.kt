@@ -100,7 +100,7 @@ class DetailsActivity : Activity() {
     private fun meta(body: LinearLayout, year: String, genre: String, rating: String, dur: String = "") {
         val k = body.findViewWithTag<android.widget.TextView>("kicker") ?: return
         k.text = listOf(if (series) "مسلسل" else "فيلم", year, genre.split(",").firstOrNull()?.trim() ?: "",
-            rating.toDoubleOrNull()?.takeIf { it > 0 }?.let { "★ %.1f".format(it) } ?: "", dur.take(5))
+            rating.toDoubleOrNull()?.takeIf { it > 0 }?.let { "★ %.1f".format(java.util.Locale.US, it) } ?: "", dur.take(5))
             .filter { it.isNotEmpty() }.joinToString(" · ")
     }
 

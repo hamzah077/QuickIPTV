@@ -138,9 +138,11 @@ class DownloadsScreen(private val a: MainActivity) : Screen {
         val b = bar()
         c.addView(b, lp(MATCH, a.dp(4)).apply { topMargin = a.dp(8); bottomMargin = a.dp(6) })
         val info = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL }
+        // سطرين: الحالة (عربي) ثم الحجم والنسبة — بدل ما يتزاحمون بسطر واحد
         val st = a.text("", 12f, C.MUTED, lines = 2)
-        val sz = a.text("", 12f, C.MUTED).apply { textDirection = View.TEXT_DIRECTION_LTR }
-        info.addView(st, lp(0, WRAP, 1f)); info.addView(sz)
+        val sz = a.text("", 12f, C.MUTED).apply { setPadding(0, a.dp(2), 0, 0) }
+        info.orientation = LinearLayout.VERTICAL
+        info.addView(st, lp(MATCH, WRAP)); info.addView(sz, lp(MATCH, WRAP))
         c.addView(info)
         r.addView(c, lp(0, WRAP, 1f))
         val btns = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
@@ -161,7 +163,7 @@ class DownloadsScreen(private val a: MainActivity) : Screen {
         r.status.text = when {
             d.status == "downloading" && d.waiting -> "متوقف أثناء المشاهدة — يكمّل تلقائياً بعدها"
             d.status == "downloading" && d.error.isNotEmpty() -> d.error
-            d.status == "downloading" -> if (d.speed > 0) "${fmtBytes(d.speed)}/ث" + (if (d.total > 0) " · متبقي ${fmtTime((d.total - d.received) / d.speed.coerceAtLeast(1))}" else "") else "جاري الاتصال…"
+            d.status == "downloading" -> if (d.speed > 0) "السرعة ${fmtBytes(d.speed)}" + (if (d.total > 0) " · متبقي \u200E${fmtTime((d.total - d.received) / d.speed.coerceAtLeast(1))}\u200E" else "") else "جاري الاتصال…"
             d.status == "queued" -> "في الانتظار"
             d.status == "paused" -> "متوقف مؤقتاً"
             d.status == "completed" -> "✓ مكتمل · يشتغل بدون إنترنت"
@@ -169,7 +171,7 @@ class DownloadsScreen(private val a: MainActivity) : Screen {
         }
         r.size.text = when {
             d.status == "completed" -> fmtBytes(d.total)
-            d.total > 0 -> "${fmtBytes(d.received)} / ${fmtBytes(d.total)} · ${(d.frac * 100).toInt()}%"
+            d.total > 0 -> "${fmtBytes(d.received)} من ${fmtBytes(d.total)} · \u200E${(d.frac * 100).toInt()}%"
             d.received > 0 -> fmtBytes(d.received)
             else -> ""
         }
@@ -241,7 +243,7 @@ class DownloadsScreen(private val a: MainActivity) : Screen {
         g.status.text = when {
             done == n -> "✓ اكتمل الموسم — يشتغل بدون إنترنت"
             running.any { it.waiting } -> "متوقف أثناء المشاهدة"
-            running.isNotEmpty() -> if (speed > 0) "جاري التحميل · ${fmtBytes(speed)}/ث" else "جاري التحميل…"
+            running.isNotEmpty() -> if (speed > 0) "جاري التحميل · السرعة ${fmtBytes(speed)}" else "جاري التحميل…"
             failed > 0 -> "$failed حلقة فشل تحميلها"
             ds.any { it.status == "queued" } -> "في الانتظار"
             else -> "متوقف مؤقتاً"

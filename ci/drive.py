@@ -46,8 +46,9 @@ tap_text("تحميل"); time.sleep(4); shot("08_movie_downloading")
 sh("shell", "input", "keyevent", "4"); time.sleep(2)
 tap_text("المزيد"); time.sleep(2); shot("10_more")
 tap_text("التحميلات"); time.sleep(5); shot("11_downloads_progress")
-tap_text("إيقاف مؤقت"); time.sleep(3); shot("12_one_paused")
-tap_text("استئناف"); time.sleep(2)
+# زر الإيقاف في أول سطر (الشاشة تتحدّث باستمرار فـ uiautomator ما يلحق — نضغط بالمكان)
+sh("shell", "input", "tap", "220", "746"); time.sleep(4); shot("12_one_paused")
+sh("shell", "input", "tap", "220", "746"); time.sleep(4); shot("12b_resumed")
 for i in range(30):
     x = dump()
     if "قيد التحميل" not in x and "جاري" not in x and "في الانتظار" not in x: break

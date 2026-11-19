@@ -210,11 +210,11 @@ fun fmtTime(sec: Long): String {
     val h = s / 3600
     val m = (s % 3600) / 60
     val ss = s % 60
-    return if (h > 0) "%d:%02d:%02d".format(h, m, ss) else "%d:%02d".format(m, ss)
+    return if (h > 0) "%d:%02d:%02d".format(java.util.Locale.US, h, m, ss) else "%d:%02d".format(java.util.Locale.US, m, ss)
 }
 
 fun hhmm(epochSec: Long): String {
     val c = java.util.Calendar.getInstance()
     c.timeInMillis = epochSec * 1000
-    return "%02d:%02d".format(c.get(java.util.Calendar.HOUR_OF_DAY), c.get(java.util.Calendar.MINUTE))
+    return "%02d:%02d".format(java.util.Locale.US, c.get(java.util.Calendar.HOUR_OF_DAY), c.get(java.util.Calendar.MINUTE))
 }

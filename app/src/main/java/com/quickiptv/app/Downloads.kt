@@ -381,7 +381,10 @@ object Downloads {
     }
 }
 
-fun fmtBytes(b: Long): String = when {
+/** حجم بأرقام إنجليزية، محاط بعلامة اتجاه (عشان ما يتلخبط داخل جملة عربية). */
+fun fmtBytes(b: Long): String = "\u200E" + fmtBytesRaw(b) + "\u200E"
+
+private fun fmtBytesRaw(b: Long): String = when {
     b >= 1L shl 30 -> "%.2f GB".format(java.util.Locale.US, b / (1L shl 30).toDouble())
     b >= 1L shl 20 -> "%.1f MB".format(java.util.Locale.US, b / (1L shl 20).toDouble())
     b >= 1024 -> "%d KB".format(java.util.Locale.US, b / 1024)
