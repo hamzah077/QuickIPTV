@@ -5,7 +5,6 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
-import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
@@ -175,12 +174,12 @@ class LibraryScreen(private val a: MainActivity, private val series: Boolean) : 
     }
 
     // ---------- الصفوف ----------
-    /** صف أفقي بسيط (HorizontalScrollView) بدل RecyclerView داخل RecyclerView: أضمن عرضاً على كل الأجهزة واتجاه RTL. */
+    /** صف أفقي: RecyclerView أفقي داخل القائمة (يدعم RTL ويعيد استخدام الخانات). */
     private inner class ShelfAdapter : RecyclerView.Adapter<ShelfAdapter.VH>() {
         var items: List<Shelf> = emptyList()
             set(v) { field = v; notifyDataSetChanged() }
 
-        inner class VH(root: LinearLayout, val title: TextView, val more: TextView, val scroll: HorizontalScrollView, val strip: LinearLayout, val posters: PosterAdapter) : RecyclerView.ViewHolder(root)
+        inner class VH(root: LinearLayout, val title: TextView, val more: TextView, val strip: RecyclerView, val posters: PosterAdapter) : RecyclerView.ViewHolder(root)
 
         override fun getItemCount() = items.size
 
@@ -202,46 +201,25 @@ class LibraryScreen(private val a: MainActivity, private val series: Boolean) : 
             head.addView(more)
             root.addView(head)
             val posters = PosterAdapter(a, posterW) { a.openDetails(it) }
-            val strip = LinearLayout(a).apply {
-                orientation = LinearLayout.HORIZONTAL
-                setPadding(a.dp(10), 0, a.dp(10), 0)
-            }
-            val scroll = HorizontalScrollView(a).apply {
-                isHorizontalScrollBarEnabled = false
+            // صف أفقي بـ RecyclerView (يدعم الاتجاه من اليمين لليسار تلقائياً ويعيد استخدام الخانات)
+            val strip = RecyclerView(a).apply {
+                layoutManager = LinearLayoutManager(a, LinearLayoutManager.HORIZONTAL, false)
+                adapter = posters
+                setHasFixedSize(true)
+                isNestedScrollingEnabled = false
                 overScrollMode = View.OVER_SCROLL_NEVER
                 clipToPadding = false
-                addView(strip, FrameLayout.LayoutParams(WRAP, WRAP))
+                setPadding(a.dp(10), 0, a.dp(10), 0)
             }
-            root.addView(scroll, lp(MATCH, WRAP))
-            return VH(root, t, more, scroll, strip, posters)
+            root.addView(strip, lp(MATCH, WRAP))
+            return VH(root, t, more, strip, posters)
         }
 
         override fun onBindViewHolder(h: VH, pos: Int) {
             val s = items[pos]
             h.title.text = s.title
-            val list = s.items.take(SHELF_MAX)          // الباقي في "الكل" (صور أقل = أخف)
-            h.posters.items = list
-            // نعيد استخدام الخانات الموجودة ونضيف/نخفي حسب العدد
-            while (h.strip.childCount < list.size) {
-                val vh = h.posters.onCreateViewHolder(h.strip, 0)
-                vh.itemView.tag = vh
-                val p = vh.itemView.layoutParams as? ViewGroup.MarginLayoutParams
-                h.strip.addView(vh.itemView, LinearLayout.LayoutParams(posterW, WRAP).apply {
-                    if (p != null) setMargins(p.leftMargin, p.topMargin, p.rightMargin, p.bottomMargin)
-                })
-            }
-            for (i in 0 until h.strip.childCount) {
-                val child = h.strip.getChildAt(i)
-                if (i < list.size) {
-                    child.visibility = View.VISIBLE
-                    @Suppress("UNCHECKED_CAST")
-                    h.posters.onBindViewHolder(child.tag as PosterAdapter.VH, i)
-                } else child.visibility = View.GONE
-            }
-            h.scroll.post {
-                val rtl = h.scroll.layoutDirection == View.LAYOUT_DIRECTION_RTL
-                h.scroll.scrollTo(if (rtl) h.strip.width else 0, 0)
-            }
+            h.posters.items = s.items.take(SHELF_MAX)          // الباقي في "الكل" (صور أقل = أخف)
+            h.strip.scrollToPosition(0)
             h.more.setOnClickListener { lastRowFocus = h.bindingAdapterPosition; openGrid(s) }
         }
     }
