@@ -134,7 +134,7 @@ class DetailsActivity : Activity() {
             scaleType = ImageView.ScaleType.CENTER_CROP; alpha = 0.5f
             load(icon.ifEmpty { null }) { size(900, 520) }
         }, FrameLayout.LayoutParams(MATCH, MATCH))
-        hero.addView(backButton(), FrameLayout.LayoutParams(dp(44), dp(44), Gravity.TOP or Gravity.START).apply { setMargins(dp(8) + inL, inT + dp(6), 0, 0) })
+        hero.addView(backButton(), FrameLayout.LayoutParams(dp(44), dp(44), Gravity.TOP or Gravity.START).apply { topMargin = inT + dp(6); marginStart = dp(10) + maxOf(inL, inR) })
         head.addView(hero, lp(MATCH, heroH))
         val body = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(16) + inL, dp(14), dp(16) + inR, dp(6)) }
         info(body, big = true)
