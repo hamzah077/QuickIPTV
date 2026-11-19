@@ -148,7 +148,12 @@ class HomeScreen(private val a: MainActivity) : Screen, EpgAware {
     override val view: View = ScrollView(a).apply { addView(col); isFillViewport = true }
     private var first: View? = null
 
-    override fun onShow() = build()
+    /** بصمة المحتوى: لو ما تغيّر شي (متابعة/مفضلة) ما نعيد بناء الصفحة. */
+    private var builtSig = ""
+    private fun sig(): String = Store.continueWatching().joinToString { "${it.key}:${it.pos / 30}" } + "|" +
+        Store.favs("live").joinToString() + "|" + Store.favs("movie").joinToString() + "|" + Store.favs("series").joinToString()
+
+    override fun onShow() { val s = sig(); if (s != builtSig) { builtSig = s; build() } }
     override fun onEpgLoaded() { if (a.current == "home") build() }
 
     private fun build() {
@@ -294,22 +299,27 @@ class SearchScreen(private val a: MainActivity) : Screen {
         })
     }
 
+    override fun onShow() {
+        // نجهّز الفهرس أول ما تفتح الصفحة (بالخلفية) عشان أول حرف تكتبه يطلع نتيجته فوراً
+        val api = Session.api ?: return
+        if (SearchIndex.readyFor(api)) return
+        status.text = "جاري تجهيز البحث…"
+        a.scope.launch {
+            withContext(Dispatchers.Default) { SearchIndex.build(api) }
+            if (input.text.isNullOrBlank()) status.text = "" else search(input.text.toString())
+        }
+    }
+
     private fun search(q: String) {
         job?.cancel()
         val api = Session.api ?: return
         job = a.scope.launch {
-            delay(300)
-            if (q.trim().length < 2) { chAdapter.items = emptyList(); vodAdapter.items = emptyList(); status.text = ""; return@launch }
-            status.text = "جاري البحث…"
-            val nq = Epg.keys(q).first
-            val (ch, vods) = withContext(Dispatchers.Default) {
-                val chs = runCatching { withContext(Dispatchers.IO) { api.liveStreams() } }.getOrDefault(emptyList())
-                    .filter { Epg.keys(it.name).first.contains(nq) }.take(200)
-                val vs = (runCatching { withContext(Dispatchers.IO) { api.vods(false) } }.getOrDefault(emptyList()) +
-                        runCatching { withContext(Dispatchers.IO) { api.vods(true) } }.getOrDefault(emptyList()))
-                    .filter { Epg.keys(it.name).first.contains(nq) }.take(60)
-                chs to vs
-            }
+            val nq = SearchIndex.norm(q)
+            if (nq.length < 2) { chResults = emptyList(); chAdapter.items = emptyList(); vodAdapter.items = emptyList(); status.text = ""; return@launch }
+            delay(if (SearchIndex.readyFor(api)) 120 else 250)
+            if (!SearchIndex.readyFor(api)) status.text = "جاري تجهيز البحث…"
+            val idx = withContext(Dispatchers.Default) { SearchIndex.build(api) }
+            val (ch, vods) = withContext(Dispatchers.Default) { idx.find(nq) }
             chResults = ch
             chAdapter.items = ch
             vodAdapter.items = vods
@@ -405,7 +415,7 @@ class SettingsScreen(private val a: MainActivity) : Screen {
         add(a.listRow(R.drawable.ic_live, "صيغة البث المباشر", if (Store.liveFormat == "ts") "MPEG-TS" else "HLS") { chooseFormat() })
         add(a.listRow(R.drawable.ic_guide, "دليل البرامج", Epg.status.ifEmpty { "—" }) { a.openExtra("epg") })
         add(a.listRow(R.drawable.ic_refresh, "تحديث القوائم", subtitle = "يجيب آخر القنوات والأفلام من السيرفر") {
-            Session.api?.clearCache(); a.toast("بتتحدّث القوائم أول ما تفتح كل قسم")
+            Session.api?.clearCache(); SearchIndex.clear(); a.toast("بتتحدّث القوائم أول ما تفتح كل قسم")
         })
         add(a.listRow(R.drawable.ic_user, "تعديل الحساب / حساب آخر") { a.showLogin(acc) })
 

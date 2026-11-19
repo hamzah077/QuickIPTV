@@ -32,6 +32,14 @@ for cid, cname in SER_CATS:
                        "category_id": cid, "category_ids": [int(cid)]})
         n += 1
 
+for i in range(30000):
+    vods.append({"num": n, "name": f"Movie {i} The Film {random.randint(1990, 2026)}", "stream_type": "movie", "stream_id": 100000 + i,
+                 "stream_icon": f"{HOST}/img/{i % 50}.png", "rating": "6", "added": str(1600000000 + i), "category_id": "105",
+                 "container_extension": "mkv"})
+LIVE = [{"num": i, "name": f"قناة {i}" if i < 30 else f"AR: Channel {i} HD", "stream_id": i, "stream_icon": f"{HOST}/img/{i % 50}.png",
+         "epg_channel_id": "", "category_id": "1", "tv_archive": 0} for i in range(1, 6000)]
+VOD_CATS.append(("105", "أفلام كثيرة"))
+
 def series_info(sid):
     eps = {"1": [{"id": str(sid * 10 + e), "episode_num": e, "title": f"الحلقة {e}", "container_extension": "mp4",
                   "season": 1, "info": {"movie_image": f"{HOST}/img/{e}.png", "duration_secs": 2700}} for e in range(1, 6)]}
@@ -71,7 +79,7 @@ class H(BaseHTTPRequestHandler):
         if a is None: return self.send({"user_info": {"username": "test", "auth": 1, "status": "Active", "exp_date": "1900000000", "max_connections": "3", "active_cons": "0"},
                                          "server_info": {"url": "10.0.2.2", "port": "8000", "server_protocol": "http", "timezone": "Asia/Riyadh"}})
         if a == "get_live_categories": return self.send([{"category_id": "1", "category_name": "رياضة", "parent_id": 0}])
-        if a == "get_live_streams": return self.send([{"num": i, "name": f"قناة {i}", "stream_id": i, "stream_icon": f"{HOST}/img/{i}.png", "epg_channel_id": "", "category_id": "1", "tv_archive": 0} for i in range(1, 30)])
+        if a == "get_live_streams": return self.send(LIVE)
         if a == "get_vod_categories": return self.send([{"category_id": c, "category_name": nm, "parent_id": 0} for c, nm in VOD_CATS])
         if a == "get_series_categories": return self.send([{"category_id": c, "category_name": nm, "parent_id": 0} for c, nm in SER_CATS])
         if a == "get_vod_streams": return self.send(vods)

@@ -107,6 +107,7 @@ class LibraryScreen(private val a: MainActivity, private val series: Boolean) : 
         val byCat = all.groupBy { it.categoryId }
         val list = ArrayList<Shelf>()
         val favIds = Store.favs(kind)
+        builtFavs = favIds
         if (favIds.isNotEmpty()) {
             val m = all.associateBy { it.id }
             list.add(Shelf(FAV, "المفضلة", favIds.mapNotNull { m[it] }))
@@ -166,7 +167,11 @@ class LibraryScreen(private val a: MainActivity, private val series: Boolean) : 
         return false
     }
 
-    override fun onShow() { if (all.isNotEmpty()) buildShelves() }
+    /** نعيد بناء الصفوف بس لو المفضلة تغيّرت (غير كذا الصفحة تبقى زي ما هي: نفس المكان ونفس الصور). */
+    private var builtFavs: List<String>? = null
+    override fun onShow() {
+        if (all.isNotEmpty() && Store.favs(kind) != builtFavs) buildShelves()
+    }
 
     override fun focusDefault() {
         if (gridBox.visibility == View.VISIBLE) grid.post { (grid.getChildAt(0) ?: grid).requestFocus() }
