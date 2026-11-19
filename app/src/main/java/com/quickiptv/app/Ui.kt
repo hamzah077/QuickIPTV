@@ -107,7 +107,7 @@ fun Context.focusBg(
         // الإطار يظهر ويختفي بتلاشي ناعم بدل ما يقفز
         setEnterFadeDuration(130)
         setExitFadeDuration(110)
-        addState(intArrayOf(android.R.attr.state_focused), rounded(C.SURFACE2, r, Color.WHITE, sw))
+        addState(intArrayOf(android.R.attr.state_focused), rounded(0x4D7AA2FF, r, 0xB37AA2FF.toInt(), sw))
         addState(intArrayOf(android.R.attr.state_pressed), rounded(pressed, r))
         addState(intArrayOf(android.R.attr.state_selected), rounded(selected, r))
         addState(intArrayOf(android.R.attr.state_activated), rounded(selected, r))
@@ -395,11 +395,32 @@ fun android.app.Activity.installFocusMotion() {
         if (eligible(old)) old!!.animate().scaleX(1f).scaleY(1f).setDuration(120).setInterpolator(interp).start()
         if (eligible(new)) {
             val v = new!!
-            // صف عريض (قناة/حلقة/إعداد) تكبير بسيط؛ زر أو بطاقة أوضح
-            val s = when { v.width > screenW * 0.4 -> 1.015f; v.width > v.height * 3 -> 1.025f; else -> 1.05f }
-            v.animate().scaleX(s).scaleY(s).setDuration(140).setInterpolator(interp).start()
+            // الصفوف العريضة (قنوات/تصنيفات/حلقات) تتلوّن بس بدون تكبير — عشان ما تطلع عن حدود القائمة وتنقص
+            if (v.width <= v.height * 3 && v.width <= screenW * 0.4)
+                v.animate().scaleX(1.05f).scaleY(1.05f).setDuration(140).setInterpolator(interp).start()
         }
+        marquee(old, false)
+        marquee(new, true)
     }
+}
+
+/** الاسم الطويل داخل العنصر المحدد يتحرك (يمشي) عشان يبين كامل، ويرجع "…" لما تطلع منه. */
+private fun marquee(v: View?, on: Boolean) {
+    if (v == null) return
+    if (v is TextView) {
+        if (v.maxLines != 1 || v.ellipsize == null) return
+        if (on) {
+            v.setSingleLine(true)
+            v.ellipsize = TextUtils.TruncateAt.MARQUEE
+            v.marqueeRepeatLimit = -1
+            v.isSelected = true
+        } else {
+            v.isSelected = false
+            v.ellipsize = TextUtils.TruncateAt.END
+        }
+        return
+    }
+    if (v is ViewGroup) for (i in 0 until v.childCount) marquee(v.getChildAt(i), on)
 }
 
 /** يحسب الإزاحة اللي تخلي العنصر المحدد في نص القائمة. */

@@ -69,7 +69,8 @@ class LibraryScreen(private val a: MainActivity, private val series: Boolean) : 
         gridBox.addView(sortRow)
         grid.adapter = gridPosters
         grid.setHasFixedSize(true)
-        grid.setPadding(a.dp(8), 0, a.dp(8), 0)
+        grid.setPadding(a.dp(8), a.dp(8), a.dp(8), a.dp(8))
+        grid.clipToPadding = false
         grid.layoutManager = SmoothGridLM(a, 3)
         grid.addOnLayoutChangeListener { v, l, _, r, _, _, _, _, _ ->
             val span = maxOf(2, (r - l - v.paddingLeft - v.paddingRight) / (posterW + a.dp(10)))
@@ -235,7 +236,7 @@ class LibraryScreen(private val a: MainActivity, private val series: Boolean) : 
                 isNestedScrollingEnabled = false
                 overScrollMode = View.OVER_SCROLL_NEVER
                 clipToPadding = false
-                setPadding(a.dp(10), 0, a.dp(10), 0)
+                setPadding(a.dp(10), a.dp(8), a.dp(10), a.dp(8))
                 horizontalInVertical()
             }
             root.addView(strip, lp(MATCH, WRAP))

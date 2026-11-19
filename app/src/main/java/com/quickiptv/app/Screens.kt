@@ -55,7 +55,7 @@ fun MainActivity.posterRow(items: List<Vod>, posterW: Int, onClick: (Vod) -> Uni
         itemAnimator = null
         clipToPadding = false
         overScrollMode = View.OVER_SCROLL_NEVER
-        setPadding(dp(if (tv) 24 else 12), 0, dp(if (tv) 24 else 12), 0)
+        setPadding(dp(if (tv) 24 else 12), dp(8), dp(if (tv) 24 else 12), dp(8))
         layoutDirection = View.LAYOUT_DIRECTION_RTL
         horizontalInVertical()
     }
@@ -284,7 +284,7 @@ class HomeScreen(private val a: MainActivity) : Screen, EpgAware {
     }
 
     private fun hRow(): Pair<HorizontalScrollView, LinearLayout> {
-        val row = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL; setPadding(padH - a.dp(4), 0, padH - a.dp(4), 0) }
+        val row = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL; setPadding(padH - a.dp(4), a.dp(6), padH - a.dp(4), a.dp(6)) }
         return HorizontalScrollView(a).apply { addView(row); isHorizontalScrollBarEnabled = false; overScrollMode = View.OVER_SCROLL_NEVER; clipToPadding = false } to row
     }
 

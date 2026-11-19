@@ -12,8 +12,13 @@ sh("shell", "am", "start", "-n", "com.quickiptv.app/.MainActivity", "-e", "serve
 time.sleep(10); shot("tv01_home"); tree("tv01_home")
 key(RIGHT, 6); time.sleep(1); shot("tv02_rail_open"); tree("tv02_rail")       # RTL: القائمة يمين
 key(DOWN, 3); key(OK); time.sleep(7); shot("tv03_live"); tree("tv03_live")      # الرئيسية→بحث→المفضلة→مباشر
-key(OK); time.sleep(6); shot("tv04_live_preview_schedule")
-key(OK); time.sleep(6); shot("tv05_player")
+key(OK); time.sleep(6); shot("tv04_live_preview_schedule"); time.sleep(3); shot("tv04b_preview_later")
+# تكبير ← تصغير مرتين: نصوّر مرتين بينهم 3 ثواني (لو نفس الصورة = البث واقف)
+key(OK); time.sleep(5); shot("tv05_full1"); time.sleep(3); shot("tv05_full1b")
+key(BACK); time.sleep(4); shot("tv05_small1"); time.sleep(3); shot("tv05_small1b")
+key(OK); time.sleep(5); shot("tv05_full2"); time.sleep(3); shot("tv05_full2b")
+key(BACK); time.sleep(4); shot("tv05_small2"); time.sleep(3); shot("tv05_small2b")
+key(OK); time.sleep(5); shot("tv05_player")
 key(OK); time.sleep(2); shot("tv06_player_panel"); tree("tv06_panel")
 key(DOWN, 2); key(OK); time.sleep(5); shot("tv07_switched")
 key(BACK); time.sleep(4); shot("tv08_back_live")
