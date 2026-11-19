@@ -69,6 +69,12 @@ class DownloadsScreen(private val a: MainActivity) : Screen {
             subtitle = "المحمّل ${fmtBytes(Downloads.usedSpace())}" + (if (active > 0) " · $active قيد التحميل" else "") +
                 "\nالملفات داخل التطبيق: تنحذف لو حذفت التطبيق") { chooseParallel() })
         col.addView(a.divider())
+        val limit = Session.userInfo?.optString("max_connections")?.toIntOrNull() ?: 0
+        col.addView(a.listRow(R.drawable.ic_refresh, "مسرّع التحميل",
+            value = if (Downloads.connections > 1) "${Downloads.connections} اتصالات" else "متوقف",
+            subtitle = "يقسم الملف ويحمّله بأكثر من اتصال بنفس الوقت" +
+                (if (limit in 1..2) "\nاشتراكك يسمح بـ $limit اتصال — المسرّع ينحد تلقائياً عشان ما ينحظر" else "")) { chooseConnections() })
+        col.addView(a.divider())
 
         // الفلاتر
         val chips = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL; setPadding(a.dp(12), a.dp(12), a.dp(12), a.dp(6)) }
@@ -163,7 +169,7 @@ class DownloadsScreen(private val a: MainActivity) : Screen {
         r.status.text = when {
             d.status == "downloading" && d.waiting -> "متوقف أثناء المشاهدة — يكمّل تلقائياً بعدها"
             d.status == "downloading" && d.error.isNotEmpty() -> d.error
-            d.status == "downloading" -> if (d.speed > 0) "السرعة ${fmtBytes(d.speed)}" + (if (d.total > 0) " · متبقي \u200E${fmtTime((d.total - d.received) / d.speed.coerceAtLeast(1))}\u200E" else "") else "جاري الاتصال…"
+            d.status == "downloading" -> (if (d.conns > 1) "⚡ ${d.conns} اتصالات · " else "") + if (d.speed > 0) "السرعة ${fmtBytes(d.speed)}" + (if (d.total > 0) " · متبقي \u200E${fmtTime((d.total - d.received) / d.speed.coerceAtLeast(1))}\u200E" else "") else "جاري الاتصال…"
             d.status == "queued" -> "في الانتظار"
             d.status == "paused" -> "متوقف مؤقتاً"
             d.status == "completed" -> "✓ مكتمل · يشتغل بدون إنترنت"
@@ -286,6 +292,15 @@ class DownloadsScreen(private val a: MainActivity) : Screen {
     private fun confirm(msg: String, ok: () -> Unit) {
         AlertDialog.Builder(a, android.R.style.Theme_Material_Dialog_Alert)
             .setMessage(msg).setPositiveButton("نعم") { _, _ -> ok() }.setNegativeButton("لا", null).show()
+    }
+
+    private fun chooseConnections() {
+        val opts = arrayOf(1, 2, 4, 6, 8)
+        val labels = opts.map { if (it == 1) "متوقف (اتصال واحد)" else "$it اتصالات" }.toTypedArray()
+        AlertDialog.Builder(a, android.R.style.Theme_Material_Dialog_Alert)
+            .setTitle("مسرّع التحميل")
+            .setSingleChoiceItems(labels, opts.indexOf(Downloads.connections).coerceAtLeast(0)) { dlg, w -> Downloads.connections = opts[w]; dlg.dismiss(); rebuild() }
+            .show()
     }
 
     private fun chooseParallel() {

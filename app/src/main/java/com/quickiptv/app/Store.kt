@@ -85,6 +85,11 @@ object Store {
     }
 
     // ---------- إعدادات عامة ----------
+    /** المسرّع: عدد الاتصالات لكل ملف. */
+    var dlConnections: Int
+        get() = p.getInt("dlConnections", 4)
+        set(v) = p.edit().putInt("dlConnections", v).apply()
+
     /** عدد التحميلات بنفس الوقت. */
     var dlParallel: Int
         get() = p.getInt("dlParallel", 2)

@@ -47,6 +47,16 @@ class Dl(
 ) {
     @Volatile var speed: Long = 0
     @Volatile var waiting: Boolean = false     // ينتظر يخلص المشاهدة (حد اتصالات الاشتراك)
+    @Volatile var conns: Int = 0               // كم اتصال شغّال الحين (المسرّع)
+    /** أجزاء الملف (المسرّع): كل جزء [بداية، وين وصل، نهاية]. فاضي = تحميل عادي باتصال واحد. */
+    @Volatile var segs: List<Seg> = emptyList()
+
+    class Seg(val start: Long, @Volatile var pos: Long, @Volatile var end: Long) {
+        @Volatile var owned = false
+        val left get() = end - pos
+    }
+
+    fun segsString(): String = segs.joinToString(";") { "${it.start}:${it.pos}:${it.end}" }
 
     val active get() = status == "queued" || status == "downloading"
     val frac get() = if (total > 0) (received.toDouble() / total).coerceIn(0.0, 1.0) else 0.0
@@ -56,6 +66,7 @@ class Dl(
         .put("title", title).put("group", group).put("seriesId", seriesId).put("season", season).put("epNum", epNum)
         .put("poster", poster).put("url", url).put("ext", ext).put("path", path).put("status", status)
         .put("received", received).put("total", total).put("error", error).put("addedAt", addedAt)
+        .put("segs", segsString())
 
     companion object {
         fun from(o: JSONObject) = Dl(
@@ -64,7 +75,12 @@ class Dl(
             o.optString("poster"), o.optString("url"), o.optString("ext", "mp4"), o.optString("path"),
             o.optString("status", "paused"), o.optLong("received"), o.optLong("total"), o.optString("error"),
             o.optLong("addedAt", System.currentTimeMillis()),
-        )
+        ).apply {
+            segs = o.optString("segs").split(";").mapNotNull { p ->
+                val x = p.split(":").mapNotNull { it.toLongOrNull() }
+                if (x.size == 3) Seg(x[0], x[1], x[2]) else null
+            }
+        }
     }
 }
 
@@ -94,6 +110,14 @@ object Downloads {
         get() = Store.dlParallel
         set(v) { Store.dlParallel = v.coerceIn(1, 4); pump() }
 
+    /** المسرّع: كم اتصال لكل ملف (1 = متوقف). ينحدّ تلقائياً بحد اتصالات اشتراكك. */
+    var connections: Int
+        get() = Store.dlConnections
+        set(v) { Store.dlConnections = v.coerceIn(1, 8) }
+
+    private const val ACCEL_MIN = 8L * 1024 * 1024        // الملفات الأصغر من كذا: اتصال واحد يكفي
+    private const val MIN_SPLIT = 2L * 1024 * 1024        // أصغر جزء نقسمه
+
     fun init(c: Context) {
         ctx = c.applicationContext
         dbFile = File(ctx.filesDir, "downloads.json")
@@ -104,7 +128,7 @@ object Downloads {
         // بعد إعادة تشغيل التطبيق: اللي كان شغّال يرجع للطابور ويكمل من نفس المكان
         items.forEach { d ->
             if (d.status == "downloading") d.status = "queued"
-            if (d.status != "completed") d.received = File(d.path + ".part").length()
+            if (d.status != "completed") d.received = if (d.segs.isNotEmpty()) d.segs.sumOf { it.pos - it.start } else File(d.path + ".part").length()
         }
     }
 
@@ -132,7 +156,7 @@ object Downloads {
         if (!force && now - lastSave < 3000) return
         lastSave = now
         val txt = synchronized(lock) { JSONArray().also { a -> items.forEach { a.put(it.toJson()) } }.toString() }
-        runCatching { File(dbFile.path + ".tmp").apply { writeText(txt); renameTo(dbFile) } }
+        synchronized(dbFile) { runCatching { File(dbFile.path + ".tmp").apply { writeText(txt); renameTo(dbFile) } } }
     }
 
     private fun emit(d: Dl?) {
@@ -255,6 +279,11 @@ object Downloads {
         false
     }
 
+    /** اتصال إضافي للمسرّع: ياخذ مقعد لو فيه فاضي، وإلا يرجع على طول (ما ينتظر). */
+    private fun tryAcquire(): Boolean = synchronized(lock) {
+        if (activeConns < budget()) { activeConns++; true } else false
+    }
+
     private fun release() = synchronized(lock) { activeConns = (activeConns - 1).coerceAtLeast(0); lock.notifyAll() }
     private fun shouldYield(): Boolean = synchronized(lock) { activeConns > budget() }
 
@@ -311,30 +340,40 @@ object Downloads {
 
     private class HttpCode(val code: Int) : IOException("السيرفر رد بخطأ $code")
 
+    /** يفتح اتصال (يتبع التحويلات) مع Range اختياري. */
+    private fun open(url: String, from: Long, to: Long = -1): HttpURLConnection {
+        var u = url
+        for (hop in 0..4) {
+            val c = (URL(u).openConnection() as HttpURLConnection).apply {
+                connectTimeout = 15000; readTimeout = 30000
+                instanceFollowRedirects = false
+                setRequestProperty("User-Agent", Xtream.UA)
+                setRequestProperty("Accept-Encoding", "identity")
+                if (from > 0 || to >= 0) setRequestProperty("Range", "bytes=$from-" + (if (to >= 0) "$to" else ""))
+            }
+            val code = c.responseCode
+            if (code in 300..399) {
+                u = URL(URL(u), c.getHeaderField("Location") ?: throw IOException("تحويل بدون رابط")).toString()
+                c.disconnect()
+                continue
+            }
+            return c
+        }
+        throw IOException("تحويلات كثيرة")
+    }
+
     private fun fetch(d: Dl, stop: AtomicBoolean) {
         val part = File(d.path + ".part")
         part.parentFile?.mkdirs()
+        // استئناف تحميل مسرّع: كل جزء يكمل من مكانه
+        if (d.segs.isNotEmpty() && d.total > 0 && part.exists() && part.length() == d.total) {
+            accelerated(d, stop, part, null)
+            return
+        }
+        d.segs = emptyList()
         var have = if (part.exists()) part.length() else 0L
-        var u = d.url
-        var c: HttpURLConnection? = null
+        val conn = open(d.url, have)
         try {
-            for (hop in 0..4) {
-                c = (URL(u).openConnection() as HttpURLConnection).apply {
-                    connectTimeout = 15000; readTimeout = 30000
-                    instanceFollowRedirects = false
-                    setRequestProperty("User-Agent", Xtream.UA)
-                    setRequestProperty("Accept-Encoding", "identity")
-                    if (have > 0) setRequestProperty("Range", "bytes=$have-")
-                }
-                val code = c.responseCode
-                if (code in 300..399) {
-                    u = URL(URL(u), c.getHeaderField("Location") ?: throw IOException("تحويل بدون رابط")).toString()
-                    c.disconnect(); c = null
-                    continue
-                }
-                break
-            }
-            val conn = c ?: throw IOException("تحويلات كثيرة")
             val code = conn.responseCode
             if (code == 416 && have > 0 && d.total > 0 && have >= d.total) { finish(d, part); return }
             if (code != 200 && code != 206) throw HttpCode(code)
@@ -344,33 +383,199 @@ object Downloads {
             if (d.total > 0 && freeSpace() < (d.total - have) + 50L * 1024 * 1024) throw IOException("المساحة ما تكفي على الجهاز")
             d.received = have; d.error = ""
             emit(d)
-            RandomAccessFile(part, "rw").use { out ->
-                out.setLength(have); out.seek(have)
-                conn.inputStream.use { ins ->
-                    val buf = ByteArray(CHUNK)
-                    var winBytes = 0L
-                    var winStart = System.currentTimeMillis()
-                    var lastEmit = 0L
-                    while (true) {
-                        if (stop.get()) return
-                        if (shouldYield()) { d.speed = 0; emit(d); throw Yield() }
-                        val n = ins.read(buf)
-                        if (n < 0) break
-                        out.write(buf, 0, n)
-                        d.received += n
-                        winBytes += n
-                        val now = System.currentTimeMillis()
-                        if (now - winStart >= 1000) { d.speed = winBytes * 1000 / (now - winStart); winBytes = 0; winStart = now }
-                        if (now - lastEmit >= 700) { lastEmit = now; emit(d); persist(force = false) }
-                    }
+            // المسرّع: ملف كبير من البداية، والسيرفر يقبل الأجزاء، وفيه اتصالات فاضية
+            val ranges = code == 206 || conn.getHeaderField("Accept-Ranges")?.contains("bytes", true) == true
+            if (have == 0L && ranges && d.total >= ACCEL_MIN && connections > 1 && budgetFree() > 0) {
+                RandomAccessFile(part, "rw").use { it.setLength(d.total) }       // نحجز المساحة كاملة
+                accelerated(d, stop, part, conn)
+                return
+            }
+            single(d, stop, part, conn, have)
+        } finally {
+            conn.disconnect()
+        }
+    }
+
+    private fun budgetFree(): Int = synchronized(lock) { budget() - activeConns }
+
+    /** تحميل عادي باتصال واحد. */
+    private fun single(d: Dl, stop: AtomicBoolean, part: File, conn: HttpURLConnection, have: Long) {
+        RandomAccessFile(part, "rw").use { out ->
+            out.setLength(have); out.seek(have)
+            conn.inputStream.use { ins ->
+                val buf = ByteArray(CHUNK)
+                var winBytes = 0L
+                var winStart = System.currentTimeMillis()
+                var lastEmit = 0L
+                d.conns = 1
+                while (true) {
+                    if (stop.get()) return
+                    if (shouldYield()) { d.speed = 0; emit(d); throw Yield() }
+                    val n = ins.read(buf)
+                    if (n < 0) break
+                    out.write(buf, 0, n)
+                    d.received += n
+                    winBytes += n
+                    val now = System.currentTimeMillis()
+                    if (now - winStart >= 1000) { d.speed = winBytes * 1000 / (now - winStart); winBytes = 0; winStart = now }
+                    if (now - lastEmit >= 700) { lastEmit = now; emit(d); persist(force = false) }
                 }
             }
-            if (d.total > 0 && d.received < d.total) throw IOException("انقطع التحميل قبل ما يكمل")
-            if (d.total <= 0) d.total = d.received
-            finish(d, part)
-        } finally {
-            c?.disconnect()
         }
+        if (d.total > 0 && d.received < d.total) throw IOException("انقطع التحميل قبل ما يكمل")
+        if (d.total <= 0) d.total = d.received
+        finish(d, part)
+    }
+
+    /**
+     * المسرّع: الملف ينقسم أجزاء وكل اتصال يحمّل جزء بنفس الوقت.
+     * لما يخلص اتصال جزئه، ياخذ نص أكبر جزء باقي (عشان كلهم يخلصون مع بعض = أسرع).
+     * عدد الاتصالات ينحد بحد اشتراكك، ولو بدأت مشاهدة تتنازل الاتصالات الإضافية فوراً.
+     */
+    private fun accelerated(d: Dl, stop: AtomicBoolean, part: File, first: HttpURLConnection?) {
+        val segLock = Any()
+        if (d.segs.isEmpty()) d.segs = listOf(Dl.Seg(0, 0, d.total))
+        d.segs.forEach { it.owned = false }
+        val bytes = java.util.concurrent.atomic.AtomicLong()
+        val failed = java.util.concurrent.atomic.AtomicReference<Exception?>(null)
+        val helpersStop = AtomicBoolean(false)
+        val active = java.util.concurrent.atomic.AtomicInteger(0)
+        // حد السيرفر الفعلي: أول ما يرفض اتصال إضافي نوقف عند العدد اللي قبله (تكرار الرفض ممكن يحظر الاشتراك)
+        val cap = java.util.concurrent.atomic.AtomicInteger(minOf(connections, 8))
+
+        /** جزء بدون صاحب (توقف قبل)، وإلا نقسم أكبر جزء باقي. */
+        fun claim(): Dl.Seg? = synchronized(segLock) {
+            d.segs.firstOrNull { !it.owned && it.left > 0 }?.let { it.owned = true; return it }
+            val big = d.segs.filter { it.owned }.maxByOrNull { it.left } ?: return null
+            if (big.left < MIN_SPLIT * 2) return null
+            val mid = big.pos + big.left / 2
+            val s = Dl.Seg(mid, mid, big.end).apply { owned = true }
+            big.end = mid
+            d.segs = d.segs + s
+            s
+        }
+
+        /** يحمّل جزء لين يخلص (نهايته ممكن تقصر لو أحد أخذ نصه). */
+        fun run(seg: Dl.Seg, preOpened: HttpURLConnection?, isMain: Boolean, onFirst: (() -> Unit)? = null) {
+            var firstHook = onFirst
+            val c = preOpened ?: open(d.url, seg.pos, seg.end - 1)
+            try {
+                val code = c.responseCode
+                if (preOpened == null && code != 206) throw HttpCode(if (code == 200) 416 else code)
+                RandomAccessFile(part, "rw").use { out ->
+                    out.seek(seg.pos)
+                    c.inputStream.use { ins ->
+                        val buf = ByteArray(CHUNK)
+                        while (true) {
+                            if (stop.get()) return
+                            if (!isMain && (helpersStop.get() || shouldYield())) return
+                            val want = synchronized(segLock) { seg.end - seg.pos }
+                            if (want <= 0) return
+                            val n = ins.read(buf, 0, minOf(buf.size.toLong(), want).toInt())
+                            if (n < 0) { if (synchronized(segLock) { seg.end - seg.pos } > 0) throw IOException("انقطع الجزء قبل ما يكمل"); return }
+                            out.write(buf, 0, n)
+                            synchronized(segLock) { seg.pos += n }
+                            bytes.addAndGet(n.toLong())
+                            firstHook?.let { firstHook = null; it() }
+                        }
+                    }
+                }
+            } finally {
+                c.disconnect()
+                synchronized(segLock) { seg.owned = false }
+            }
+        }
+
+        // الاتصالات الإضافية: نفتحها وحدة وحدة — الجديدة ما تبدأ إلا لما اللي قبلها يوصلها بيانات.
+        // أول ما يرفض السيرفر اتصال نثبت على العدد اللي اشتغل (بدون ما نكرر محاولات مرفوضة).
+        val helpers = ArrayList<Thread>()
+        val pending = AtomicBoolean(false)
+        val okConns = java.util.concurrent.atomic.AtomicInteger(1)     // الأساسي + الإضافية اللي اشتغلت فعلاً
+        fun spawnOne() {
+            synchronized(helpers) {
+                if (pending.get() || stop.get() || helpersStop.get()) return
+                if (1 + helpers.count { it.isAlive } >= cap.get()) return
+                if (!tryAcquire()) return
+                pending.set(true)
+                active.incrementAndGet()
+                helpers += Thread({
+                    var errors = 0
+                    var working = false
+                    try {
+                        while (!stop.get() && !helpersStop.get()) {
+                            val seg = claim() ?: break
+                            try {
+                                run(seg, null, false) {
+                                    if (!working) { working = true; okConns.incrementAndGet() }
+                                    if (pending.compareAndSet(true, false)) spawnOne()      // اشتغل؟ نفتح اللي بعده
+                                }
+                                errors = 0
+                            } catch (e: HttpCode) {
+                                if (e.code in LIMIT_CODES) { cap.set(maxOf(1, okConns.get())); break }
+                                if (e.code == 416 || ++errors > 3) break
+                            } catch (e: Exception) { if (++errors > 3) break; Thread.sleep(1500L * errors) }
+                            if (shouldYield()) break
+                        }
+                    } catch (_: InterruptedException) {
+                    } finally {
+                        if (working) okConns.decrementAndGet()
+                        pending.compareAndSet(true, false)
+                        active.decrementAndGet(); release()
+                    }
+                }, "dl-acc").apply { priority = Thread.MIN_PRIORITY; start() }
+            }
+        }
+        fun spawnHelpers() = spawnOne()
+
+        // متابعة التقدّم والسرعة
+        val monitor = Thread({
+            var last = System.currentTimeMillis(); var lastBytes = 0L
+            while (!stop.get()) {
+                try { Thread.sleep(700) } catch (_: InterruptedException) { break }
+                val now = System.currentTimeMillis(); val b = bytes.get()
+                if (now - last >= 1000) { d.speed = (b - lastBytes) * 1000 / (now - last); lastBytes = b; last = now }
+                d.received = synchronized(segLock) { d.segs.sumOf { it.pos - it.start } }
+                d.conns = 1 + active.get()
+                emit(d); persist(force = false)
+            }
+        }, "dl-mon").apply { isDaemon = true; start() }
+
+        try {
+            // الاتصال الأساسي يحجز جزئه أول (قبل ما تبدأ الإضافية) — وإلا اثنين يحمّلون نفس الجزء ويخرب الملف
+            var mine: Dl.Seg? = if (first != null) synchronized(segLock) { d.segs[0].also { it.owned = true } } else claim()
+            spawnHelpers()
+            var pre = first
+            var errors = 0
+            // الاتصال الأساسي: يكمل الأجزاء لين ما يبقى شي
+            while (!stop.get()) {
+                if (shouldYield()) { helpersStop.set(true); helpers.forEach { it.join(5000) }; throw Yield() }
+                val seg = mine ?: claim()
+                mine = null
+                if (seg == null) {
+                    // ما بقى شي ناخذه: ننتظر الإضافية تخلص أجزاءها (أو ناخذ اللي يتركونه)
+                    if (helpers.none { it.isAlive }) break
+                    Thread.sleep(300); continue
+                }
+                val usePre = pre
+                pre = null
+                try { run(seg, usePre, true); errors = 0 }
+                catch (e: Exception) { if (++errors > 3) throw e; Thread.sleep(1500L * errors) }
+                if (helpers.count { it.isAlive } < cap.get() - 1) spawnHelpers()   // مقعد فضى؟ نرجع نسرّع
+            }
+            helpers.forEach { it.join(10000) }
+        } finally {
+            helpersStop.set(true)
+            monitor.interrupt()
+            d.received = synchronized(segLock) { d.segs.sumOf { it.pos - it.start } }
+            d.conns = 0
+            persist()
+        }
+        if (stop.get()) return
+        failed.get()?.let { throw it }
+        if (d.segs.any { it.left > 0 }) throw IOException("انقطع التحميل قبل ما يكمل")
+        d.segs = emptyList()
+        RandomAccessFile(part, "rw").use { it.setLength(d.total) }
+        finish(d, part)
     }
 
     private fun finish(d: Dl, part: File) {
@@ -473,7 +678,7 @@ class DownloadService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or (if (Build.VERSION.SDK_INT >= 23) PendingIntent.FLAG_IMMUTABLE else 0))
 
         fun notifyDone(ctx: Context, d: Dl) {
-            channel(ctx)
+            runCatching { channel(ctx) }
             val n = if (d.kind == "episode") "${d.group} · م${d.season} ح${d.epNum}" else d.title
             runCatching {
                 (ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(d.id.hashCode(),
