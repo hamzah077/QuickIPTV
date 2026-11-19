@@ -48,6 +48,9 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
     private val catAdapter = CategoryAdapter(a, horizontal = !a.tv) { selectCategory(it.id) }
     private val chAdapter = ChannelAdapter(a, { ch, i -> clicked(ch, i) }, { ch, _ -> channelMenu(ch) })
     private val catList = RecyclerView(a)
+    // الجوال بالوضع الأفقي: التصنيفات قائمة جانبية ظاهرة دايماً (بدل زر التصنيف)
+    private val catSideAdapter = CategoryAdapter(a, horizontal = false) { selectCategory(it.id) }
+    private val catSide = RecyclerView(a)
     private val chList = RecyclerView(a)
     private val playerView = PlayerView(a)
     private val title = a.text("", 15f, C.TEXT, bold = true)
@@ -98,6 +101,9 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
     init {
         catList.layoutManager = LinearLayoutManager(a, if (a.tv) LinearLayoutManager.VERTICAL else LinearLayoutManager.HORIZONTAL, false)
         catList.adapter = catAdapter
+        catSide.layoutManager = LinearLayoutManager(a)
+        catSide.adapter = catSideAdapter
+        catSide.setHasFixedSize(true)
         chList.layoutManager = LinearLayoutManager(a)
         chList.adapter = chAdapter
         chList.setHasFixedSize(true)
@@ -153,13 +159,15 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
         val wide = a.tv || a.landscape
         if (arrangedWide == wide) return
         arrangedWide = wide
-        listOf<View>(catList, chList, screenBox, title, nowText, phoneBar, searchBox, epgScroll, numBadge).forEach { (it.parent as? ViewGroup)?.removeView(it) }
+        listOf<View>(catList, catSide, chList, screenBox, title, nowText, phoneBar, searchBox, epgScroll, numBadge).forEach { (it.parent as? ViewGroup)?.removeView(it) }
         root.removeAllViews()
         if (wide) {
             val row = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL; setPadding(a.dp(12), a.dp(if (a.tv) 14 else 6), a.dp(12), a.dp(8)) }
             if (a.tv) row.addView(catList, lp(a.dp(200), MATCH).apply { marginEnd = a.dp(10) })
+            else row.addView(catSide, lp(0, MATCH, 0.62f).apply { marginEnd = a.dp(8) })      // التصنيفات جنب القنوات
             val mid = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL }
             if (!a.tv) {
+                catBtn.visibility = View.GONE          // التصنيفات ظاهرة بالقائمة الجانبية
                 phoneBar.setPadding(a.dp(4), a.dp(2), a.dp(4), a.dp(4))
                 mid.addView(phoneBar)
                 mid.addView(searchBox, lp(MATCH, WRAP).apply { setMargins(a.dp(4), 0, a.dp(4), a.dp(6)) })
@@ -186,6 +194,7 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
             colm.addView(screenBox, lp(MATCH, w * 9 / 16))
             colm.addView(title.apply { setPadding(a.dp(12), a.dp(8), a.dp(12), 0); textDirection = View.TEXT_DIRECTION_FIRST_STRONG })
             colm.addView(nowText.apply { setPadding(a.dp(12), a.dp(2), a.dp(12), 0) })
+            catBtn.visibility = View.VISIBLE
             phoneBar.setPadding(a.dp(12), a.dp(8), a.dp(8), a.dp(4))
             colm.addView(phoneBar)
             colm.addView(searchBox, lp(MATCH, WRAP).apply { setMargins(a.dp(12), a.dp(2), a.dp(12), a.dp(6)) })
@@ -214,6 +223,7 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
                 val (cats, chans) = withContext(Bg.io) { api.liveCategories() to api.liveStreams() }
                 all = chans
                 catAdapter.items = listOf(Category(Live.FAV, "المفضلة"), Category(Live.ALL, "كل القنوات")) + cats
+                catSideAdapter.items = catAdapter.items
                 val last = Store.lastCategory("live")
                 selectCategory(if (last.isNotEmpty() && catAdapter.items.any { it.id == last }) last else cats.firstOrNull()?.id ?: Live.ALL)
             } catch (e: Exception) {
@@ -225,6 +235,7 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
     private fun selectCategory(id: String) {
         catId = id
         catAdapter.selectedId = id
+        catSideAdapter.selectedId = id
         Store.setLastCategory("live", id)
         inCat = when (id) {
             Live.ALL -> all
@@ -236,7 +247,7 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
         applyFilter()
         chList.scrollToPosition(0)
         val i = catAdapter.items.indexOfFirst { it.id == id }
-        if (i >= 0) catList.scrollToPosition(i)
+        if (i >= 0) { catList.scrollToPosition(i); catSide.scrollToPosition(i) }
     }
 
     private fun applyFilter() {
