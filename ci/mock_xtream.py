@@ -42,13 +42,33 @@ class H(BaseHTTPRequestHandler):
     def send(self, body, ctype="application/json"):
         if isinstance(body, (dict, list)): body = json.dumps(body, ensure_ascii=False).encode()
         self.send_response(200); self.send_header("Content-Type", ctype); self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
+    def video(self):
+        import os, time
+        f = os.path.join(os.path.dirname(os.path.abspath(__file__)), "test.mp4")
+        data = open(f, "rb").read()
+        start = 0
+        rng = self.headers.get("Range")
+        if rng and rng.startswith("bytes="):
+            start = int(rng[6:].split("-")[0] or 0)
+            self.send_response(206); self.send_header("Content-Range", f"bytes {start}-{len(data)-1}/{len(data)}")
+        else:
+            self.send_response(200)
+        self.send_header("Content-Type", "video/mp4"); self.send_header("Accept-Ranges", "bytes")
+        self.send_header("Content-Length", str(len(data) - start)); self.end_headers()
+        try:
+            for i in range(start, len(data), 32768):       # ~250KB/ث عشان يبين التقدّم
+                self.wfile.write(data[i:i + 32768]); time.sleep(0.12)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+
     def do_GET(self):
         u = urlparse(self.path); q = {k: v[0] for k, v in parse_qs(u.query).items()}
+        if u.path.startswith("/movie/") or u.path.startswith("/series/"): return self.video()
         if u.path.startswith("/img/"):
             k = int(u.path.split("/")[-1].split(".")[0])
             return self.send(png(200, 290, ((k * 47) % 255, (k * 91) % 255, (k * 23) % 255)), "image/png")
         a = q.get("action")
-        if a is None: return self.send({"user_info": {"username": "test", "auth": 1, "status": "Active", "exp_date": "1900000000", "max_connections": "1", "active_cons": "0"},
+        if a is None: return self.send({"user_info": {"username": "test", "auth": 1, "status": "Active", "exp_date": "1900000000", "max_connections": "3", "active_cons": "0"},
                                          "server_info": {"url": "10.0.2.2", "port": "8000", "server_protocol": "http", "timezone": "Asia/Riyadh"}})
         if a == "get_live_categories": return self.send([{"category_id": "1", "category_name": "رياضة", "parent_id": 0}])
         if a == "get_live_streams": return self.send([{"num": i, "name": f"قناة {i}", "stream_id": i, "stream_icon": f"{HOST}/img/{i}.png", "epg_channel_id": "", "category_id": "1", "tv_archive": 0} for i in range(1, 30)])

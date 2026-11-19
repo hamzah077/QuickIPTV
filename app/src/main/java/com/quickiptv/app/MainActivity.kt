@@ -1,6 +1,7 @@
 package com.quickiptv.app
 
 import android.app.Activity
+import android.content.Intent
 import android.os.Bundle
 import android.view.Gravity
 import android.view.KeyEvent
@@ -60,7 +61,19 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         window.decorView.layoutDirection = View.LAYOUT_DIRECTION_RTL
         val acc = Store.current
+        intent?.getStringExtra("open")?.let { pendingOpen = it }
         if (acc == null) showLogin() else enter(acc, checkLogin = true)
+        Downloads.pump()        // يكمل التحميلات اللي ما خلصت
+    }
+
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        intent?.getStringExtra("open")?.let { pendingOpen = it }
+    }
+
+    companion object {
+        /** شاشة نفتحها أول ما نرجع (مثلاً التحميلات من صفحة الفيلم أو الإشعار). */
+        var pendingOpen: String? = null
     }
 
     fun showLogin(edit: Account? = null) {
@@ -151,6 +164,7 @@ class MainActivity : Activity() {
             "favorites" -> FavoritesScreen(this)
             "history" -> HistoryScreen(this)
             "epg" -> EpgScreen(this)
+            "downloads" -> DownloadsScreen(this)
             else -> SettingsScreen(this)
         }
     }
@@ -194,7 +208,7 @@ class MainActivity : Activity() {
     override fun onBackPressed() {
         when {
             current == "" -> super.onBackPressed()
-            current == "epg" || current == "history" || (!tv && (current == "search" || current == "favorites")) -> show("settings")
+            current == "epg" || current == "history" || current == "downloads" || (!tv && (current == "search" || current == "favorites")) -> show("settings")
             screens[current]?.onBack() == true -> {}
             current != "home" -> show("home")
             else -> super.onBackPressed()
@@ -203,6 +217,8 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        val p = pendingOpen
+        if (p != null && current != "") { pendingOpen = null; if (p != current) { openExtra(p); return } }
         screens[current]?.onShow()
     }
 

@@ -14,6 +14,7 @@ class App : Application(), ImageLoaderFactory {
         super.onCreate()
         instance = this
         Store.init(this)
+        Downloads.init(this)
     }
 
     override fun newImageLoader(): ImageLoader =

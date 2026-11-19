@@ -263,9 +263,21 @@ class PlayerActivity : Activity() {
         val url = intent.getStringExtra("url") ?: return finish()
         Store.addHistory(HistoryItem(key, type, title.text.toString(), sub.text.toString(),
             intent.getStringExtra("image") ?: "", url, intent.getStringExtra("seriesId") ?: ""))
-        start(url, intent.getLongExtra("start", 0))
+        val local = Downloads.localFile(key)
+        val startAt = intent.getLongExtra("start", 0)
+        if (local != null) {
+            sub.text = listOf(sub.text.toString(), "من التحميلات").filter { it.isNotEmpty() }.joinToString(" · ")
+            start(android.net.Uri.fromFile(local).toString(), startAt)
+        } else {
+            // المشاهدة تاخذ اتصال من حد الاشتراك؛ لو فيه تحميل ماسكه ننتظر لحظة لين يتنازل
+            Downloads.setWatching("vod", true); watchingVod = true
+            if (Downloads.mustYieldFor()) { loading.visibility = View.VISIBLE; scope.launch { delay(1200); start(url, startAt) } }
+            else start(url, startAt)
+        }
         pv.setControllerVisibilityListener(PlayerView.ControllerVisibilityListener { v -> topBar.visibility = v })
     }
+
+    private var watchingVod = false
 
     private fun saveProgress() {
         val p = player ?: return
@@ -337,6 +349,7 @@ class PlayerActivity : Activity() {
 
     override fun onDestroy() {
         saveProgress()
+        if (watchingVod) Downloads.setWatching("vod", false)
         scope.cancel()
         player?.removeListener(listener)
         pv.player = null

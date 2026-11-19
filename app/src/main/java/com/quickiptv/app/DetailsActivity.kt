@@ -31,6 +31,10 @@ class DetailsActivity : Activity() {
     private var ext = "mp4"
     private var seasons: Map<Int, List<Episode>> = emptyMap()
     private var season = 1
+    private var dlBtn: LinearLayout? = null
+    private val epDl = HashMap<String, FrameLayout>()      // ep:id -> زر التحميل في سطر الحلقة
+    private var seasonDlBtn: LinearLayout? = null
+    private val dlListener: (Dl?) -> Unit = { refreshDl() }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -122,6 +126,13 @@ class DetailsActivity : Activity() {
             actions.addView(View(this), lp(dp(8), 1))
             b.post { b.requestFocus() }
         }
+        if (!series) {
+            val b = button("تحميل", R.drawable.ic_download) { movieDlClick() }
+            dlBtn = b
+            actions.addView(b)
+            actions.addView(View(this), lp(dp(8), 1))
+            refreshDl()
+        }
         val kind = if (series) "series" else "movie"
         val fav = Store.isFav(kind, id)
         actions.addView(button(if (fav) "في المفضلة" else "المفضلة", R.drawable.ic_heart) {
@@ -152,7 +163,9 @@ class DetailsActivity : Activity() {
             seasonsRow.addView(button("الموسم $s", primary = s == season) { season = s; buildSeasons() })
             seasonsRow.addView(View(this), lp(dp(8), 1))
         }
+        seasonDlBtn = button("تحميل الموسم", R.drawable.ic_download) { downloadSeason() }.also { seasonsRow.addView(it) }
         episodesBox.removeAllViews()
+        epDl.clear()
         val list = seasons[season] ?: emptyList()
         var focus: View? = null
         list.forEach { e ->
@@ -189,10 +202,100 @@ class DetailsActivity : Activity() {
                 layoutDirection = View.LAYOUT_DIRECTION_LTR
             }, lp(MATCH, dp(3)).apply { topMargin = dp(6) })
             row.addView(c, lp(0, WRAP, 1f))
+            val dl = FrameLayout(this).apply {
+                background = focusBg(radius = 22)
+                isFocusable = true; isClickable = true
+                contentDescription = "تحميل الحلقة"
+                setOnClickListener { episodeDlClick(e) }
+            }
+            epDl["ep:${e.id}"] = dl
+            row.addView(dl, lp(dp(46), dp(46)).apply { marginStart = dp(6) })
             episodesBox.addView(row)
             if (focus == null && (h == null || h.pos < h.dur - 60)) focus = row
         }
         (focus ?: episodesBox.getChildAt(0))?.let { v -> v.post { v.requestFocus() } }
+        refreshDl()
+    }
+
+    // ---------- التحميل ----------
+    private fun askNotify() {
+        if (android.os.Build.VERSION.SDK_INT >= 33 && checkSelfPermission("android.permission.POST_NOTIFICATIONS") != android.content.pm.PackageManager.PERMISSION_GRANTED)
+            requestPermissions(arrayOf("android.permission.POST_NOTIFICATIONS"), 7)
+    }
+
+    private fun movieDlClick() {
+        val d = Downloads.find("movie:$id")
+        if (d == null) {
+            val api = Session.api ?: return
+            Downloads.add("movie:$id", "movie", name, api.vodUrl(id, ext), ext, icon)?.let { toast(it) } ?: run {
+                toast("انضاف للتحميلات"); askNotify()
+            }
+            refreshDl()
+        } else openDownloads()
+    }
+
+    private fun episodeDlClick(e: Episode) {
+        val key = "ep:${e.id}"
+        val d = Downloads.find(key)
+        when {
+            d == null -> { addEpisode(e); askNotify() }
+            d.status == "downloading" || d.status == "queued" -> Downloads.pause(d.id)
+            d.status == "paused" -> Downloads.resume(d.id)
+            d.status == "completed" -> android.app.AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+                .setMessage("الحلقة محمّلة وتشتغل بدون إنترنت.\nحذفها من الجهاز؟")
+                .setPositiveButton("حذف") { _, _ -> Downloads.remove(d.id) }
+                .setNegativeButton("إلغاء", null).show()
+        }
+        refreshDl()
+    }
+
+    private fun addEpisode(e: Episode): Boolean {
+        val api = Session.api ?: return false
+        return Downloads.add("ep:${e.id}", "episode", e.title.ifEmpty { "الحلقة ${e.num}" }, api.episodeUrl(e.id, e.ext), e.ext,
+            icon, group = name, seriesId = id, season = e.season, epNum = e.num) == null
+    }
+
+    private fun downloadSeason() {
+        val list = seasons[season] ?: return
+        val n = list.count { Downloads.find("ep:${it.id}") == null && addEpisode(it) }
+        toast(if (n > 0) "انضافت $n حلقة للتحميلات" else "كل حلقات الموسم في التحميلات")
+        if (n > 0) askNotify()
+        refreshDl()
+    }
+
+    private fun openDownloads() {
+        MainActivity.pendingOpen = "downloads"
+        startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP))
+        finish()
+    }
+
+    private fun toast(m: String) = android.widget.Toast.makeText(this, m, android.widget.Toast.LENGTH_SHORT).show()
+
+    /** يحدّث حالة أزرار التحميل بمكانها (بدون إعادة بناء الصفحة). */
+    private fun refreshDl() {
+        dlBtn?.let { b ->
+            val d = Downloads.find("movie:$id")
+            val (ic, label) = when {
+                d == null -> R.drawable.ic_download to "تحميل"
+                d.status == "completed" -> R.drawable.ic_check to "محمّل"
+                d.status == "paused" -> R.drawable.ic_pause to "متوقف ${(d.frac * 100).toInt()}%"
+                d.waiting -> R.drawable.ic_download to "بانتظار المشاهدة"
+                else -> R.drawable.ic_download to (if (d.total > 0) "جاري التحميل ${(d.frac * 100).toInt()}%" else "جاري التحميل…")
+            }
+            (b.getChildAt(0) as? ImageView)?.setImageResource(ic)
+            (b.getChildAt(b.childCount - 1) as? android.widget.TextView)?.text = label
+        }
+        epDl.forEach { (key, box) ->
+            val d = Downloads.find(key)
+            box.removeAllViews()
+            when {
+                d == null -> box.addView(icon(R.drawable.ic_download, C.TEXT2, 22), FrameLayout.LayoutParams(dp(22), dp(22), Gravity.CENTER))
+                d.status == "completed" -> box.addView(icon(R.drawable.ic_check, 0xFF6FCF97.toInt(), 22), FrameLayout.LayoutParams(dp(22), dp(22), Gravity.CENTER))
+                d.status == "paused" -> box.addView(icon(R.drawable.ic_pause, C.MUTED, 20), FrameLayout.LayoutParams(dp(20), dp(20), Gravity.CENTER))
+                else -> box.addView(text(if (d.total > 0) "${(d.frac * 100).toInt()}%" else "…", 11.5f, C.ACCENT, bold = true).apply { gravity = Gravity.CENTER },
+                    FrameLayout.LayoutParams(MATCH, MATCH))
+            }
+        }
     }
 
     private fun play(url: String, key: String, title: String, sub: String, start: Long, type: String) {
@@ -202,8 +305,14 @@ class DetailsActivity : Activity() {
             .putExtra("start", start))
     }
 
+    override fun onPause() {
+        super.onPause()
+        Downloads.removeListener(dlListener)
+    }
+
     override fun onResume() {
         super.onResume()
+        Downloads.addListener(dlListener)
         buildActions()
         if (series && seasons.isNotEmpty()) buildSeasons()
     }

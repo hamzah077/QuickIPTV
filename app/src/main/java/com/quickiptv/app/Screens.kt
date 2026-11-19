@@ -394,6 +394,11 @@ class SettingsScreen(private val a: MainActivity) : Screen {
             add(a.listRow(R.drawable.ic_search, "بحث") { a.openExtra("search") })
             add(a.listRow(R.drawable.ic_heart, "المفضلة") { a.openExtra("favorites") })
         }
+        val dls = Downloads.snapshot().filter { it.accId == Store.currentId }
+        val act = dls.count { it.active }
+        add(a.listRow(R.drawable.ic_download, "التحميلات",
+            value = if (act > 0) "$act قيد التحميل" else if (dls.isNotEmpty()) "${dls.count { it.status == "completed" }}" else "",
+            subtitle = "شاهد الأفلام والحلقات بدون إنترنت") { a.openExtra("downloads") })
         add(a.listRow(R.drawable.ic_history, "سجل المشاهدة") { a.openExtra("history") })
 
         col.addView(a.sectionHeader("الإعدادات"))

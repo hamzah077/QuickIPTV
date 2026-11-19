@@ -85,6 +85,11 @@ object Store {
     }
 
     // ---------- إعدادات عامة ----------
+    /** عدد التحميلات بنفس الوقت. */
+    var dlParallel: Int
+        get() = p.getInt("dlParallel", 2)
+        set(v) = p.edit().putInt("dlParallel", v).apply()
+
     var liveFormat: String
         get() = p.getString("liveFormat", "m3u8") ?: "m3u8"
         set(v) = p.edit().putString("liveFormat", v).apply()

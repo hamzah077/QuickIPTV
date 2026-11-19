@@ -25,7 +25,10 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
       - name: Start mock server
-        run: nohup python3 ci/mock_xtream.py > mock.log 2>&1 &
+        run: |
+          ffmpeg -loglevel error -f lavfi -i testsrc=size=640x360:rate=25 -t 40 -c:v libx264 -pix_fmt yuv420p -b:v 600k ci/test.mp4 || head -c 3000000 /dev/urandom > ci/test.mp4
+          ls -la ci/test.mp4
+          nohup python3 ci/mock_xtream.py > mock.log 2>&1 &
       - name: Run on emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:

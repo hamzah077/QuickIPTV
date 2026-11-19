@@ -3,6 +3,7 @@ package com.quickiptv.app
 import android.content.Context
 import androidx.annotation.OptIn
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
@@ -50,7 +51,7 @@ fun buildPlayer(ctx: Context, live: Boolean): ExoPlayer {
         .setEnableDecoderFallback(true)
         .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF)
     return ExoPlayer.Builder(ctx, renderers)
-        .setMediaSourceFactory(DefaultMediaSourceFactory(http))
+        .setMediaSourceFactory(DefaultMediaSourceFactory(DefaultDataSource.Factory(ctx, http)))   // http + ملفات محمّلة
         .setLoadControl(load)
         .build()
 }
@@ -77,12 +78,14 @@ object LivePlayer {
             return
         }
         url = u
+        Downloads.setWatching("live", true)
         p.setMediaItem(androidx.media3.common.MediaItem.fromUri(u))
         p.prepare()
         p.playWhenReady = true
     }
 
     fun release() {
+        Downloads.setWatching("live", false)
         player?.release()
         player = null
         url = ""
