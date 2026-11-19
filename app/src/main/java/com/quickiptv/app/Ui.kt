@@ -103,7 +103,7 @@ fun Context.focusBg(
 ): Drawable {
     val r = dpf(radius.toFloat())
     val sw = dp(2)
-    return StateListDrawable().apply {
+    val states = StateListDrawable().apply {
         // الإطار يظهر ويختفي بتلاشي ناعم بدل ما يقفز
         setEnterFadeDuration(130)
         setExitFadeDuration(110)
@@ -113,12 +113,28 @@ fun Context.focusBg(
         addState(intArrayOf(android.R.attr.state_activated), rounded(selected, r))
         addState(intArrayOf(), rounded(normal, r))
     }
+    if (isTv()) return states
+    // الجوال: موجة لمس ناعمة فوق الخلفية (مقصوصة على نفس الزوايا)
+    return android.graphics.drawable.RippleDrawable(ColorStateList.valueOf(0x2EFFFFFF), states, rounded(Color.WHITE, r))
+}
+
+/** انضغاط خفيف لما تلمس العنصر (الجوال)، ويرجع لما ترفع إصبعك أو تسحب. */
+fun View.pressScale(s: Float = 0.96f) {
+    setOnTouchListener { v, e ->
+        when (e.actionMasked) {
+            android.view.MotionEvent.ACTION_DOWN -> v.animate().scaleX(s).scaleY(s).setDuration(90).start()
+            android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL ->
+                v.animate().scaleX(1f).scaleY(1f).setDuration(150).setInterpolator(android.view.animation.DecelerateInterpolator()).start()
+        }
+        false       // ما نوقف الضغط ولا السحب
+    }
 }
 
 /** يكبّر العنصر شوي لما يتركز عليه (إحساس التلفزيون). */
 fun View.focusScale(scale: Float = 1.05f) {
     isFocusable = true
     setTag(R.id.own_focus_anim, true)
+    pressScale()
     setOnFocusChangeListener { v, has ->
         v.animate().scaleX(if (has) scale else 1f).scaleY(if (has) scale else 1f).setDuration(110).start()
     }
@@ -188,6 +204,7 @@ fun Context.listRow(
         isClickable = true
         background = focusBg(radius = 0)
         setOnClickListener { onClick() }
+        pressScale(0.985f)
     }
 }
 
@@ -222,6 +239,7 @@ fun Context.button(label: String, iconRes: Int = 0, primary: Boolean = false, on
         }
         addView(text(label, 14f, fg, bold = true))
         setOnClickListener { onClick() }
+        pressScale()
         focusScale(1.04f)
     }
 
@@ -236,6 +254,7 @@ fun Context.iconButton(res: Int, desc: String, size: Int = 44, onClick: () -> Un
             layoutParams = FrameLayout.LayoutParams(dp(22), dp(22), Gravity.CENTER)
         })
         setOnClickListener { onClick() }
+        pressScale(0.9f)
     }
 
 fun lp(w: Int, h: Int, weight: Float = 0f) = LinearLayout.LayoutParams(w, h, weight)
