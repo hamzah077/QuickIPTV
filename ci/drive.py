@@ -97,10 +97,10 @@ tap_text("مباشر"); time.sleep(5); shot("30_live_portrait")
 tap_text("قناة 1"); time.sleep(5); shot("30b_live_preview")
 sh("shell", "settings", "put", "system", "user_rotation", "1"); time.sleep(4); shot("31_live_land")
 tap_text("قناة 1"); time.sleep(6); shot("32_player_full")
-sh("shell", "input", "tap", "1170", "700"); time.sleep(1)
-if not tap_text("القنوات", tries=3):
-    sh("shell", "input", "keyevent", "23")          # OK بالريموت = قائمة القنوات
-time.sleep(2); shot("33_player_panel")
+sh("shell", "input", "tap", "1170", "700"); time.sleep(1); shot("32b_player_bar")
+open(f"{OUT}/tree_bar.txt", "wb").write(sh("shell", "dumpsys", "activity", "top"))
+sh("shell", "input", "keyevent", "23"); time.sleep(2); shot("33_player_panel")     # OK بالريموت = قائمة القنوات
+open(f"{OUT}/tree_panel.txt", "wb").write(sh("shell", "dumpsys", "activity", "top"))
 tap_text("قناة 3", tries=4); time.sleep(5); shot("34_player_switched")
 sh("shell", "input", "keyevent", "4"); time.sleep(4); shot("35_back_to_live")
 sh("shell", "input", "keyevent", "4"); time.sleep(3); shot("36_back_again")
