@@ -31,6 +31,8 @@ for idx, val in enumerate(["http://10.0.2.2:8000", "test", "test"]):
 shot("01b_filled")
 time.sleep(1); tap_text("دخول", contains=True); time.sleep(8); shot("02_home")
 tap_text("أفلام"); time.sleep(8); shot("03_movies")
+open(f"{OUT}/ui_movies_page.xml", "w").write(dump())
+open(f"{OUT}/viewtree_movies.txt", "wb").write(sh("shell", "dumpsys", "activity", "top"))
 sh("shell", "input", "swipe", "500", "1400", "500", "600", "400"); time.sleep(3); shot("04_movies_scrolled")
 tap_text("مسلسلات"); time.sleep(8); shot("05_series")
 tap_text("الكل", contains=True); time.sleep(4); shot("06_series_all")
