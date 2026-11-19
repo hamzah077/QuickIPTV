@@ -25,6 +25,7 @@ import kotlinx.coroutines.withContext
 import java.util.UUID
 
 fun MainActivity.field(hint: String, value: String = "", password: Boolean = false): EditText = EditText(this).apply {
+    typeface = Fonts.regular
     setText(value)
     this.hint = hint
     setHintTextColor(C.FAINT)
@@ -574,7 +575,7 @@ class EpgScreen(private val a: MainActivity) : Screen {
     override fun onShow() {
         col.removeAllViews(); first = null
         val head = a.listRow(R.drawable.ic_chev_right, "دليل البرامج", chevron = false) { a.show("settings") }
-        (head.getChildAt(2) as? LinearLayout)?.let { (it.getChildAt(0) as? TextView)?.apply { textSize = 20f; setTypeface(null, android.graphics.Typeface.BOLD) } }
+        (head.getChildAt(2) as? LinearLayout)?.let { (it.getChildAt(0) as? TextView)?.apply { textSize = 20f; typeface = Fonts.bold } }
         col.addView(head); first = head
 
         val chans = runCatching { Session.api?.let { if (it.hasLive()) it.liveStreams() else null } }.getOrNull() ?: emptyList()

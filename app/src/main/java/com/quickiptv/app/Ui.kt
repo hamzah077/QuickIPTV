@@ -20,6 +20,17 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
 
+/**
+ * خط IBM Plex Sans Arabic (رخصة OFL المفتوحة — نفس خط نسخة الكمبيوتر).
+ * عادي للنصوص، وSemiBold للعناوين (أوضح من Bold وما يطلع عن حدود السطر).
+ */
+object Fonts {
+    val regular: Typeface by lazy { load("IBMPlexSansArabic-Regular.ttf", Typeface.NORMAL) }
+    val bold: Typeface by lazy { load("IBMPlexSansArabic-SemiBold.ttf", Typeface.BOLD) }
+    private fun load(f: String, style: Int): Typeface =
+        runCatching { Typeface.createFromAsset(App.instance.assets, "fonts/$f") }.getOrElse { Typeface.defaultFromStyle(style) }
+}
+
 /** ألوان التطبيق (نفس ثيم نسخة الكمبيوتر الداكن). */
 object C {
     const val BG = 0xFF111317.toInt()
@@ -98,7 +109,7 @@ fun Context.text(
     text = s
     setTextSize(TypedValue.COMPLEX_UNIT_SP, size)
     setTextColor(color)
-    if (bold) typeface = Typeface.DEFAULT_BOLD
+    typeface = if (bold) Fonts.bold else Fonts.regular
     if (lines > 0) {
         maxLines = lines
         ellipsize = TextUtils.TruncateAt.END
@@ -303,4 +314,21 @@ fun RecyclerView.horizontalInVertical() {
         override fun onTouchEvent(rv: RecyclerView, e: android.view.MotionEvent) {}
         override fun onRequestDisallowInterceptTouchEvent(disallowIntercept: Boolean) {}
     })
+}
+
+// ---------------------------------------------------------------------
+// حركة خفيفة (شفافية + إزاحة بسيطة بطبقة رسم مؤقتة = سلسة حتى على الأجهزة الضعيفة)
+
+fun View.fadeIn(dy: Int = 0, dur: Long = 170) {
+    animate().cancel()
+    alpha = 0f; translationY = dy.toFloat()
+    animate().alpha(1f).translationY(0f).setDuration(dur)
+        .setInterpolator(android.view.animation.DecelerateInterpolator()).withLayer().start()
+}
+
+fun View.fadeOut(dy: Int = 0, dur: Long = 140, end: () -> Unit) {
+    animate().cancel()
+    animate().alpha(0f).translationY(dy.toFloat()).setDuration(dur)
+        .setInterpolator(android.view.animation.AccelerateInterpolator()).withLayer()
+        .withEndAction { alpha = 1f; translationY = 0f; end() }.start()
 }

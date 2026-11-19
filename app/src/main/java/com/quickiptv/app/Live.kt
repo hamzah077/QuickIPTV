@@ -457,6 +457,7 @@ fun remapDialog(a: MainActivity, ch: Channel, done: () -> Unit) {
     val q = EditText(a).apply { hint = "ابحث في قنوات الدليل…"; setTextColor(C.TEXT); setHintTextColor(C.FAINT); isSingleLine = true }
     val mode = Epg.mode(ch)
     col.addView(TextView(a).apply {
+        typeface = Fonts.regular
         text = when (mode) { "manual" -> "مربوطة يدوياً"; "none" -> "بدون دليل"; else -> "تلقائي" }
         setTextColor(C.MUTED)
     })

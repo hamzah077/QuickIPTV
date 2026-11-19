@@ -120,13 +120,16 @@ class PlayerActivity : Activity() {
             setOnClickListener { togglePause() }
             visibility = if (live) View.VISIBLE else View.GONE
         }
-        if (live) topBar.addView(FrameLayout(this).apply {
+        if (live) topBar.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER
             background = StateListFocus.make(this@PlayerActivity, 0x33FFFFFF)
             isFocusable = true; isClickable = true
             contentDescription = "القنوات"
-            addView(icon(R.drawable.ic_list, 0xFFFFFFFF.toInt(), 24), FrameLayout.LayoutParams(dp(24), dp(24), Gravity.CENTER))
+            setPadding(dp(12), 0, dp(14), 0)
+            addView(icon(R.drawable.ic_list, 0xFFFFFFFF.toInt(), 20))
+            addView(text("القنوات", 13.5f, 0xFFFFFFFF.toInt(), bold = true).apply { setPadding(dp(6), 0, 0, 0) })
             setOnClickListener { openPanel() }
-        }, lp(dp(46), dp(40)).apply { marginEnd = dp(10) })
+        }, lp(WRAP, dp(40)).apply { marginEnd = dp(10) })
         topBar.addView(pauseBtn, lp(dp(46), dp(40)).apply { marginEnd = dp(10) })
         topBar.addView(liveBtn)
         root.addView(topBar, FrameLayout.LayoutParams(MATCH, WRAP, Gravity.TOP))
@@ -263,6 +266,9 @@ class PlayerActivity : Activity() {
         val cur = Session.playlist.getOrNull(Session.playIndex)
         panelAdapter.playingId = cur?.id ?: ""
         panel.visibility = View.VISIBLE
+        panel.animate().cancel()
+        panel.translationX = panel.layoutParams.width.toFloat()          // تطلع من الجنب
+        panel.animate().translationX(0f).setDuration(200).setInterpolator(android.view.animation.DecelerateInterpolator()).withLayer().start()
         topBar.visibility = View.GONE
         hideJob?.cancel()
         val i = Session.playIndex
@@ -272,7 +278,9 @@ class PlayerActivity : Activity() {
 
     private fun closePanel() {
         if (!panelOpen) return
-        panel.visibility = View.GONE
+        panel.animate().cancel()
+        panel.animate().translationX(panel.layoutParams.width.toFloat()).setDuration(160).withLayer()
+            .withEndAction { panel.visibility = View.GONE; panel.translationX = 0f }.start()
         showBar()
     }
 
@@ -376,7 +384,7 @@ class PlayerActivity : Activity() {
                     when {
                         topBar.visibility == View.VISIBLE && liveBtn.isFocused -> { goLive(); showBar() }
                         topBar.visibility == View.VISIBLE && pauseBtn.isFocused -> { togglePause(); showBar() }
-                        topBar.visibility == View.VISIBLE && currentFocus != null && currentFocus !== pv -> return super.dispatchKeyEvent(event)
+                        topBar.visibility == View.VISIBLE && currentFocus?.parent === topBar -> return super.dispatchKeyEvent(event)
                         else -> openPanel()          // OK = قائمة القنوات (زي أجهزة الرسيفر)
                     }
                     return true

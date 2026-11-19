@@ -59,7 +59,7 @@ class DownloadsScreen(private val a: MainActivity) : Screen {
         val hadFocus = view.findFocus()?.tag as? String
         col.removeAllViews(); rows.clear(); groups.clear(); first = null
         val head = a.listRow(R.drawable.ic_chev_right, "التحميلات", chevron = false) { a.show("settings") }
-        (head.getChildAt(2) as? LinearLayout)?.let { (it.getChildAt(0) as? TextView)?.apply { textSize = 20f; setTypeface(null, android.graphics.Typeface.BOLD) } }
+        (head.getChildAt(2) as? LinearLayout)?.let { (it.getChildAt(0) as? TextView)?.apply { textSize = 20f; typeface = Fonts.bold } }
         col.addView(head); first = head
 
         val all = items()

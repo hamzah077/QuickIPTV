@@ -135,6 +135,7 @@ class LibraryScreen(private val a: MainActivity, private val series: Boolean) : 
         buildSort()
         applySort()
         gridBox.visibility = View.VISIBLE
+        gridBox.fadeIn(a.dp(24))
         grid.post { (grid.getChildAt(0) ?: grid).requestFocus() }
     }
 
@@ -162,7 +163,7 @@ class LibraryScreen(private val a: MainActivity, private val series: Boolean) : 
     }
 
     private fun closeGrid() {
-        gridBox.visibility = View.GONE
+        gridBox.fadeOut(a.dp(24)) { gridBox.visibility = View.GONE }
         rows.post { (rows.findViewHolderForAdapterPosition(lastRowFocus)?.itemView ?: rows).requestFocus() }
     }
 

@@ -200,7 +200,7 @@ class CategoryAdapter(
         val sel = c.id == selectedId
         h.t.isSelected = sel
         h.t.setTextColor(if (sel) (if (horizontal) C.PRIMARY_TEXT else C.TEXT) else C.TEXT2)
-        h.t.setTypeface(null, if (sel) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
+        h.t.typeface = if (sel) Fonts.bold else Fonts.regular
         h.t.setOnClickListener { onClick(c) }
     }
 }

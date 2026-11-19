@@ -196,6 +196,7 @@ class MainActivity : Activity() {
         content.removeAllViews()
         (s.view.parent as? FrameLayout)?.removeView(s.view)
         content.addView(s.view, FrameLayout.LayoutParams(MATCH, MATCH))
+        s.view.fadeIn(dp(10))       // انتقال خفيف بين الأقسام
         navButtons.forEach { (k, b) ->
             val on = k == key
             b.isSelected = on
@@ -215,6 +216,7 @@ class MainActivity : Activity() {
         content.removeAllViews()
         (s.view.parent as? FrameLayout)?.removeView(s.view)
         content.addView(s.view, FrameLayout.LayoutParams(MATCH, MATCH))
+        s.view.fadeIn(dp(10))       // انتقال خفيف بين الأقسام
         s.onShow()
     }
 
