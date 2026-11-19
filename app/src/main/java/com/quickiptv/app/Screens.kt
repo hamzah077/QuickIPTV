@@ -153,6 +153,8 @@ class HomeScreen(private val a: MainActivity) : Screen, EpgAware {
 
     // القوائم (من الكاش) — نجيبها مرة وحدة
     private var live: List<Channel>? = null
+    private var quickLive: List<Channel>? = null       // أول القنوات من الملخص الصغير (قبل ما تنقرا القائمة كاملة)
+    private var loadingLists = false
     private var newMovies: List<Vod>? = null
     private var newSeries: List<Vod>? = null
     private var movieMap: Map<String, Vod> = emptyMap()
@@ -163,30 +165,48 @@ class HomeScreen(private val a: MainActivity) : Screen, EpgAware {
     private var builtSig = ""
     private fun sig(): String = Store.history().take(15).joinToString { "${it.key}:${it.pos / 30}" } + "|" +
         Store.favs("live").joinToString() + "|" + Store.favs("movie").joinToString() + "|" + Store.favs("series").joinToString() +
-        "|" + (live != null) + (newMovies != null) + (newSeries != null)
+        "|" + (live != null) + (quickLive != null) + (newMovies != null) + (newSeries != null) + movieMap.size + seriesMap.size
 
     override fun onShow() {
         refresh()
-        if (live == null || newMovies == null || newSeries == null) loadLists()
+        if (live == null || movieMap.isEmpty() || seriesMap.isEmpty()) loadLists()
     }
 
     private fun refresh() { val s = sig(); if (s != builtSig) { builtSig = s; build() } }
 
     override fun onEpgLoaded() { liveSlot?.let { fillLive(it) } }
 
+    /**
+     * 1) فوراً: الملخص الصغير (20 فيلم، 20 مسلسل، أول القنوات) — الرئيسية تفتح بدون ما نقرا القوائم الكاملة.
+     * 2) بعدها بهدوء (بخيط منخفض الأولوية): القوائم الكاملة للمفضلة. أول مرة بس (ما فيه ملخص) نقراها على طول.
+     */
     private fun loadLists() {
         val api = Session.api ?: return
+        if (loadingLists) return
+        loadingLists = true
         a.scope.launch {
-            withContext(Dispatchers.IO) {
-                if (live == null) live = runCatching { api.liveStreams() }.getOrNull()
-                if (newMovies == null) runCatching { api.vods(false) }.getOrNull()?.let { l ->
-                    movieMap = l.associateBy { it.id }; newMovies = l.sortedByDescending { it.added }.take(20)
+            try {
+                withContext(Bg.io) {
+                    if (newMovies == null) newMovies = api.newest(false)
+                    if (newSeries == null) newSeries = api.newest(true)
+                    if (live == null && quickLive == null) quickLive = api.firstChannels()
                 }
-                if (newSeries == null) runCatching { api.vods(true) }.getOrNull()?.let { l ->
-                    seriesMap = l.associateBy { it.id }; newSeries = l.sortedByDescending { it.added }.take(20)
+                if (a.current == "home") refresh()
+                val firstRun = newMovies == null || newSeries == null || quickLive == null
+                if (!firstRun) delay(4000)
+                withContext(Bg.io) {
+                    if (live == null) live = runCatching { api.liveStreams() }.getOrNull()
+                    if (movieMap.isEmpty()) runCatching { api.vods(false) }.getOrNull()?.let { l ->
+                        movieMap = l.associateBy { it.id }; newMovies = api.newest(false)
+                    }
+                    if (seriesMap.isEmpty()) runCatching { api.vods(true) }.getOrNull()?.let { l ->
+                        seriesMap = l.associateBy { it.id }; newSeries = api.newest(true)
+                    }
                 }
+                if (a.current == "home") refresh() else builtSig = ""
+            } finally {
+                loadingLists = false
             }
-            if (a.current == "home") refresh() else builtSig = ""
         }
     }
 
@@ -261,9 +281,14 @@ class HomeScreen(private val a: MainActivity) : Screen, EpgAware {
     /** المباشر: المفضلة ثم آخر القنوات اللي شاهدتها ثم أول قنوات القائمة. */
     private fun fillLive(slot: LinearLayout) {
         slot.removeAllViews()
-        val all = live ?: return
-        if (all.isEmpty()) return
-        val byId = all.associateBy { it.id }
+        val all = live ?: quickLive ?: emptyList()
+        val byId = HashMap<String, Channel>(all.size * 2).apply { all.forEach { put(it.id, it) } }
+        // القنوات من السجل نعرفها حتى قبل ما تنقرا القائمة (الاسم والصورة محفوظة بالسجل)
+        Store.history().filter { it.type == "live" }.forEach { h ->
+            val cid = h.key.removePrefix("live:")
+            if (cid !in byId) byId[cid] = Channel(cid, 0, h.title, h.image, "", "", false)
+        }
+        if (byId.isEmpty()) return
         val ids = LinkedHashSet<String>()
         Store.favs("live").forEach { ids.add(it) }
         Store.history().filter { it.type == "live" }.forEach { ids.add(it.key.removePrefix("live:")) }
@@ -386,7 +411,7 @@ class SearchScreen(private val a: MainActivity) : Screen {
         if (SearchIndex.readyFor(api)) return
         status.text = "جاري تجهيز البحث…"
         a.scope.launch {
-            withContext(Dispatchers.Default) { SearchIndex.build(api) }
+            withContext(Bg.io) { SearchIndex.build(api) }
             if (input.text.isNullOrBlank()) status.text = "" else search(input.text.toString())
         }
     }
@@ -399,7 +424,7 @@ class SearchScreen(private val a: MainActivity) : Screen {
             if (nq.length < 2) { chResults = emptyList(); chAdapter.items = emptyList(); vodAdapter.items = emptyList(); status.text = ""; return@launch }
             delay(if (SearchIndex.readyFor(api)) 120 else 250)
             if (!SearchIndex.readyFor(api)) status.text = "جاري تجهيز البحث…"
-            val idx = withContext(Dispatchers.Default) { SearchIndex.build(api) }
+            val idx = withContext(Bg.io) { SearchIndex.build(api) }
             val (ch, vods) = withContext(Dispatchers.Default) { idx.find(nq) }
             chResults = ch
             chAdapter.items = ch
@@ -422,7 +447,7 @@ class FavoritesScreen(private val a: MainActivity) : Screen {
         col.addView(a.text("المفضلة", 20f, C.TEXT, bold = true))
         val api = Session.api ?: return
         a.scope.launch {
-            val (chans, vods) = withContext(Dispatchers.IO) {
+            val (chans, vods) = withContext(Bg.io) {
                 val f = Store.favs("live")
                 val c = if (f.isEmpty()) emptyList() else api.liveStreams().associateBy { it.id }.let { m -> f.mapNotNull { m[it] } }
                 val fm = Store.favs("movie"); val fs = Store.favs("series")
@@ -579,7 +604,7 @@ class EpgScreen(private val a: MainActivity) : Screen {
     private fun refresh() {
         a.toast("جاري تحديث الدليل…")
         a.scope.launch {
-            withContext(Dispatchers.IO) { Epg.load(Store.epgUrls, a.cacheDir, force = true) }
+            withContext(Bg.io) { Epg.load(Store.epgUrls, a.cacheDir, force = true) }
             if (a.current == "epg") onShow()
         }
     }
@@ -612,7 +637,7 @@ class HistoryScreen(private val a: MainActivity) : Screen {
             }
             val row = a.listRow(0, h.title, subtitle = sub) {
                 if (h.type == "live") a.scope.launch {
-                    val ch = api?.let { x -> withContext(Dispatchers.IO) { runCatching { x.liveStreams() }.getOrNull() } }
+                    val ch = api?.let { x -> withContext(Bg.io) { runCatching { x.liveStreams() }.getOrNull() } }
                         ?.firstOrNull { "live:${it.id}" == h.key }
                     if (ch != null) PlayerActivity.playLive(a, listOf(ch), 0, "السجل") else a.toast("القناة مو موجودة")
                 } else a.playHistory(h)

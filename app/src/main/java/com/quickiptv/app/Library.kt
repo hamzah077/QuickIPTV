@@ -90,7 +90,7 @@ class LibraryScreen(private val a: MainActivity, private val series: Boolean) : 
         loading.visibility = View.VISIBLE
         a.scope.launch {
             try {
-                val (c, items) = withContext(Dispatchers.IO) {
+                val (c, items) = withContext(Bg.io) {
                     (if (series) api.seriesCategories() else api.vodCategories()) to api.vods(series)
                 }
                 all = items; cats = c

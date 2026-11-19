@@ -169,7 +169,7 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
         val api = Session.api ?: return
         a.scope.launch {
             try {
-                val (cats, chans) = withContext(Dispatchers.IO) { api.liveCategories() to api.liveStreams() }
+                val (cats, chans) = withContext(Bg.io) { api.liveCategories() to api.liveStreams() }
                 all = chans
                 catAdapter.items = listOf(Category(Live.FAV, "المفضلة"), Category(Live.ALL, "كل القنوات")) + cats
                 val last = Store.lastCategory("live")

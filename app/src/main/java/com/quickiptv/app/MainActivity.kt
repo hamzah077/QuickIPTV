@@ -13,6 +13,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -89,7 +90,8 @@ class MainActivity : Activity() {
         buildShell()
         show("home")
         scope.launch {
-            withContext(Dispatchers.IO) { Epg.load(Store.epgUrls, cacheDir) }
+            delay(2500)      // نخلي الواجهة تفتح وتستقر أول
+            withContext(Bg.io) { Epg.load(Store.epgUrls, cacheDir) }
             screens.values.forEach { (it as? EpgAware)?.onEpgLoaded() }
         }
         if (checkLogin) scope.launch {

@@ -9,6 +9,7 @@ import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import kotlinx.coroutines.asCoroutineDispatcher
 
 /** الحالة المشتركة بين الشاشات: الحساب الحالي وقائمة التشغيل للمشغّل. */
 object Session {
@@ -90,4 +91,17 @@ object LivePlayer {
         player = null
         url = ""
     }
+}
+
+/**
+ * خيوط خلفية بأولوية منخفضة للشغل الثقيل (قراءة القوائم والدليل):
+ * على الأجهزة الضعيفة الواجهة تاخذ الأولوية دايماً، فما تعلّق الشاشة وقت التحديث.
+ */
+object Bg {
+    val io: kotlinx.coroutines.CoroutineDispatcher = java.util.concurrent.Executors.newFixedThreadPool(2) { r ->
+        Thread({
+            android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND)
+            r.run()
+        }, "quickiptv-bg").apply { isDaemon = true }
+    }.asCoroutineDispatcher()
 }

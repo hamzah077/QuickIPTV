@@ -153,17 +153,24 @@ object Store {
         set(v) = p.edit().putString(accKey("epgUrls"), JSONArray(v).toString()).apply()
 
     /** الربط اليدوي: stream_id → معرّف قناة الدليل ("" = بدون دليل). */
-    fun epgMap(): MutableMap<String, String> {
-        val o = JSONObject(p.getString(accKey("epgMap"), "{}"))
-        val m = mutableMapOf<String, String>()
+    /** الربط اليدوي للدليل — محفوظ بالذاكرة (كان ينقرا من التخزين لكل سطر قناة = بطء بالسحب). */
+    @Volatile private var epgMapCache: Pair<String, Map<String, String>>? = null
+
+    fun epgMap(): Map<String, String> {
+        val k = accKey("epgMap")
+        epgMapCache?.takeIf { it.first == k }?.let { return it.second }
+        val o = JSONObject(p.getString(k, "{}"))
+        val m = HashMap<String, String>()
         o.keys().forEach { m[it] = o.optString(it) }
+        epgMapCache = k to m
         return m
     }
 
     fun setEpgMap(streamId: String, cid: String?) {
-        val m = epgMap()
+        val m = HashMap(epgMap())
         if (cid == null) m.remove(streamId) else m[streamId] = cid
         p.edit().putString(accKey("epgMap"), JSONObject(m as Map<*, *>).toString()).apply()
+        epgMapCache = accKey("epgMap") to m
     }
 
     fun lastCategory(kind: String): String = p.getString(accKey("cat_$kind"), "") ?: ""
