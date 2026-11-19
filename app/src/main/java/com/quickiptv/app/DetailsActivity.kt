@@ -62,6 +62,7 @@ class DetailsActivity : Activity() {
         super.onCreate(savedInstanceState)
         window.decorView.layoutDirection = View.LAYOUT_DIRECTION_RTL
         edgeToEdge()
+        installFocusMotion()
         id = intent.getStringExtra("id") ?: ""
         series = intent.getBooleanExtra("series", false)
         name = intent.getStringExtra("name") ?: ""
@@ -286,7 +287,7 @@ class DetailsActivity : Activity() {
     }
 
     private fun episodeList(): RecyclerView = RecyclerView(this).apply {
-        layoutManager = LinearLayoutManager(this@DetailsActivity)
+        layoutManager = SmoothLM(this@DetailsActivity)
         itemAnimator = null
         setHasFixedSize(true)
         clipToPadding = false
@@ -329,6 +330,7 @@ class DetailsActivity : Activity() {
                 setPadding(dp(10), dp(8), dp(6), dp(8))
                 isFocusable = true; isClickable = true
                 layoutParams = RecyclerView.LayoutParams(MATCH, WRAP).apply { setMargins(dp(if (wide) 0 else 8), 0, dp(if (wide) 0 else 8), dp(2)) }
+                pressScale(0.985f)
             }
             val tw = dp(if (isTv()) 128 else 104)
             val thumb = ImageView(c).apply { scaleType = ImageView.ScaleType.CENTER_CROP; background = rounded(C.SURFACE2, dpf(7f)); clipToOutline = true }

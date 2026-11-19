@@ -99,12 +99,12 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
     private var arrangedWide: Boolean? = null
 
     init {
-        catList.layoutManager = LinearLayoutManager(a, if (a.tv) LinearLayoutManager.VERTICAL else LinearLayoutManager.HORIZONTAL, false)
+        catList.layoutManager = SmoothLM(a, if (a.tv) LinearLayoutManager.VERTICAL else LinearLayoutManager.HORIZONTAL)
         catList.adapter = catAdapter
-        catSide.layoutManager = LinearLayoutManager(a)
+        catSide.layoutManager = SmoothLM(a)
         catSide.adapter = catSideAdapter
         catSide.setHasFixedSize(true)
-        chList.layoutManager = LinearLayoutManager(a)
+        chList.layoutManager = SmoothLM(a)
         chList.adapter = chAdapter
         chList.setHasFixedSize(true)
         chList.setItemViewCacheSize(20)

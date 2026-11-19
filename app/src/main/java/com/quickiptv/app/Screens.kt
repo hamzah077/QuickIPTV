@@ -48,7 +48,7 @@ fun MainActivity.sectionTitle(t: String): TextView = text(t, 17f, C.TEXT, bold =
 /** صف أفقي من البوسترات (للرئيسية). */
 fun MainActivity.posterRow(items: List<Vod>, posterW: Int, onClick: (Vod) -> Unit): RecyclerView =
     RecyclerView(this).apply {
-        layoutManager = LinearLayoutManager(this@posterRow, LinearLayoutManager.HORIZONTAL, false).apply { initialPrefetchItemCount = 5 }
+        layoutManager = SmoothLM(this@posterRow, LinearLayoutManager.HORIZONTAL).apply { initialPrefetchItemCount = 5 }
         setRecycledViewPool(posterPool(posterW))
         adapter = PosterAdapter(this@posterRow, posterW, onClick).also { it.items = items }
         setHasFixedSize(true)
@@ -407,9 +407,9 @@ class SearchScreen(private val a: MainActivity) : Screen {
         val col = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL; setPadding(a.dp(16), a.dp(16), a.dp(16), 0) }
         col.addView(input, lp(MATCH, WRAP))
         col.addView(status.apply { setPadding(a.dp(4), a.dp(10), 0, a.dp(6)) })
-        val chList = RecyclerView(a).apply { layoutManager = LinearLayoutManager(a); adapter = chAdapter }
+        val chList = RecyclerView(a).apply { layoutManager = SmoothLM(a); adapter = chAdapter }
         val grid = RecyclerView(a).apply {
-            layoutManager = LinearLayoutManager(a, LinearLayoutManager.HORIZONTAL, false); adapter = vodAdapter
+            layoutManager = SmoothLM(a, LinearLayoutManager.HORIZONTAL); adapter = vodAdapter
         }
         col.addView(a.text("الأفلام والمسلسلات", 15f, C.TEXT, bold = true).apply { setPadding(a.dp(4), a.dp(4), 0, a.dp(4)) })
         col.addView(grid, lp(MATCH, WRAP))
@@ -481,14 +481,14 @@ class FavoritesScreen(private val a: MainActivity) : Screen {
                 col.addView(a.sectionTitle("القنوات"))
                 val ad = ChannelAdapter(a, { _, i -> PlayerActivity.playLive(a, chans, i, "المفضلة") }, { _, _ -> })
                 ad.items = chans
-                col.addView(RecyclerView(a).apply { layoutManager = LinearLayoutManager(a); adapter = ad; isNestedScrollingEnabled = false })
+                col.addView(RecyclerView(a).apply { layoutManager = SmoothLM(a); adapter = ad; isNestedScrollingEnabled = false })
             }
             if (vods.isNotEmpty()) {
                 col.addView(a.sectionTitle("الأفلام والمسلسلات"))
                 val w = a.dp(if (a.tv) 130 else 104)
                 val span = maxOf(2, (a.resources.displayMetrics.widthPixels - a.dp(if (a.tv) 110 else 32)) / (w + a.dp(10)))
                 col.addView(RecyclerView(a).apply {
-                    layoutManager = GridLayoutManager(a, span); isNestedScrollingEnabled = false
+                    layoutManager = SmoothGridLM(a, span); isNestedScrollingEnabled = false
                     adapter = PosterAdapter(a, w) { a.openDetails(it) }.also { it.items = vods }
                 })
             }

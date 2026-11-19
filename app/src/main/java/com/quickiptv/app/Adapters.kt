@@ -41,6 +41,7 @@ class ChannelAdapter(
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             layoutParams = RecyclerView.LayoutParams(MATCH, dp(62)).apply { bottomMargin = dp(2) }
+            pressScale(0.98f)
             setPadding(dp(10), 0, dp(10), 0)
             background = focusBg()
             isFocusable = true
