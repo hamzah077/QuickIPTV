@@ -121,7 +121,7 @@ class DetailsActivity : Activity() {
         dlBtn = null; epList = null
         if (wide) renderWide() else renderTall()
         refreshDl()
-        val target = focusTag?.let { root.findViewWithTag<View>(it) } ?: root.findViewWithTag("primary")
+        val target: View? = focusTag?.let { root.findViewWithTag<View?>(it) } ?: root.findViewWithTag<View?>("primary")
         target?.post { target.requestFocus() }
     }
 

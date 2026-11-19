@@ -93,7 +93,7 @@ class DownloadsScreen(private val a: MainActivity) : Screen {
             }
             blocks.forEach { (k, ds) -> if (k.startsWith("g:")) addGroup(k.substring(2), ds.sortedBy { it.epNum }) else col.addView(row(ds[0], true)) }
         }
-        hadFocus?.let { t -> col.findViewWithTag<View>(t)?.let { v -> v.post { v.requestFocus() } } }
+        hadFocus?.let { t -> col.findViewWithTag<View?>(t)?.let { v -> v.post { v.requestFocus() } } }
     }
 
     private fun empty(nothing: Boolean) {
