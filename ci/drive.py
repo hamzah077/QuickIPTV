@@ -22,11 +22,13 @@ def tap_text(t, contains=False, tries=10):
     print("NOT FOUND", t, flush=True); return False
 
 sh("shell", "am", "start", "-n", "com.quickiptv.app/.MainActivity"); time.sleep(6); shot("01_login")
-eds = [n for n in nodes(dump()) if n["cls"] == "android.widget.EditText"]
-print("edittexts", len(eds), flush=True)
-for n, val in zip(eds, ["http://10.0.2.2:8000", "test", "test"]):
-    tap_node(n); time.sleep(0.5); sh("shell", "input", "text", val); time.sleep(0.5)
-sh("shell", "input", "keyevent", "111")  # ESC لإخفاء الكيبورد
+for idx, val in enumerate(["http://10.0.2.2:8000", "test", "test"]):
+    eds = [n for n in nodes(dump()) if n["cls"] == "android.widget.EditText"]
+    print("edittexts", len(eds), flush=True)
+    tap_node(eds[idx]); time.sleep(0.8)
+    sh("shell", "input", "text", val); time.sleep(0.8)
+    sh("shell", "input", "keyevent", "111"); time.sleep(0.8)   # يخفي الكيبورد عشان الأماكن ما تتحرك
+shot("01b_filled")
 time.sleep(1); tap_text("دخول", contains=True); time.sleep(8); shot("02_home")
 tap_text("أفلام"); time.sleep(8); shot("03_movies")
 sh("shell", "input", "swipe", "500", "1400", "500", "600", "400"); time.sleep(3); shot("04_movies_scrolled")
