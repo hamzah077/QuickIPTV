@@ -18,6 +18,7 @@ import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 
 /**
@@ -103,6 +104,9 @@ fun Context.focusBg(
     val r = dpf(radius.toFloat())
     val sw = dp(2)
     return StateListDrawable().apply {
+        // الإطار يظهر ويختفي بتلاشي ناعم بدل ما يقفز
+        setEnterFadeDuration(130)
+        setExitFadeDuration(110)
         addState(intArrayOf(android.R.attr.state_focused), rounded(C.SURFACE2, r, Color.WHITE, sw))
         addState(intArrayOf(android.R.attr.state_pressed), rounded(pressed, r))
         addState(intArrayOf(android.R.attr.state_selected), rounded(selected, r))
@@ -114,6 +118,7 @@ fun Context.focusBg(
 /** يكبّر العنصر شوي لما يتركز عليه (إحساس التلفزيون). */
 fun View.focusScale(scale: Float = 1.05f) {
     isFocusable = true
+    setTag(R.id.own_focus_anim, true)
     setOnFocusChangeListener { v, has ->
         v.animate().scaleX(if (has) scale else 1f).scaleY(if (has) scale else 1f).setDuration(110).start()
     }
@@ -351,4 +356,61 @@ fun View.fadeOut(dy: Int = 0, dur: Long = 140, end: () -> Unit) {
     animate().alpha(0f).translationY(dy.toFloat()).setDuration(dur)
         .setInterpolator(android.view.animation.AccelerateInterpolator()).withLayer()
         .withEndAction { alpha = 1f; translationY = 0f; end() }.start()
+}
+
+
+// ---------------------------------------------------------------------
+// حركة التنقّل بالريموت (كل القوائم)
+
+/**
+ * تكبير خفيف للعنصر المحدد في كل الشاشة (مستمع واحد للنافذة كاملة):
+ * الأزرار والبطاقات 5%، والصفوف العريضة 1.5% بس (عشان ما تطلع عن مكانها).
+ */
+fun android.app.Activity.installFocusMotion() {
+    val screenW = resources.displayMetrics.widthPixels
+    val interp = android.view.animation.DecelerateInterpolator()
+    fun eligible(v: View?): Boolean = v != null && v.getTag(R.id.own_focus_anim) != true &&
+        v !is android.widget.EditText && v !is RecyclerView && v !is android.widget.ScrollView &&
+        v.width in 1 until (screenW * 0.92).toInt()
+    window.decorView.viewTreeObserver.addOnGlobalFocusChangeListener { old, new ->
+        if (eligible(old)) old!!.animate().scaleX(1f).scaleY(1f).setDuration(120).setInterpolator(interp).start()
+        if (eligible(new)) {
+            val v = new!!
+            // صف عريض (قناة/حلقة/إعداد) تكبير بسيط؛ زر أو بطاقة أوضح
+            val s = when { v.width > screenW * 0.4 -> 1.015f; v.width > v.height * 3 -> 1.025f; else -> 1.05f }
+            v.animate().scaleX(s).scaleY(s).setDuration(140).setInterpolator(interp).start()
+        }
+    }
+}
+
+/** يحسب الإزاحة اللي تخلي العنصر المحدد في نص القائمة. */
+private fun centerDelta(parent: RecyclerView, child: View, vertical: Boolean): Int =
+    if (vertical) (child.top + child.height / 2) - (parent.paddingTop + (parent.height - parent.paddingTop - parent.paddingBottom) / 2)
+    else (child.left + child.width / 2) - (parent.paddingLeft + (parent.width - parent.paddingLeft - parent.paddingRight) / 2)
+
+/**
+ * قائمة تتحرك بنعومة مع الريموت وتخلي العنصر المحدد في النص (على التلفزيون).
+ * على الجوال تتصرف عادي (اللمس).
+ */
+open class SmoothLM(ctx: Context, orientation: Int = VERTICAL, reverse: Boolean = false) : LinearLayoutManager(ctx, orientation, reverse) {
+    private val tv = ctx.isTv()
+    override fun requestChildRectangleOnScreen(parent: RecyclerView, child: View, rect: android.graphics.Rect, immediate: Boolean, focusedChildVisible: Boolean): Boolean {
+        if (!tv) return super.requestChildRectangleOnScreen(parent, child, rect, immediate, focusedChildVisible)
+        val d = centerDelta(parent, child, orientation == VERTICAL)
+        if (d == 0) return false
+        if (orientation == VERTICAL) { if (immediate) parent.scrollBy(0, d) else parent.smoothScrollBy(0, d) }
+        else { if (immediate) parent.scrollBy(d, 0) else parent.smoothScrollBy(d, 0) }
+        return true
+    }
+}
+
+class SmoothGridLM(ctx: Context, span: Int) : androidx.recyclerview.widget.GridLayoutManager(ctx, span) {
+    private val tv = ctx.isTv()
+    override fun requestChildRectangleOnScreen(parent: RecyclerView, child: View, rect: android.graphics.Rect, immediate: Boolean, focusedChildVisible: Boolean): Boolean {
+        if (!tv) return super.requestChildRectangleOnScreen(parent, child, rect, immediate, focusedChildVisible)
+        val d = centerDelta(parent, child, true)
+        if (d == 0) return false
+        if (immediate) parent.scrollBy(0, d) else parent.smoothScrollBy(0, d)
+        return true
+    }
 }

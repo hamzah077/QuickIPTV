@@ -62,6 +62,7 @@ class DetailsActivity : Activity() {
         super.onCreate(savedInstanceState)
         window.decorView.layoutDirection = View.LAYOUT_DIRECTION_RTL
         edgeToEdge()
+        installFocusMotion()
         id = intent.getStringExtra("id") ?: ""
         series = intent.getBooleanExtra("series", false)
         name = intent.getStringExtra("name") ?: ""
@@ -286,7 +287,7 @@ class DetailsActivity : Activity() {
     }
 
     private fun episodeList(): RecyclerView = RecyclerView(this).apply {
-        layoutManager = LinearLayoutManager(this@DetailsActivity)
+        layoutManager = SmoothLM(this@DetailsActivity)
         itemAnimator = null
         setHasFixedSize(true)
         clipToPadding = false

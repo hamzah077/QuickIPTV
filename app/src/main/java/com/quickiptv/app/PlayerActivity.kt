@@ -77,6 +77,7 @@ class PlayerActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        installFocusMotion()
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         window.decorView.layoutDirection = View.LAYOUT_DIRECTION_RTL
         immersive()
@@ -148,7 +149,7 @@ class PlayerActivity : Activity() {
             ph.addView(iconButton(R.drawable.ic_close, "إغلاق") { closePanel() })
             panel.addView(ph)
             panelList = androidx.recyclerview.widget.RecyclerView(this).apply {
-                layoutManager = androidx.recyclerview.widget.LinearLayoutManager(this@PlayerActivity)
+                layoutManager = SmoothLM(this@PlayerActivity)
                 adapter = panelAdapter
                 setHasFixedSize(true)
                 itemAnimator = null

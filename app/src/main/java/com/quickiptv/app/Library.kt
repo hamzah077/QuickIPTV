@@ -51,7 +51,7 @@ class LibraryScreen(private val a: MainActivity, private val series: Boolean) : 
         head.addView(a.text(title, 20f, C.TEXT, bold = true), lp(0, WRAP, 1f))
         head.addView(a.iconButton(R.drawable.ic_search, "بحث", 42) { a.openExtra("search") })
         main.addView(head)
-        rows.layoutManager = LinearLayoutManager(a).apply { initialPrefetchItemCount = 3 }
+        rows.layoutManager = SmoothLM(a).apply { initialPrefetchItemCount = 3 }
         rows.adapter = shelfAdapter
         rows.setHasFixedSize(true)
         rows.itemAnimator = null              // بدون حركات = سحب أنعم
@@ -70,7 +70,7 @@ class LibraryScreen(private val a: MainActivity, private val series: Boolean) : 
         grid.adapter = gridPosters
         grid.setHasFixedSize(true)
         grid.setPadding(a.dp(8), 0, a.dp(8), 0)
-        grid.layoutManager = GridLayoutManager(a, 3)
+        grid.layoutManager = SmoothGridLM(a, 3)
         grid.addOnLayoutChangeListener { v, l, _, r, _, _, _, _, _ ->
             val span = maxOf(2, (r - l - v.paddingLeft - v.paddingRight) / (posterW + a.dp(10)))
             val lm = grid.layoutManager as GridLayoutManager
@@ -227,7 +227,7 @@ class LibraryScreen(private val a: MainActivity, private val series: Boolean) : 
             val posters = PosterAdapter(a, posterW) { a.openDetails(it) }
             // صف أفقي بـ RecyclerView (يدعم الاتجاه من اليمين لليسار تلقائياً ويعيد استخدام الخانات)
             val strip = RecyclerView(a).apply {
-                layoutManager = LinearLayoutManager(a, LinearLayoutManager.HORIZONTAL, false).apply { initialPrefetchItemCount = 5 }
+                layoutManager = SmoothLM(a, LinearLayoutManager.HORIZONTAL).apply { initialPrefetchItemCount = 5 }
                 setRecycledViewPool(posterPool(posterW))      // خانات مشتركة بين كل الصفوف
                 adapter = posters
                 setHasFixedSize(true)

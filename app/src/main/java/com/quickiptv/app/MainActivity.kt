@@ -64,6 +64,7 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         window.decorView.layoutDirection = View.LAYOUT_DIRECTION_RTL
         edgeToEdge()
+        installFocusMotion()
         val accSaved = Store.current
         intent?.getStringExtra("open")?.let { pendingOpen = it }
         // إضافة حساب بالتشغيل (بدون كتابة بالريموت): am start ... -e server URL -e user U -e pass P
@@ -183,7 +184,17 @@ class MainActivity : Activity() {
     private fun railExpand(open: Boolean) {
         if (open == railOpen) return
         railOpen = open
-        navButtons.values.forEach { b -> b.findViewWithTag<View?>("tx")?.visibility = if (open) View.VISIBLE else View.GONE }
+        navButtons.values.forEach { b ->
+            val tx = b.findViewWithTag<View?>("tx") ?: return@forEach
+            tx.animate().cancel()
+            if (open) {
+                tx.visibility = View.VISIBLE
+                tx.alpha = 0f; tx.translationX = dp(12).toFloat()
+                tx.animate().alpha(1f).translationX(0f).setDuration(160).setInterpolator(android.view.animation.DecelerateInterpolator()).start()
+            } else {
+                tx.visibility = View.GONE; tx.alpha = 1f; tx.translationX = 0f
+            }
+        }
         nav.setBackgroundColor(if (open) 0xF20C0E11.toInt() else C.RAIL)
         nav.elevation = if (open) dp(12).toFloat() else 0f
     }
