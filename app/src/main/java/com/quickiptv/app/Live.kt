@@ -14,7 +14,6 @@ import android.widget.ProgressBar
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.annotation.OptIn
-import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
@@ -57,6 +56,15 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
     private val loading = ProgressBar(a).apply { indeterminateTintList = ColorStateList.valueOf(C.ACCENT) }
     private val liveBtn = a.text("●  مباشر", 12f, C.TEXT, bold = true)
     private val catBtn = a.text("", 13f, C.TEXT2)
+    private val pauseIcon = a.icon(R.drawable.ic_pause, 0xFFFFFFFF.toInt(), 22).apply {
+        layoutParams = FrameLayout.LayoutParams(a.dp(22), a.dp(22), Gravity.CENTER)
+    }
+    private val pauseBtn = FrameLayout(a).apply {
+        background = a.focusBg(normal = 0x99000000.toInt(), radius = 20)
+        isFocusable = true; isClickable = true
+        contentDescription = "إيقاف مؤقت"
+        addView(pauseIcon)
+    }
     private val searchBox = a.field("ابحث في هذا التصنيف…").apply {
         layoutDirection = View.LAYOUT_DIRECTION_RTL; textDirection = View.TEXT_DIRECTION_FIRST_STRONG
         addTextChangedListener(object : android.text.TextWatcher {
@@ -102,6 +110,8 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
         }
         screen.addView(liveBtn, FrameLayout.LayoutParams(WRAP, WRAP, Gravity.TOP or Gravity.START).apply { setMargins(a.dp(10), a.dp(10), 0, 0) })
         val full = a.iconButton(R.drawable.ic_fullscreen, "ملء الشاشة", 40) { current?.let { openFull(it) } }
+        pauseBtn.setOnClickListener { togglePause() }
+        screen.addView(pauseBtn, FrameLayout.LayoutParams(a.dp(40), a.dp(40), Gravity.BOTTOM or Gravity.START).apply { setMargins(a.dp(6), 0, 0, a.dp(6)) })
         screen.addView(full, FrameLayout.LayoutParams(a.dp(40), a.dp(40), Gravity.BOTTOM or Gravity.END).apply { setMargins(0, 0, a.dp(6), a.dp(6)) })
         screen.addView(loading, FrameLayout.LayoutParams(a.dp(36), a.dp(36), Gravity.CENTER))
         screen.addView(status, FrameLayout.LayoutParams(MATCH, WRAP, Gravity.CENTER).apply { setMargins(a.dp(16), 0, a.dp(16), 0) })
@@ -220,45 +230,75 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
         Store.addHistory(HistoryItem("live:${ch.id}", "live", ch.name, "", ch.icon, ""))
     }
 
-    private fun ensurePlayer(): ExoPlayer = player ?: buildPlayer(a, live = true).also { p ->
-        player = p
-        playerView.player = p
-        p.addListener(object : Player.Listener {
-            override fun onPlaybackStateChanged(state: Int) {
-                loading.visibility = if (state == Player.STATE_BUFFERING) View.VISIBLE else View.GONE
-                if (state == Player.STATE_READY) status.visibility = View.GONE
-            }
+    private val listener = object : Player.Listener {
+        override fun onPlaybackStateChanged(state: Int) {
+            loading.visibility = if (state == Player.STATE_BUFFERING) View.VISIBLE else View.GONE
+            if (state == Player.STATE_READY) status.visibility = View.GONE
+        }
 
-            override fun onPlayerError(error: PlaybackException) {
-                val ch = current ?: return
-                if (!triedTs && Store.liveFormat == "m3u8") {     // HLS ما اشتغل؟ نجرب TS مرة وحدة
-                    triedTs = true
-                    playUrl(Session.api!!.liveUrl(ch.id, "ts"))
-                } else showStatus("القناة ما اشتغلت (${error.errorCodeName}). جرّب مرة ثانية أو قناة ثانية.")
-            }
-        })
+        override fun onIsPlayingChanged(isPlaying: Boolean) = syncPause()
+
+        override fun onPlayerError(error: PlaybackException) {
+            val ch = current ?: return
+            if (!triedTs && Store.liveFormat == "m3u8") {     // HLS ما اشتغل؟ نجرب TS مرة وحدة
+                triedTs = true
+                playUrl(Session.api!!.liveUrl(ch.id, "ts"), force = true)
+            } else showStatus("القناة ما اشتغلت (${error.errorCodeName}). جرّب مرة ثانية أو قناة ثانية.")
+        }
     }
 
-    private fun playUrl(url: String) {
-        val p = ensurePlayer()
+    /** نربط الشاشة الصغيرة بالمشغّل المشترك. */
+    private fun ensurePlayer(): ExoPlayer {
+        val p = LivePlayer.get(a)
+        if (player !== p) {
+            player?.removeListener(listener)
+            player = p
+            p.addListener(listener)
+            playerView.player = p
+        }
+        return p
+    }
+
+    private fun playUrl(url: String, force: Boolean = false) {
+        ensurePlayer()
         status.visibility = View.GONE
         loading.visibility = View.VISIBLE
-        p.setMediaItem(MediaItem.fromUri(url))
-        p.prepare()
-        p.playWhenReady = true
+        LivePlayer.play(a, url, force)
+        syncPause()
     }
 
     /** زر مباشر: يرجّع للحظة الحالية (لو البث متوقف أو متأخر). */
     private fun goLive() {
         val p = player ?: return
-        if (p.isCurrentMediaItemLive) p.seekToDefaultPosition() else current?.let { preview(it) }
+        if (p.isCurrentMediaItemLive && p.isCurrentMediaItemSeekable) p.seekToDefaultPosition()
+        else current?.let { playUrl(Session.api!!.liveUrl(it.id), force = true) }
         p.playWhenReady = true
     }
 
+    private fun togglePause() {
+        val p = player ?: return
+        p.playWhenReady = !p.playWhenReady
+        syncPause()
+    }
+
+    private fun syncPause() {
+        val playing = player?.playWhenReady == true
+        pauseIcon.setImageResource(if (playing) R.drawable.ic_pause else R.drawable.ic_play)
+        pauseBtn.contentDescription = if (playing) "إيقاف مؤقت" else "تشغيل"
+    }
+
+    /** ملء الشاشة بدون انقطاع: نفس المشغّل ينتقل للشاشة الكبيرة (ما يعيد الاتصال). */
     private fun openFull(ch: Channel) {
-        stopPlayer()
+        LivePlayer.keepForPreview = true
+        detach()
         val i = visible.indexOfFirst { it.id == ch.id }.coerceAtLeast(0)
         PlayerActivity.playLive(a, visible.ifEmpty { listOf(ch) }, i, catAdapter.items.firstOrNull { it.id == catId }?.name ?: "")
+    }
+
+    private fun detach() {
+        player?.removeListener(listener)
+        player = null
+        playerView.player = null
     }
 
     private fun showStatus(t: String) {
@@ -268,9 +308,8 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
     }
 
     private fun stopPlayer() {
-        player?.release()
-        player = null
-        playerView.player = null
+        detach()
+        if (!LivePlayer.keepForPreview) LivePlayer.release()
     }
 
     // ---------- الدليل ----------
@@ -340,7 +379,16 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
     }
 
     override fun onShow() {
-        if (current != null && player == null) preview(current!!)
+        if (LivePlayer.keepForPreview && LivePlayer.player != null) {
+            // رجعنا من ملء الشاشة: نكمل نفس البث بدون إعادة اتصال (والقناة ممكن تغيّرت هناك)
+            LivePlayer.keepForPreview = false
+            Session.playlist.getOrNull(Session.playIndex)?.let { ch ->
+                current = ch; chAdapter.playingId = ch.id; title.text = ch.name; showEpg(ch)
+            }
+            ensurePlayer()
+            player?.playWhenReady = true
+            syncPause()
+        } else if (current != null && player == null) preview(current!!)
     }
 
     override fun onHide() {

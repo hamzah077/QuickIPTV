@@ -54,3 +54,37 @@ fun buildPlayer(ctx: Context, live: Boolean): ExoPlayer {
         .setLoadControl(load)
         .build()
 }
+
+/**
+ * مشغّل البث المباشر مشترك بين الشاشة الصغيرة وملء الشاشة:
+ * لما تكبّر القناة ما ينقطع البث ولا يعيد التحميل — نفس المشغّل ينتقل للشاشة الكبيرة.
+ */
+object LivePlayer {
+    var player: ExoPlayer? = null
+        private set
+    var url: String = ""
+        private set
+    /** القناة شغّالة من صفحة المباشر وبترجع لها بعد ملء الشاشة (لا تطفي المشغّل). */
+    var keepForPreview = false
+
+    fun get(ctx: Context): ExoPlayer = player ?: buildPlayer(ctx.applicationContext, live = true).also { player = it }
+
+    /** يشغّل الرابط، إلا لو هو نفسه شغّال (ما نعيد الاتصال). */
+    fun play(ctx: Context, u: String, force: Boolean = false) {
+        val p = get(ctx)
+        if (!force && u == url && p.playbackState != androidx.media3.common.Player.STATE_IDLE) {
+            p.playWhenReady = true
+            return
+        }
+        url = u
+        p.setMediaItem(androidx.media3.common.MediaItem.fromUri(u))
+        p.prepare()
+        p.playWhenReady = true
+    }
+
+    fun release() {
+        player?.release()
+        player = null
+        url = ""
+    }
+}

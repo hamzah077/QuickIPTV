@@ -92,7 +92,11 @@ class LibraryScreen(private val a: MainActivity, private val series: Boolean) : 
                 all = items; cats = c
                 buildShelves()
             } catch (e: Exception) {
-                empty.text = e.message ?: "تعذر التحميل"; empty.visibility = View.VISIBLE
+                empty.text = "${e.message ?: "تعذر التحميل"}\n\nاضغط هنا لإعادة المحاولة"
+                empty.visibility = View.VISIBLE
+                empty.isFocusable = true; empty.isClickable = true
+                empty.setOnClickListener { empty.visibility = View.GONE; load() }
+                empty.requestFocus()
             } finally {
                 loading.visibility = View.GONE
             }

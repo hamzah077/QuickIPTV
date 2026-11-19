@@ -105,6 +105,37 @@ class Xtream(val acc: Account, private val cacheDir: File) {
             throw XtreamError("تحويلات كثيرة")
         }
 
+        /** تنزيل مباشر لملف (بدون ما نحمّل الرد كامل بالذاكرة — مهم للقوائم الكبيرة على الأجهزة الضعيفة). */
+        fun httpToFile(url: String, out: File, timeout: Int = 120000) {
+            var u = url
+            repeat(4) {
+                val c = URL(u).openConnection() as HttpURLConnection
+                c.connectTimeout = 15000
+                c.readTimeout = timeout
+                c.instanceFollowRedirects = false
+                c.setRequestProperty("User-Agent", UA)
+                c.setRequestProperty("Accept-Encoding", "gzip")
+                try {
+                    val code = c.responseCode
+                    if (code in 300..399) {
+                        u = URL(URL(u), c.getHeaderField("Location") ?: throw XtreamError("تحويل بدون رابط")).toString()
+                        return@repeat
+                    }
+                    if (code != 200) throw XtreamError(if (code == 401 || code == 403) "اسم المستخدم أو كلمة المرور غلط" else "السيرفر رد بخطأ $code")
+                    val ins = if ("gzip".equals(c.contentEncoding, true)) GZIPInputStream(c.inputStream) else c.inputStream
+                    out.parentFile?.mkdirs()
+                    val tmp = File(out.path + ".tmp")
+                    ins.use { i -> tmp.outputStream().buffered().use { o -> i.copyTo(o, 64 * 1024) } }
+                    if (tmp.length() < 2) throw XtreamError("رد فاضي من السيرفر")
+                    tmp.renameTo(out)
+                    return
+                } finally {
+                    c.disconnect()
+                }
+            }
+            throw XtreamError("تحويلات كثيرة")
+        }
+
         private fun md5(s: String): String =
             MessageDigest.getInstance("MD5").digest(s.toByteArray()).joinToString("") { "%02x".format(it) }
     }
@@ -116,6 +147,48 @@ class Xtream(val acc: Account, private val cacheDir: File) {
         if (action != null) sb.append("&action=").append(action)
         extra.forEach { (k, v) -> sb.append('&').append(k).append('=').append(URLEncoder.encode(v, "UTF-8")) }
         return sb.toString()
+    }
+
+    /** ملف JSON على الجهاز للقائمة (ينزل مرة كل 6 ساعات، ولو انقطع النت نستخدم آخر نسخة). */
+    private fun apiFile(action: String, force: Boolean = false): File {
+        val url = apiUrl(action)
+        val f = File(cacheDir, "xt/${md5(url)}.json")
+        if (!force && f.exists() && f.length() > 2 && System.currentTimeMillis() - f.lastModified() < TTL) return f
+        return try {
+            httpToFile(url, f)
+            f
+        } catch (e: Exception) {
+            if (f.exists() && f.length() > 2) f else throw XtreamError(friendly(e))
+        }
+    }
+
+    /** قراءة مصفوفة JSON كبيرة عنصر عنصر (JsonReader) بدون ما نبني نص أو كائنات ضخمة. */
+    private inline fun <T> readArray(f: File, crossinline item: (Map<String, String>) -> T?): List<T> {
+        val out = ArrayList<T>()
+        android.util.JsonReader(java.io.InputStreamReader(f.inputStream().buffered(64 * 1024), Charsets.UTF_8)).use { r ->
+            if (r.peek() != android.util.JsonToken.BEGIN_ARRAY) {   // بعض السيرفرات ترجع {} لما القائمة فاضية
+                r.skipValue(); return out
+            }
+            r.beginArray()
+            val m = HashMap<String, String>(24)
+            while (r.hasNext()) {
+                m.clear()
+                if (r.peek() != android.util.JsonToken.BEGIN_OBJECT) { r.skipValue(); continue }
+                r.beginObject()
+                while (r.hasNext()) {
+                    val k = r.nextName()
+                    when (r.peek()) {
+                        android.util.JsonToken.STRING, android.util.JsonToken.NUMBER -> m[k] = r.nextString()
+                        android.util.JsonToken.BOOLEAN -> m[k] = if (r.nextBoolean()) "1" else "0"
+                        else -> r.skipValue()
+                    }
+                }
+                r.endObject()
+                item(m)?.let { out.add(it) }
+            }
+            r.endArray()
+        }
+        return out
     }
 
     /** نص JSON من السيرفر، مع كاش على الجهاز (ولو انقطع النت نرجع آخر نسخة محفوظة). */
@@ -181,15 +254,13 @@ class Xtream(val acc: Account, private val cacheDir: File) {
     @Suppress("UNCHECKED_CAST")
     fun liveStreams(force: Boolean = false): List<Channel> {
         if (!force) mem["live"]?.let { return it as List<Channel> }
-        val a = JSONArray(api("get_live_streams", force = force))
-        val out = ArrayList<Channel>(a.length())
-        for (i in 0 until a.length()) {
-            val o = a.getJSONObject(i)
-            out.add(Channel(
-                o.optString("stream_id"), o.optInt("num", i + 1), o.optString("name").trim(), o.optString("stream_icon"),
-                o.optString("category_id"), o.optString("epg_channel_id"),
-                o.optString("tv_archive", "0") == "1",
-            ))
+        var i = 0
+        val out = readArray(apiFile("get_live_streams", force)) { o ->
+            i++
+            Channel(
+                o["stream_id"] ?: return@readArray null, o["num"]?.toIntOrNull() ?: i, (o["name"] ?: "").trim(),
+                o["stream_icon"] ?: "", o["category_id"] ?: "", o["epg_channel_id"] ?: "", o["tv_archive"] == "1",
+            )
         }
         mem["live"] = out
         return out
@@ -199,16 +270,13 @@ class Xtream(val acc: Account, private val cacheDir: File) {
     fun vods(series: Boolean): List<Vod> {
         val key = if (series) "series" else "vod"
         mem[key]?.let { return it as List<Vod> }
-        val a = JSONArray(api(if (series) "get_series" else "get_vod_streams"))
-        val out = ArrayList<Vod>(a.length())
-        for (i in 0 until a.length()) {
-            val o = a.getJSONObject(i)
-            out.add(Vod(
-                o.optString(if (series) "series_id" else "stream_id"), o.optString("name").trim(),
-                o.optString(if (series) "cover" else "stream_icon"), o.optString("category_id"),
-                o.optString("container_extension", "mp4").ifEmpty { "mp4" }, o.optString("rating"),
-                (o.optString("added").ifEmpty { o.optString("last_modified") }).toLongOrNull() ?: 0L, series,
-            ))
+        val out = readArray(apiFile(if (series) "get_series" else "get_vod_streams")) { o ->
+            Vod(
+                o[if (series) "series_id" else "stream_id"] ?: return@readArray null, (o["name"] ?: "").trim(),
+                o[if (series) "cover" else "stream_icon"] ?: "", o["category_id"] ?: "",
+                (o["container_extension"] ?: "").ifEmpty { "mp4" }, o["rating"] ?: "",
+                ((o["added"] ?: "").ifEmpty { o["last_modified"] ?: "" }).toLongOrNull() ?: 0L, series,
+            )
         }
         mem[key] = out
         return out

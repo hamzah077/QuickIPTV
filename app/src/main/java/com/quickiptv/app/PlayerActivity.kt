@@ -46,7 +46,10 @@ class PlayerActivity : Activity() {
     private lateinit var loading: ProgressBar
     private lateinit var numBadge: android.widget.TextView
     private lateinit var topBar: LinearLayout
+    private lateinit var pauseBtn: FrameLayout
+    private val pauseIcon by lazy { icon(R.drawable.ic_pause, 0xFFFFFFFF.toInt(), 24) }
     private var live = false
+    private var returnsToPreview = false      // انفتح من الشاشة الصغيرة وبيرجع لها (لا نطفي المشغّل)
     private var key = ""
     private var type = ""
     private var triedTs = false
@@ -70,6 +73,7 @@ class PlayerActivity : Activity() {
         immersive()
         if (Session.api == null) Store.current?.let { Session.open(this, it) }
         live = intent.getBooleanExtra("live", false)
+        returnsToPreview = live && LivePlayer.keepForPreview
 
         val root = FrameLayout(this).apply { setBackgroundColor(0xFF000000.toInt()) }
         pv = PlayerView(this).apply {
@@ -99,6 +103,15 @@ class PlayerActivity : Activity() {
             setOnClickListener { goLive() }
             visibility = if (live) View.VISIBLE else View.GONE
         }
+        pauseBtn = FrameLayout(this).apply {
+            background = StateListFocus.make(this@PlayerActivity, 0x33FFFFFF)
+            isFocusable = true; isClickable = true
+            contentDescription = "إيقاف مؤقت"
+            addView(pauseIcon, FrameLayout.LayoutParams(dp(24), dp(24), Gravity.CENTER))
+            setOnClickListener { togglePause() }
+            visibility = if (live) View.VISIBLE else View.GONE
+        }
+        topBar.addView(pauseBtn, lp(dp(46), dp(40)).apply { marginEnd = dp(10) })
         topBar.addView(liveBtn)
         root.addView(topBar, FrameLayout.LayoutParams(MATCH, WRAP, Gravity.TOP))
 
@@ -116,30 +129,12 @@ class PlayerActivity : Activity() {
         root.setOnClickListener { showBar() }
         setContentView(root)
 
-        player = buildPlayer(this, live).also { p ->
+        // المباشر: نفس مشغّل الشاشة الصغيرة (ما ينقطع ولا يعيد التحميل). الأفلام: مشغّل خاص.
+        player = (if (live) LivePlayer.get(this) else buildPlayer(this, false)).also { p ->
             pv.player = p
-            p.addListener(object : Player.Listener {
-                override fun onPlaybackStateChanged(state: Int) {
-                    loading.visibility = if (state == Player.STATE_BUFFERING) View.VISIBLE else View.GONE
-                    if (state == Player.STATE_READY) status.visibility = View.GONE
-                    if (state == Player.STATE_ENDED && !live) { saveProgress(); finish() }
-                }
-
-                override fun onIsPlayingChanged(isPlaying: Boolean) = updateLiveBtn()
-
-                override fun onPlayerError(error: PlaybackException) {
-                    if (live && !triedTs && Store.liveFormat == "m3u8") {
-                        triedTs = true
-                        Session.playlist.getOrNull(Session.playIndex)?.let { start(Session.api!!.liveUrl(it.id, "ts"), 0) }
-                        return
-                    }
-                    loading.visibility = View.GONE
-                    status.text = "تعذر التشغيل (${error.errorCodeName}).\n${if (live) "جرّب قناة ثانية بالأسهم فوق/تحت" else "تأكد من الاتصال وجرّب مرة ثانية"}"
-                    status.visibility = View.VISIBLE
-                }
-            })
+            p.addListener(listener)
         }
-        if (live) playChannel(Session.playIndex) else playVod()
+        if (live) playChannel(Session.playIndex, reuse = true) else playVod()
         scope.launch {           // حفظ المكان + حالة زر المباشر
             while (isActive) {
                 delay(1000)
@@ -147,6 +142,29 @@ class PlayerActivity : Activity() {
                 if (!live && (player?.currentPosition ?: 0) / 1000 % 10 == 0L) saveProgress()
             }
         }
+    }
+
+    private val listener: Player.Listener by lazy {
+            object : Player.Listener {
+                override fun onPlaybackStateChanged(state: Int) {
+                    loading.visibility = if (state == Player.STATE_BUFFERING) View.VISIBLE else View.GONE
+                    if (state == Player.STATE_READY) status.visibility = View.GONE
+                    if (state == Player.STATE_ENDED && !live) { saveProgress(); finish() }
+                }
+
+                override fun onIsPlayingChanged(isPlaying: Boolean) { updateLiveBtn(); syncPause() }
+
+                override fun onPlayerError(error: PlaybackException) {
+                    if (live && !triedTs && Store.liveFormat == "m3u8") {
+                        triedTs = true
+                        Session.playlist.getOrNull(Session.playIndex)?.let { LivePlayer.play(this@PlayerActivity, Session.api!!.liveUrl(it.id, "ts"), force = true) }
+                        return
+                    }
+                    loading.visibility = View.GONE
+                    status.text = "تعذر التشغيل (${error.errorCodeName}).\n${if (live) "جرّب قناة ثانية بالأسهم فوق/تحت" else "تأكد من الاتصال وجرّب مرة ثانية"}"
+                    status.visibility = View.VISIBLE
+                }
+            }
     }
 
     private fun immersive() {
@@ -166,7 +184,7 @@ class PlayerActivity : Activity() {
     }
 
     // ---------- المباشر ----------
-    private fun playChannel(i: Int) {
+    private fun playChannel(i: Int, reuse: Boolean = false) {
         val list = Session.playlist
         if (list.isEmpty()) { finish(); return }
         val idx = ((i % list.size) + list.size) % list.size
@@ -175,7 +193,10 @@ class PlayerActivity : Activity() {
         triedTs = false
         title.text = "${idx + 1}. ${ch.name}"
         sub.text = Session.playCategory
-        start(Session.api!!.liveUrl(ch.id), 0)
+        // نفس القناة الشغّالة في الشاشة الصغيرة؟ نكمل عليها مباشرة بدون إعادة اتصال
+        loading.visibility = View.VISIBLE
+        LivePlayer.play(this, Session.api!!.liveUrl(ch.id), force = !reuse)
+        if (player?.playbackState == Player.STATE_READY) loading.visibility = View.GONE
         Store.addHistory(HistoryItem("live:${ch.id}", "live", ch.name, Session.playCategory, ch.icon, ""))
         showBar()
         scope.launch {
@@ -196,6 +217,7 @@ class PlayerActivity : Activity() {
         val p = player ?: return
         if (p.isCurrentMediaItemLive && p.isCurrentMediaItemSeekable) p.seekToDefaultPosition()
         else playChannel(Session.playIndex)             // بث بدون إمكانية رجوع (TS): نعيد الاتصال على الحالي
+        syncPause()
         p.playWhenReady = true
         showBar()
     }
@@ -215,10 +237,21 @@ class PlayerActivity : Activity() {
         liveBtn.background = StateListFocus.make(this, if (behind) 0xFF3A404A.toInt() else C.LIVE)
     }
 
+    private fun togglePause() {
+        val p = player ?: return
+        p.playWhenReady = !p.playWhenReady
+        syncPause()
+    }
+
+    private fun syncPause() {
+        if (!::pauseBtn.isInitialized) return
+        pauseIcon.setImageResource(if (player?.playWhenReady == true) R.drawable.ic_pause else R.drawable.ic_play)
+    }
+
     private fun showBar() {
         topBar.visibility = View.VISIBLE
         hideJob?.cancel()
-        hideJob = scope.launch { delay(5000); if (live) topBar.visibility = View.GONE }
+        hideJob = scope.launch { delay(5000); if (live && player?.playWhenReady != false) topBar.visibility = View.GONE }
     }
 
     // ---------- الأفلام والحلقات ----------
@@ -251,11 +284,20 @@ class PlayerActivity : Activity() {
                 KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_CHANNEL_UP -> { playChannel(Session.playIndex - 1); return true }
                 KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_CHANNEL_DOWN -> { playChannel(Session.playIndex + 1); return true }
                 KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
-                    if (topBar.visibility == View.VISIBLE && liveBtn.isFocused) goLive() else { showBar(); liveBtn.requestFocus() }
+                    when {
+                        topBar.visibility == View.VISIBLE && liveBtn.isFocused -> goLive()
+                        topBar.visibility == View.VISIBLE && pauseBtn.isFocused -> togglePause()
+                        else -> { showBar(); pauseBtn.requestFocus() }
+                    }
+                    showBar()
                     return true
                 }
-                KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_SPACE -> {
-                    player?.let { it.playWhenReady = !it.playWhenReady }; showBar(); return true
+                KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                    if (topBar.visibility != View.VISIBLE) { showBar(); pauseBtn.requestFocus(); return true }
+                    showBar()
+                }
+                KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_SPACE, KeyEvent.KEYCODE_MEDIA_PAUSE, KeyEvent.KEYCODE_MEDIA_PLAY -> {
+                    togglePause(); showBar(); return true
                 }
                 KeyEvent.KEYCODE_INFO, KeyEvent.KEYCODE_MENU -> { showBar(); return true }
             }
@@ -283,18 +325,22 @@ class PlayerActivity : Activity() {
     override fun onPause() {
         super.onPause()
         saveProgress()
-        player?.playWhenReady = false
+        // الأفلام: وقف مؤقت. المباشر لو راجع للشاشة الصغيرة يكمل بدون انقطاع.
+        if (!(live && returnsToPreview && isFinishing)) player?.playWhenReady = false
     }
 
     override fun onResume() {
         super.onResume()
         player?.playWhenReady = true
+        syncPause()
     }
 
     override fun onDestroy() {
         saveProgress()
         scope.cancel()
-        player?.release()
+        player?.removeListener(listener)
+        pv.player = null
+        if (live) { if (!returnsToPreview) LivePlayer.release() } else player?.release()
         player = null
         super.onDestroy()
     }

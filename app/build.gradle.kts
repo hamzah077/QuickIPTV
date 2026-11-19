@@ -11,11 +11,23 @@ android {
         applicationId = "com.quickiptv.app"
         minSdk = 21            // أندرويد 5 — يشتغل على أغلب أجهزة TV Box القديمة
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        // كل بناء على GitHub رقمه أكبر من اللي قبله → يتثبت كتحديث فوق القديم
+        val build = (System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInt()
+        versionCode = 100 + build
+        versionName = "1.0.$build"
         // نخلي العربي والإنجليزي بس (يصغّر حجم التطبيق)
         resourceConfigurations += listOf("ar", "en")
         vectorDrawables.useSupportLibrary = false
+    }
+
+    // مفتاح توقيع ثابت: لازم يكون نفس المفتاح بكل نسخة عشان أندرويد يقبل التحديث بدون حذف
+    signingConfigs {
+        create("quick") {
+            storeFile = file("quickiptv.jks")
+            storePassword = "quickiptv2026"
+            keyAlias = "quickiptv"
+            keyPassword = "quickiptv2026"
+        }
     }
 
     buildTypes {
@@ -23,8 +35,7 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // توقيع بمفتاح التطوير عشان الـ APK يتثبت مباشرة (للنشر في المتجر استخدم مفتاحك الخاص)
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("quick")
         }
     }
     compileOptions {
