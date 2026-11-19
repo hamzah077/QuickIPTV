@@ -93,7 +93,12 @@ class H(BaseHTTPRequestHandler):
         if a == "get_series": return self.send(series)
         if a == "get_series_info": return self.send(series_info(int(q.get("series_id", "1"))))
         if a == "get_vod_info": return self.send({"info": {"name": "فيلم", "plot": "قصة الفيلم", "movie_image": f"{HOST}/img/3.png"}, "movie_data": {"stream_id": q.get("vod_id")}})
-        if a == "get_short_epg": return self.send({"epg_listings": []})
+        if a == "get_short_epg":
+            import base64, time as _t
+            now = int(_t.time()) // 1800 * 1800
+            names = ["الدوري السعودي: الهلال × النصر", "الاستوديو التحليلي", "ملخص الجولة", "نشرة الأخبار", "مسلسل الليلة", "وثائقي", "إعادة المباراة", "برنامج صباحي"]
+            b = lambda t: base64.b64encode(t.encode()).decode()
+            return self.send({"epg_listings": [{"title": b(names[i % len(names)]), "description": b("وصف"), "start_timestamp": str(now - 1800 + i * 3600), "stop_timestamp": str(now + 1800 + i * 3600)} for i in range(10)]})
         return self.send([])
 
 ThreadingHTTPServer(("0.0.0.0", 8000), H).serve_forever()

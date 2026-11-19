@@ -64,8 +64,15 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         window.decorView.layoutDirection = View.LAYOUT_DIRECTION_RTL
         edgeToEdge()
-        val acc = Store.current
+        val accSaved = Store.current
         intent?.getStringExtra("open")?.let { pendingOpen = it }
+        // إضافة حساب بالتشغيل (بدون كتابة بالريموت): am start ... -e server URL -e user U -e pass P
+        val qs = intent?.getStringExtra("server"); val qu = intent?.getStringExtra("user"); val qp = intent?.getStringExtra("pass")
+        val acc = if (!qs.isNullOrBlank() && !qu.isNullOrBlank() && !qp.isNullOrBlank()) {
+            val srv = Xtream.normalizeServer(qs)
+            val id = Store.accounts.firstOrNull { it.server == srv && it.username == qu }?.id ?: java.util.UUID.randomUUID().toString().take(10)
+            Account(id, qu, srv, qu, qp).also { Store.saveAccount(it) }
+        } else accSaved
         if (acc == null) showLogin() else enter(acc, checkLogin = true)
         Downloads.pump()        // يكمل التحميلات اللي ما خلصت
     }
