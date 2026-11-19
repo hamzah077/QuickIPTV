@@ -45,10 +45,10 @@ fun MainActivity.sectionTitle(t: String): TextView = text(t, 17f, C.TEXT, bold =
 }
 
 /** صف أفقي من البوسترات (للرئيسية). */
-fun MainActivity.posterRow(items: List<Vod>, width: Int, onClick: (Vod) -> Unit): RecyclerView =
+fun MainActivity.posterRow(items: List<Vod>, posterW: Int, onClick: (Vod) -> Unit): RecyclerView =
     RecyclerView(this).apply {
         layoutManager = LinearLayoutManager(this@posterRow, LinearLayoutManager.HORIZONTAL, false)
-        adapter = PosterAdapter(this@posterRow, width, onClick).also { it.items = items }
+        adapter = PosterAdapter(this@posterRow, posterW, onClick).also { it.items = items }
         setHasFixedSize(true)
         clipToPadding = false
         layoutDirection = View.LAYOUT_DIRECTION_RTL

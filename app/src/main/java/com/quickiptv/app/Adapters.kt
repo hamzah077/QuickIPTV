@@ -106,7 +106,7 @@ class ChannelAdapter(
 /** بوستر فيلم/مسلسل (الصورة بحجمها المعروض بس = ذاكرة أقل). */
 class PosterAdapter(
     private val ctx: Context,
-    private val width: Int,
+    private val posterW: Int,   // لا تسمّه width: داخل apply{} يصير View.width (= صفر)
     private val onClick: (Vod) -> Unit,
 ) : RecyclerView.Adapter<PosterAdapter.VH>() {
 
@@ -120,7 +120,7 @@ class PosterAdapter(
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH = with(ctx) {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            layoutParams = RecyclerView.LayoutParams(width, WRAP).apply { setMargins(dp(5), dp(5), dp(5), dp(8)) }
+            layoutParams = RecyclerView.LayoutParams(posterW, WRAP).apply { setMargins(dp(5), dp(5), dp(5), dp(8)) }
             setPadding(dp(3), dp(3), dp(3), dp(3))
             background = focusBg(radius = 12)
             isFocusable = true
@@ -128,7 +128,7 @@ class PosterAdapter(
             focusScale(1.06f)
         }
         val box = FrameLayout(this).apply {
-            layoutParams = LinearLayout.LayoutParams(MATCH, (width * 1.45f).toInt())
+            layoutParams = LinearLayout.LayoutParams(MATCH, (posterW * 1.45f).toInt())
             background = rounded(C.SURFACE2, dpf(9f))
             clipToOutline = true
         }
@@ -151,7 +151,7 @@ class PosterAdapter(
         val v = items[pos]
         h.title.text = v.name
         h.img.load(v.icon.ifEmpty { null }) {
-            size(width, (width * 1.45f).toInt())
+            size(posterW, (posterW * 1.45f).toInt())
             placeholder(null)
             error(null)
         }
