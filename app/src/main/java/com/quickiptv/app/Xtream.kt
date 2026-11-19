@@ -175,6 +175,9 @@ class Xtream(val acc: Account, private val cacheDir: File) {
     fun vodCategories() = cats("get_vod_categories")
     fun seriesCategories() = cats("get_series_categories")
 
+    /** القنوات محمّلة بالذاكرة؟ (عشان ما نحجب الواجهة). */
+    fun hasLive(): Boolean = mem.containsKey("live")
+
     @Suppress("UNCHECKED_CAST")
     fun liveStreams(force: Boolean = false): List<Channel> {
         if (!force) mem["live"]?.let { return it as List<Channel> }

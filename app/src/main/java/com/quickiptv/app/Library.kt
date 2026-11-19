@@ -3,9 +3,11 @@ package com.quickiptv.app
 import android.content.res.ColorStateList
 import android.view.Gravity
 import android.view.View
+import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ProgressBar
+import android.widget.TextView
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -13,61 +15,69 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** الأفلام / المسلسلات: تصنيفات + شبكة بوسترات (يرسم الظاهر بس = سلس حتى مع آلاف العناصر). */
+/** صف تصنيف في صفحة الأفلام/المسلسلات: العنوان + "الكل ‹" + بوسترات أفقية. */
+private data class Shelf(val id: String, val title: String, val items: List<Vod>)
+
+/**
+ * الأفلام / المسلسلات (الاختيار ب): صفوف أفقية لكل تصنيف (المفضلة، أُضيف مؤخراً، ثم التصنيفات).
+ * "الكل ‹" يفتح التصنيف كامل كشبكة مع ترتيب (الأحدث / الأعلى تقييم / أ-ي).
+ * الصفوف نفسها داخل RecyclerView: ما ينرسم إلا اللي ظاهر (خفيف حتى مع مئات التصنيفات).
+ */
 class LibraryScreen(private val a: MainActivity, private val series: Boolean) : Screen {
     private val kind = if (series) "series" else "movie"
+    private val title = if (series) "المسلسلات" else "الأفلام"
     override val view: View
-    private val catAdapter = CategoryAdapter(a, horizontal = !a.tv) { select(it.id) }
-    private val posterW = a.dp(if (a.tv) 128 else 104)
+    private val posterW = a.dp(if (a.tv) 124 else 100)
+    private val rows = RecyclerView(a)
+    private val shelfAdapter = ShelfAdapter()
+    private val gridBox = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE }
     private val grid = RecyclerView(a)
-    private val posters = PosterAdapter(a, posterW) { a.openDetails(it) }
-    private val catList = RecyclerView(a)
+    private val gridPosters = PosterAdapter(a, posterW) { a.openDetails(it) }
+    private val gridTitle = a.text("", 18f, C.TEXT, bold = true)
+    private val sortRow = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL }
     private val loading = ProgressBar(a).apply { indeterminateTintList = ColorStateList.valueOf(C.ACCENT) }
     private val empty = a.text("", 14f, C.MUTED, lines = 3).apply { gravity = Gravity.CENTER; visibility = View.GONE }
-    private val header = a.text(if (series) "المسلسلات" else "الأفلام", 18f, C.TEXT, bold = true)
     private var all: List<Vod> = emptyList()
-    private var catId = ""
-
-    companion object {
-        const val FAV = "__fav"
-        const val ALL = "__all"
-        const val NEW = "__new"
-    }
+    private var cats: List<Category> = emptyList()
+    private var gridItems: List<Vod> = emptyList()
+    private var sort = "new"
+    private var lastRowFocus = 0
 
     init {
-        catList.layoutManager = LinearLayoutManager(a, if (a.tv) LinearLayoutManager.VERTICAL else LinearLayoutManager.HORIZONTAL, false)
-        catList.adapter = catAdapter
-        grid.adapter = posters
-        grid.setHasFixedSize(true)
-        grid.setItemViewCacheSize(24)
         val root = FrameLayout(a)
-        if (a.tv) {
-            val row = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL; setPadding(a.dp(12), a.dp(14), a.dp(12), 0) }
-            row.addView(catList, lp(a.dp(210), MATCH).apply { marginEnd = a.dp(12) })
-            val col = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL }
-            col.addView(header.apply { setPadding(a.dp(6), 0, 0, a.dp(8)) })
-            col.addView(grid, lp(MATCH, 0, 1f))
-            row.addView(col, lp(0, MATCH, 1f))
-            root.addView(row)
-        } else {
-            val col = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL; setPadding(0, a.dp(12), 0, 0) }
-            col.addView(header.apply { setPadding(a.dp(14), 0, a.dp(14), a.dp(4)) })
-            col.addView(catList, lp(MATCH, a.dp(52)).apply { setMargins(a.dp(8), 0, a.dp(8), 0) })
-            catList.setPadding(a.dp(4), a.dp(8), a.dp(4), a.dp(8)); catList.clipToPadding = false
-            col.addView(grid, lp(MATCH, 0, 1f))
-            grid.setPadding(a.dp(6), 0, a.dp(6), 0)
-            root.addView(col)
-        }
-        root.addView(loading, FrameLayout.LayoutParams(a.dp(40), a.dp(40), Gravity.CENTER))
-        root.addView(empty, FrameLayout.LayoutParams(MATCH, WRAP, Gravity.CENTER).apply { setMargins(a.dp(30), 0, a.dp(30), 0) })
-        view = root
-        // عدد الأعمدة حسب العرض الفعلي
+        val main = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL }
+        val head = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(a.dp(16), a.dp(12), a.dp(8), a.dp(4)) }
+        head.addView(a.text(title, 20f, C.TEXT, bold = true), lp(0, WRAP, 1f))
+        head.addView(a.iconButton(R.drawable.ic_search, "بحث", 42) { a.openExtra("search") })
+        main.addView(head)
+        rows.layoutManager = LinearLayoutManager(a)
+        rows.adapter = shelfAdapter
+        rows.setItemViewCacheSize(4)
+        main.addView(rows, lp(MATCH, 0, 1f))
+        root.addView(main)
+
+        // شبكة "الكل"
+        val gh = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(a.dp(8), a.dp(10), a.dp(16), a.dp(4)) }
+        gh.addView(a.iconButton(R.drawable.ic_chev_right, "رجوع", 42) { closeGrid() })
+        gh.addView(gridTitle, lp(0, WRAP, 1f).apply { marginStart = a.dp(6) })
+        gridBox.addView(gh)
+        sortRow.setPadding(a.dp(14), a.dp(4), a.dp(14), a.dp(8))
+        gridBox.addView(sortRow)
+        grid.adapter = gridPosters
+        grid.setHasFixedSize(true)
+        grid.setPadding(a.dp(8), 0, a.dp(8), 0)
         grid.layoutManager = GridLayoutManager(a, 3)
         grid.addOnLayoutChangeListener { v, l, _, r, _, _, _, _, _ ->
             val span = maxOf(2, (r - l - v.paddingLeft - v.paddingRight) / (posterW + a.dp(10)))
             val lm = grid.layoutManager as GridLayoutManager
             if (lm.spanCount != span) v.post { lm.spanCount = span }
         }
+        gridBox.setBackgroundColor(C.BG)
+        gridBox.addView(grid, lp(MATCH, 0, 1f))
+        root.addView(gridBox, FrameLayout.LayoutParams(MATCH, MATCH))
+        root.addView(loading, FrameLayout.LayoutParams(a.dp(40), a.dp(40), Gravity.CENTER))
+        root.addView(empty, FrameLayout.LayoutParams(MATCH, WRAP, Gravity.CENTER).apply { setMargins(a.dp(30), 0, a.dp(30), 0) })
+        view = root
         load()
     }
 
@@ -76,14 +86,11 @@ class LibraryScreen(private val a: MainActivity, private val series: Boolean) : 
         loading.visibility = View.VISIBLE
         a.scope.launch {
             try {
-                val (cats, items) = withContext(Dispatchers.IO) {
+                val (c, items) = withContext(Dispatchers.IO) {
                     (if (series) api.seriesCategories() else api.vodCategories()) to api.vods(series)
                 }
-                all = items
-                catAdapter.items = listOf(Category(FAV, "المفضلة"), Category(NEW, "أُضيف مؤخراً"),
-                    Category(ALL, if (series) "كل المسلسلات" else "كل الأفلام")) + cats
-                val last = Store.lastCategory(kind)
-                select(if (last.isNotEmpty() && catAdapter.items.any { it.id == last }) last else cats.firstOrNull()?.id ?: ALL)
+                all = items; cats = c
+                buildShelves()
             } catch (e: Exception) {
                 empty.text = e.message ?: "تعذر التحميل"; empty.visibility = View.VISIBLE
             } finally {
@@ -92,26 +99,125 @@ class LibraryScreen(private val a: MainActivity, private val series: Boolean) : 
         }
     }
 
-    private fun select(id: String) {
-        catId = id
-        catAdapter.selectedId = id
-        Store.setLastCategory(kind, id)
-        val items = when (id) {
-            ALL -> all
-            NEW -> all.sortedByDescending { it.added }.take(200)
-            FAV -> { val m = all.associateBy { it.id }; Store.favs(kind).mapNotNull { m[it] } }
-            else -> all.filter { it.categoryId == id }
+    private fun buildShelves() {
+        val byCat = all.groupBy { it.categoryId }
+        val list = ArrayList<Shelf>()
+        val favIds = Store.favs(kind)
+        if (favIds.isNotEmpty()) {
+            val m = all.associateBy { it.id }
+            list.add(Shelf(FAV, "المفضلة", favIds.mapNotNull { m[it] }))
         }
-        posters.items = items
-        grid.scrollToPosition(0)
-        header.text = catAdapter.items.firstOrNull { it.id == id }?.name ?: header.text
-        empty.text = if (id == FAV) "ما فيه شي بالمفضلة بعد" else "ما فيه عناصر هنا"
-        empty.visibility = if (items.isEmpty()) View.VISIBLE else View.GONE
+        list.add(Shelf(NEW, "أُضيف مؤخراً", all.sortedByDescending { it.added }.take(30)))
+        cats.forEach { c -> byCat[c.id]?.takeIf { it.isNotEmpty() }?.let { list.add(Shelf(c.id, c.name, it)) } }
+        shelfAdapter.items = list.filter { it.items.isNotEmpty() }
+        empty.text = "ما فيه $title"
+        empty.visibility = if (all.isEmpty()) View.VISIBLE else View.GONE
     }
 
-    override fun onShow() { if (catId == FAV) select(FAV) }
+    // ---------- شبكة "الكل" ----------
+    private fun openGrid(shelf: Shelf) {
+        gridTitle.text = shelf.title
+        gridItems = when (shelf.id) {
+            NEW -> all
+            FAV -> shelf.items
+            else -> all.filter { it.categoryId == shelf.id }
+        }
+        sort = if (shelf.id == NEW) "new" else sort
+        buildSort()
+        applySort()
+        gridBox.visibility = View.VISIBLE
+        grid.post { (grid.getChildAt(0) ?: grid).requestFocus() }
+    }
+
+    private fun buildSort() {
+        sortRow.removeAllViews()
+        listOf("new" to "الأحدث", "rating" to "الأعلى تقييم", "name" to "أ-ي").forEach { (k, t) ->
+            val on = k == sort
+            sortRow.addView(a.text(t, 12.5f, if (on) C.PRIMARY_TEXT else C.TEXT2, lines = 0).apply {
+                gravity = Gravity.CENTER
+                setPadding(a.dp(14), a.dp(7), a.dp(14), a.dp(7))
+                background = a.focusBg(normal = if (on) C.PRIMARY else C.SURFACE2, radius = 16, selected = if (on) C.PRIMARY else C.ACCENT_SOFT)
+                isFocusable = true; isClickable = true
+                setOnClickListener { sort = k; buildSort(); applySort() }
+            }, lp(WRAP, WRAP).apply { marginEnd = a.dp(8) })
+        }
+    }
+
+    private fun applySort() {
+        gridPosters.items = when (sort) {
+            "rating" -> gridItems.sortedByDescending { it.rating.toDoubleOrNull() ?: 0.0 }
+            "name" -> gridItems.sortedBy { it.name.lowercase() }
+            else -> gridItems.sortedByDescending { it.added }
+        }
+        grid.scrollToPosition(0)
+    }
+
+    private fun closeGrid() {
+        gridBox.visibility = View.GONE
+        rows.post { (rows.findViewHolderForAdapterPosition(lastRowFocus)?.itemView ?: rows).requestFocus() }
+    }
+
+    override fun onBack(): Boolean {
+        if (gridBox.visibility == View.VISIBLE) { closeGrid(); return true }
+        return false
+    }
+
+    override fun onShow() { if (all.isNotEmpty()) buildShelves() }
 
     override fun focusDefault() {
-        grid.post { (grid.getChildAt(0) ?: catList.getChildAt(0) ?: grid).requestFocus() }
+        if (gridBox.visibility == View.VISIBLE) grid.post { (grid.getChildAt(0) ?: grid).requestFocus() }
+        else rows.post { rows.findViewHolderForAdapterPosition(0)?.itemView?.requestFocus() ?: rows.requestFocus() }
+    }
+
+    // ---------- الصفوف ----------
+    private inner class ShelfAdapter : RecyclerView.Adapter<ShelfAdapter.VH>() {
+        var items: List<Shelf> = emptyList()
+            set(v) { field = v; notifyDataSetChanged() }
+
+        inner class VH(root: LinearLayout, val title: TextView, val more: TextView, val list: RecyclerView, val posters: PosterAdapter) : RecyclerView.ViewHolder(root)
+
+        override fun getItemCount() = items.size
+
+        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
+            val root = LinearLayout(a).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = RecyclerView.LayoutParams(MATCH, WRAP)
+                setPadding(0, a.dp(6), 0, a.dp(6))
+            }
+            val head = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(a.dp(16), a.dp(4), a.dp(10), a.dp(2)) }
+            val t = a.text("", 15.5f, C.TEXT, bold = true)
+            head.addView(t, lp(0, WRAP, 1f))
+            val more = a.text("الكل  ‹", 13f, C.ACCENT, lines = 0).apply {
+                gravity = Gravity.CENTER
+                setPadding(a.dp(10), a.dp(6), a.dp(10), a.dp(6))
+                background = a.focusBg(radius = 8)
+                isFocusable = true; isClickable = true
+            }
+            head.addView(more)
+            root.addView(head)
+            val posters = PosterAdapter(a, posterW) { a.openDetails(it) }
+            val list = RecyclerView(a).apply {
+                layoutManager = LinearLayoutManager(a, LinearLayoutManager.HORIZONTAL, false)
+                adapter = posters
+                setHasFixedSize(true)
+                setPadding(a.dp(10), 0, a.dp(10), 0)
+                clipToPadding = false
+            }
+            root.addView(list, lp(MATCH, WRAP))
+            return VH(root, t, more, list, posters)
+        }
+
+        override fun onBindViewHolder(h: VH, pos: Int) {
+            val s = items[pos]
+            h.title.text = s.title
+            h.posters.items = s.items.take(24)          // الباقي في "الكل" (صور أقل = أخف)
+            h.list.scrollToPosition(0)
+            h.more.setOnClickListener { lastRowFocus = h.bindingAdapterPosition; openGrid(s) }
+        }
+    }
+
+    companion object {
+        const val FAV = "__fav"
+        const val NEW = "__new"
     }
 }

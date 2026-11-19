@@ -21,6 +21,8 @@ interface Screen {
     fun onShow() {}
     fun onHide() {}
     fun onKey(keyCode: Int, event: KeyEvent): Boolean = false
+    /** رجوع داخل الشاشة نفسها (مثل الرجوع من "الكل" لصفوف الأفلام). true = تعامل معه. */
+    fun onBack(): Boolean = false
     fun focusDefault() { view.requestFocus() }
 }
 
@@ -132,7 +134,10 @@ class MainActivity : Activity() {
         isClickable = true
         background = focusBg(radius = 0, selected = 0)
         addView(icon(ic, C.MUTED, 22).apply { tag = "ic" })
-        addView(text(label, 10.5f, C.MUTED).apply { tag = "tx"; setPadding(0, dp(3), 0, 0) })
+        // اسم القسم: بعرض الخانة كامل وفي النص (بدون قص على الأطراف)
+        addView(text(label, 10f, C.MUTED, lines = 0).apply {
+            tag = "tx"; maxLines = 1; gravity = Gravity.CENTER; setPadding(0, dp(3), 0, 0)
+        }, lp(MATCH, WRAP))
         setOnClickListener { show(key) }
     }
 
@@ -144,6 +149,8 @@ class MainActivity : Activity() {
             "series" -> LibraryScreen(this, series = true)
             "search" -> SearchScreen(this)
             "favorites" -> FavoritesScreen(this)
+            "history" -> HistoryScreen(this)
+            "epg" -> EpgScreen(this)
             else -> SettingsScreen(this)
         }
     }
@@ -187,7 +194,8 @@ class MainActivity : Activity() {
     override fun onBackPressed() {
         when {
             current == "" -> super.onBackPressed()
-            !tv && (current == "search" || current == "favorites") -> show("settings")
+            current == "epg" || current == "history" || (!tv && (current == "search" || current == "favorites")) -> show("settings")
+            screens[current]?.onBack() == true -> {}
             current != "home" -> show("home")
             else -> super.onBackPressed()
         }

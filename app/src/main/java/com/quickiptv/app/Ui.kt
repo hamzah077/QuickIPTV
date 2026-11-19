@@ -103,6 +103,55 @@ fun Context.text(
         ellipsize = TextUtils.TruncateAt.END
     }
     includeFontPadding = false
+    // محاذاة من بداية السطر حسب اتجاه الواجهة (يمين بالعربي) حتى لو النص إنجليزي
+    gravity = Gravity.START or Gravity.CENTER_VERTICAL
+}
+
+/** عنوان قسم صغير فوق مجموعة أسطر. */
+fun Context.sectionHeader(t: String): TextView = text(t, 12.5f, C.MUTED).apply {
+    setPadding(dp(16), dp(18), dp(16), dp(6))
+}
+
+/** خط فاصل رفيع. */
+fun Context.divider(): View = View(this).apply {
+    setBackgroundColor(C.BORDER)
+    layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1)
+}
+
+/**
+ * سطر قائمة: أيقونة (يمين) ← العنوان والوصف ← القيمة ← سهم (يسار).
+ * يشتغل باللمس والريموت (إطار أبيض لما يتحدد).
+ */
+fun Context.listRow(
+    iconRes: Int,
+    title: String,
+    value: String = "",
+    subtitle: String = "",
+    chevron: Boolean = true,
+    danger: Boolean = false,
+    onClick: (() -> Unit)? = null,
+): LinearLayout = LinearLayout(this).apply {
+    orientation = LinearLayout.HORIZONTAL
+    gravity = Gravity.CENTER_VERTICAL
+    minimumHeight = dp(56)
+    setPadding(dp(16), dp(10), dp(16), dp(10))
+    val fg = if (danger) C.LIVE else C.TEXT
+    if (iconRes != 0) {
+        addView(icon(iconRes, if (danger) C.LIVE else C.TEXT2, 22))
+        addView(View(context), LinearLayout.LayoutParams(dp(14), 1))
+    }
+    val col = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+    col.addView(text(title, 15f, fg))
+    if (subtitle.isNotEmpty()) col.addView(text(subtitle, 12f, C.MUTED, lines = 2).apply { setPadding(0, dp(3), 0, 0) })
+    addView(col, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+    if (value.isNotEmpty()) addView(text(value, 13f, C.MUTED).apply { setPadding(dp(8), 0, dp(4), 0); tag = "value" })
+    if (chevron) addView(icon(R.drawable.ic_chev_left, C.FAINT, 18))
+    if (onClick != null) {
+        isFocusable = true
+        isClickable = true
+        background = focusBg(radius = 0)
+        setOnClickListener { onClick() }
+    }
 }
 
 fun Context.icon(res: Int, color: Int = C.TEXT2, size: Int = 22): ImageView = ImageView(this).apply {

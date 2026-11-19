@@ -79,8 +79,9 @@ class DetailsActivity : Activity() {
                     plot.text = info.optString("plot")
                     meta(body, info.optString("releaseDate").take(4), info.optString("genre"), info.optString("rating"))
                     seasons = s
-                    season = s.keys.firstOrNull() ?: 1
+                    season = seriesResume()?.first?.season ?: s.keys.firstOrNull() ?: 1
                     buildSeasons()
+                    buildActions()
                 } else {
                     val info = withContext(Dispatchers.IO) { api.vodInfo(id) }
                     plot.text = info.optString("plot").ifEmpty { info.optString("description") }
@@ -115,11 +116,34 @@ class DetailsActivity : Activity() {
             }
             play.post { play.requestFocus() }
         }
+        if (series) seriesResume()?.let { (e, label) ->
+            val b = button(label, R.drawable.ic_play, primary = true) { playEpisode(e) }
+            actions.addView(b)
+            actions.addView(View(this), lp(dp(8), 1))
+            b.post { b.requestFocus() }
+        }
         val kind = if (series) "series" else "movie"
         val fav = Store.isFav(kind, id)
         actions.addView(button(if (fav) "في المفضلة" else "المفضلة", R.drawable.ic_heart) {
             Store.toggleFav(kind, id); buildActions()
         })
+    }
+
+    /** الحلقة اللي نكمل منها: آخر حلقة شغّلتها (أو اللي بعدها لو خلصتها). */
+    private fun seriesResume(): Pair<Episode, String>? {
+        if (seasons.isEmpty()) return null
+        val all = seasons.values.flatten()
+        val last = Store.history().firstOrNull { it.type == "episode" && it.seriesId == id } ?: return all.firstOrNull()?.let { it to "تشغيل · م${it.season} ح${it.num}" }
+        val i = all.indexOfFirst { "ep:${it.id}" == last.key }
+        if (i < 0) return null
+        val done = last.dur > 0 && last.pos >= last.dur - 60
+        val e = if (done) all.getOrNull(i + 1) ?: return null else all[i]
+        return e to (if (done) "الحلقة التالية · م${e.season} ح${e.num}" else "متابعة · م${e.season} ح${e.num}")
+    }
+
+    private fun playEpisode(e: Episode) {
+        val key = "ep:${e.id}"
+        play(Session.api!!.episodeUrl(e.id, e.ext), key, name, "الموسم ${e.season} · الحلقة ${e.num}", Store.resumePoint(key), "episode")
     }
 
     private fun buildSeasons() {
@@ -137,25 +161,34 @@ class DetailsActivity : Activity() {
             val row = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
-                setPadding(dp(12), dp(10), dp(12), dp(10))
-                background = focusBg(normal = C.SURFACE, radius = 10)
+                setPadding(dp(8), dp(8), dp(8), dp(8))
+                background = focusBg(radius = 10, normal = if (h != null && h.pos > 30 && h.pos < h.dur - 60) C.ACCENT_SOFT else 0)
                 isFocusable = true; isClickable = true
-                layoutParams = lp(MATCH, WRAP).apply { bottomMargin = dp(6) }
-                setOnClickListener {
-                    play(Session.api!!.episodeUrl(e.id, e.ext), key, name, "الموسم ${e.season} · الحلقة ${e.num}", Store.resumePoint(key), "episode")
-                }
+                layoutParams = lp(MATCH, WRAP).apply { bottomMargin = dp(2) }
+                setOnClickListener { playEpisode(e) }
             }
-            row.addView(text("${e.num}", 16f, C.MUTED, bold = true).apply { layoutParams = lp(dp(36), WRAP) })
+            val thumb = ImageView(this).apply {
+                scaleType = ImageView.ScaleType.CENTER_CROP
+                background = rounded(C.SURFACE2, dpf(7f)); clipToOutline = true
+                load((e.image.ifEmpty { icon }).ifEmpty { null }) { size(320, 180) }
+            }
+            row.addView(thumb, lp(dp(112), dp(63)).apply { marginEnd = dp(12) })
             val c = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-            c.addView(text(e.title.ifEmpty { "الحلقة ${e.num}" }, 14f, C.TEXT).apply { textDirection = View.TEXT_DIRECTION_FIRST_STRONG })
+            c.addView(text("${e.num}. ${e.title.ifEmpty { "الحلقة ${e.num}" }}", 14f, C.TEXT, lines = 2))
+            val watched = h != null && h.dur > 0 && h.pos >= h.dur - 60
             val sub = when {
-                h != null && h.dur > 0 && h.pos >= h.dur - 60 -> "✓ شاهدتها"
+                watched -> "✓ شاهدتها"
                 h != null && h.pos > 30 -> "متبقي ${fmtTime(h.dur - h.pos)}"
                 else -> e.duration
             }
-            if (sub.isNotEmpty()) c.addView(text(sub, 12f, C.MUTED).apply { setPadding(0, dp(3), 0, 0) })
+            if (sub.isNotEmpty()) c.addView(text(sub, 12f, if (watched) 0xFF6FCF97.toInt() else C.MUTED).apply { setPadding(0, dp(4), 0, 0) })
+            if (h != null && h.dur > 0 && h.pos > 30 && !watched) c.addView(android.widget.ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
+                max = 1000; progress = (h.pos * 1000 / h.dur).toInt()
+                progressTintList = android.content.res.ColorStateList.valueOf(C.ACCENT)
+                progressBackgroundTintList = android.content.res.ColorStateList.valueOf(C.SURFACE3)
+                layoutDirection = View.LAYOUT_DIRECTION_LTR
+            }, lp(MATCH, dp(3)).apply { topMargin = dp(6) })
             row.addView(c, lp(0, WRAP, 1f))
-            row.addView(icon(R.drawable.ic_play, C.TEXT2, 18))
             episodesBox.addView(row)
             if (focus == null && (h == null || h.pos < h.dur - 60)) focus = row
         }

@@ -56,6 +56,16 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
     private val status = a.text("", 14f, C.MUTED, lines = 3).apply { gravity = Gravity.CENTER }
     private val loading = ProgressBar(a).apply { indeterminateTintList = ColorStateList.valueOf(C.ACCENT) }
     private val liveBtn = a.text("●  مباشر", 12f, C.TEXT, bold = true)
+    private val catBtn = a.text("", 13f, C.TEXT2)
+    private val searchBox = a.field("ابحث في هذا التصنيف…").apply {
+        layoutDirection = View.LAYOUT_DIRECTION_RTL; textDirection = View.TEXT_DIRECTION_FIRST_STRONG
+        addTextChangedListener(object : android.text.TextWatcher {
+            override fun afterTextChanged(s: android.text.Editable?) = applyFilter()
+            override fun beforeTextChanged(s: CharSequence?, st: Int, c: Int, af: Int) {}
+            override fun onTextChanged(s: CharSequence?, st: Int, b: Int, c: Int) {}
+        })
+    }
+    private var inCat: List<Channel> = emptyList()
     private var player: ExoPlayer? = null
     private var all: List<Channel> = emptyList()
     private var visible: List<Channel> = emptyList()
@@ -121,8 +131,21 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
             colm.addView(screen, lp(MATCH, w * 9 / 16))
             colm.addView(title.apply { setPadding(a.dp(12), a.dp(8), a.dp(12), 0); textDirection = View.TEXT_DIRECTION_FIRST_STRONG })
             colm.addView(nowText.apply { setPadding(a.dp(12), a.dp(2), a.dp(12), 0) })
-            colm.addView(catList, lp(MATCH, a.dp(52)).apply { setMargins(a.dp(8), a.dp(6), a.dp(8), a.dp(2)) })
-            catList.setPadding(a.dp(4), a.dp(8), a.dp(4), a.dp(8)); catList.clipToPadding = false
+            // سطر: "القنوات" + زر التصنيف (يفتح قائمة) + بحث داخل القسم
+            val bar = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(a.dp(12), a.dp(8), a.dp(8), a.dp(4)) }
+            bar.addView(a.text("القنوات", 17f, C.TEXT, bold = true), lp(WRAP, WRAP))
+            bar.addView(View(a), lp(0, 1, 1f))
+            catBtn.apply {
+                background = a.focusBg(normal = C.SURFACE2, radius = 9)
+                setPadding(a.dp(12), a.dp(7), a.dp(12), a.dp(7))
+                isFocusable = true; isClickable = true
+                setOnClickListener { pickCategory() }
+            }
+            bar.addView(catBtn, lp(WRAP, WRAP).apply { marginEnd = a.dp(6) })
+            bar.addView(a.iconButton(R.drawable.ic_search, "بحث في القنوات", 40) { toggleSearch() })
+            colm.addView(bar)
+            colm.addView(searchBox.apply { visibility = View.GONE }, lp(MATCH, WRAP).apply { setMargins(a.dp(12), a.dp(2), a.dp(12), a.dp(6)) })
+            colm.addView(a.divider())
             colm.addView(chList, lp(MATCH, 0, 1f))
             root.addView(colm)
         }
@@ -151,15 +174,32 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
         catId = id
         catAdapter.selectedId = id
         Store.setLastCategory("live", id)
-        visible = when (id) {
+        inCat = when (id) {
             Live.ALL -> all
             Live.FAV -> { val m = all.associateBy { it.id }; Store.favs("live").mapNotNull { m[it] } }
             else -> all.filter { it.categoryId == id }
         }
-        chAdapter.items = visible
+        val name = catAdapter.items.firstOrNull { it.id == id }?.name ?: ""
+        catBtn.text = "$name · ${inCat.size}  ⌄"
+        applyFilter()
         chList.scrollToPosition(0)
         val i = catAdapter.items.indexOfFirst { it.id == id }
         if (i >= 0) catList.scrollToPosition(i)
+    }
+
+    private fun applyFilter() {
+        val k = Epg.keys(searchBox.text?.toString() ?: "").first
+        visible = if (k.isEmpty()) inCat else inCat.filter { Epg.keys(it.name).first.contains(k) }
+        chAdapter.items = visible
+    }
+
+    private fun toggleSearch() {
+        if (searchBox.visibility == View.VISIBLE) { searchBox.setText(""); searchBox.visibility = View.GONE }
+        else { searchBox.visibility = View.VISIBLE; searchBox.requestFocus() }
+    }
+
+    private fun pickCategory() {
+        pickDialog(a, "التصنيفات", catAdapter.items.map { it.id to it.name }, catId) { selectCategory(it) }
     }
 
     override fun onEpgLoaded() { chAdapter.notifyDataSetChanged(); current?.let { showEpg(it) } }

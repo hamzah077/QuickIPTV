@@ -363,77 +363,199 @@ class FavoritesScreen(private val a: MainActivity) : Screen {
 }
 
 // =====================================================================
-/** الإعدادات (على الجوال هي "المزيد"): الحساب، دليل البرامج، صيغة البث، الكاش. */
+/** "المزيد" (الجوال) / الإعدادات (التلفزيون): قائمة مسطّحة بأسطر مرتبة. */
 class SettingsScreen(private val a: MainActivity) : Screen {
-    private val col = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL; setPadding(a.dp(18), a.dp(16), a.dp(18), a.dp(24)) }
+    private val col = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL; setPadding(0, a.dp(8), 0, a.dp(24)) }
+    override val view: View = ScrollView(a).apply { addView(col) }
+    private var first: View? = null
+
+    private fun add(v: View) { col.addView(v, lp(MATCH, WRAP)); col.addView(a.divider()); if (first == null && v.isFocusable) first = v }
+
+    override fun onShow() {
+        col.removeAllViews(); first = null
+        col.addView(a.text(if (a.tv) "الإعدادات" else "المزيد", 22f, C.TEXT, bold = true).apply { setPadding(a.dp(16), a.dp(10), a.dp(16), a.dp(12)) })
+
+        // الحساب: سطر واحد فيه الحرف الأول والاسم وتاريخ الانتهاء والاتصالات
+        val acc = Store.current
+        val ui = Session.userInfo
+        val exp = ui?.optString("exp_date")?.toLongOrNull()?.let {
+            java.text.SimpleDateFormat("yyyy/MM/dd", java.util.Locale.US).format(java.util.Date(it * 1000))
+        } ?: "—"
+        val accRow = a.listRow(0, acc?.name ?: "", subtitle = "ينتهي $exp · الاتصالات ${ui?.optString("active_cons") ?: "?"} من ${ui?.optString("max_connections") ?: "?"}") { a.showLogin(acc) }
+        val avatar = a.text((acc?.name ?: "?").take(1).uppercase(), 16f, 0xFFA9C1FF.toInt(), bold = true).apply {
+            gravity = Gravity.CENTER
+            background = rounded(0xFF2B3A5C.toInt(), a.dpf(22f))
+        }
+        accRow.addView(avatar, 0, lp(a.dp(44), a.dp(44)).apply { marginEnd = a.dp(14) })
+        add(accRow)
+
+        if (!a.tv) {
+            col.addView(a.sectionHeader("تصفّح"))
+            add(a.listRow(R.drawable.ic_search, "بحث") { a.openExtra("search") })
+            add(a.listRow(R.drawable.ic_heart, "المفضلة") { a.openExtra("favorites") })
+        }
+        add(a.listRow(R.drawable.ic_history, "سجل المشاهدة") { a.openExtra("history") })
+
+        col.addView(a.sectionHeader("الإعدادات"))
+        add(a.listRow(R.drawable.ic_live, "صيغة البث المباشر", if (Store.liveFormat == "ts") "MPEG-TS" else "HLS") { chooseFormat() })
+        add(a.listRow(R.drawable.ic_guide, "دليل البرامج", Epg.status.ifEmpty { "—" }) { a.openExtra("epg") })
+        add(a.listRow(R.drawable.ic_refresh, "تحديث القوائم", subtitle = "يجيب آخر القنوات والأفلام من السيرفر") {
+            Session.api?.clearCache(); a.toast("بتتحدّث القوائم أول ما تفتح كل قسم")
+        })
+        add(a.listRow(R.drawable.ic_user, "تعديل الحساب / حساب آخر") { a.showLogin(acc) })
+
+        col.addView(a.sectionHeader("عن التطبيق"))
+        add(a.listRow(R.drawable.ic_info, "QuickIPTV", "1.0", chevron = false))
+        add(a.listRow(R.drawable.ic_logout, "تسجيل خروج", chevron = false, danger = true) {
+            AlertDialog.Builder(a, android.R.style.Theme_Material_Dialog_Alert)
+                .setMessage("حذف الحساب من الجهاز؟")
+                .setPositiveButton("حذف") { _, _ -> acc?.let { Store.removeAccount(it.id) }; Store.current?.let { a.enter(it, true) } ?: a.showLogin() }
+                .setNegativeButton("إلغاء", null).show()
+        })
+    }
+
+    private fun chooseFormat() {
+        val opts = arrayOf("HLS (موصى به)", "MPEG-TS")
+        AlertDialog.Builder(a, android.R.style.Theme_Material_Dialog_Alert)
+            .setTitle("صيغة البث المباشر")
+            .setSingleChoiceItems(opts, if (Store.liveFormat == "ts") 1 else 0) { d, w ->
+                Store.liveFormat = if (w == 1) "ts" else "m3u8"; d.dismiss(); onShow()
+            }.show()
+    }
+
+    override fun focusDefault() { (first ?: view).requestFocus() }
+}
+
+// =====================================================================
+/** دليل البرامج: الحالة، روابط XMLTV (كل رابط سطر مع حذف)، إضافة رابط، تحديث. */
+class EpgScreen(private val a: MainActivity) : Screen {
+    private val col = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL; setPadding(0, a.dp(8), 0, a.dp(24)) }
     override val view: View = ScrollView(a).apply { addView(col) }
     private var first: View? = null
 
     override fun onShow() {
-        col.removeAllViews()
-        col.addView(a.text(if (a.tv) "الإعدادات" else "المزيد", 20f, C.TEXT, bold = true))
-        if (!a.tv) {
-            col.addView(a.sectionTitle("تصفّح"))
-            col.addView(a.button("بحث", R.drawable.ic_search) { a.openExtra("search") }.also { first = it }, lp(MATCH, WRAP).apply { bottomMargin = a.dp(6) })
-            col.addView(a.button("المفضلة", R.drawable.ic_heart) { a.openExtra("favorites") }, lp(MATCH, WRAP))
-        }
-        val acc = Store.current
-        col.addView(a.sectionTitle("الحساب"))
-        val ui = Session.userInfo
-        val exp = ui?.optString("exp_date")?.toLongOrNull()?.let { java.text.DateFormat.getDateInstance().format(java.util.Date(it * 1000)) } ?: "—"
-        col.addView(a.text("${acc?.name ?: ""}\n${acc?.server ?: ""}\nينتهي: $exp · الاتصالات: ${ui?.optString("active_cons") ?: "?"} من ${ui?.optString("max_connections") ?: "?"}", 13.5f, C.TEXT2, lines = 4))
-        val row = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, a.dp(10), 0, 0) }
-        row.addView(a.button("تعديل / حساب آخر", R.drawable.ic_user) { a.showLogin(acc) }.also { if (first == null) first = it })
-        row.addView(View(a), lp(a.dp(8), 1))
-        row.addView(a.button("تحديث القوائم", R.drawable.ic_refresh) {
-            Session.api?.clearCache(); a.toast("بتتحدّث القوائم أول ما تفتح كل قسم")
-        })
-        col.addView(row)
+        col.removeAllViews(); first = null
+        val head = a.listRow(R.drawable.ic_chev_right, "دليل البرامج", chevron = false) { a.show("settings") }
+        (head.getChildAt(2) as? LinearLayout)?.let { (it.getChildAt(0) as? TextView)?.apply { textSize = 20f; setTypeface(null, android.graphics.Typeface.BOLD) } }
+        col.addView(head); first = head
 
-        col.addView(a.sectionTitle("صيغة البث المباشر"))
-        val fr = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL }
-        listOf("m3u8" to "HLS (موصى به)", "ts" to "MPEG-TS").forEach { (k, t) ->
-            fr.addView(a.button(if (Store.liveFormat == k) "✓ $t" else t, primary = Store.liveFormat == k) {
-                Store.liveFormat = k; onShow()
-            })
-            fr.addView(View(a), lp(a.dp(8), 1))
-        }
-        col.addView(fr)
+        val chans = runCatching { Session.api?.let { if (it.hasLive()) it.liveStreams() else null } }.getOrNull() ?: emptyList()
+        val (m, t) = Epg.stats(chans)
+        col.addView(a.listRow(R.drawable.ic_info, "تعرّفنا على $m من $t قناة", subtitle = Epg.status, chevron = false))
+        col.addView(a.divider())
 
-        col.addView(a.sectionTitle("دليل البرامج (EPG)"))
-        col.addView(a.text("رابط XMLTV بكل سطر. يتعرّف على القنوات تلقائياً، وتقدر تربط أي قناة يدوياً بالضغط المطوّل عليها.", 12.5f, C.MUTED, lines = 3))
-        val box = EditText(a).apply {
-            setText(Store.epgUrls.joinToString("\n"))
-            setTextColor(C.TEXT); textSize = 12.5f
-            layoutDirection = View.LAYOUT_DIRECTION_LTR; textDirection = View.TEXT_DIRECTION_LTR
-            minLines = 2; maxLines = 5
-            background = a.focusBg(normal = C.SURFACE, radius = 10)
-            setPadding(a.dp(12), a.dp(10), a.dp(12), a.dp(10))
-        }
-        col.addView(box, lp(MATCH, WRAP).apply { topMargin = a.dp(8) })
-        val st = a.text(Epg.status, 12.5f, C.TEXT2)
-        col.addView(st.apply { setPadding(0, a.dp(8), 0, a.dp(8)) })
-        col.addView(a.button("حفظ وتحديث الدليل", R.drawable.ic_refresh, primary = true) {
-            Store.epgUrls = box.text.toString().split("\n", ",").map { it.trim() }.filter { it.isNotEmpty() }
-            st.text = "جاري التحميل…"
-            a.scope.launch {
-                val msg = withContext(Dispatchers.IO) { Epg.load(Store.epgUrls, a.cacheDir, force = true) }
-                val (m, t) = withContext(Dispatchers.IO) { Epg.stats(runCatching { Session.api!!.liveStreams() }.getOrDefault(emptyList())) }
-                st.text = "$msg · تعرّفنا على $m من $t قناة"
-            }
-        }, lp(WRAP, WRAP))
-
-        col.addView(a.sectionTitle("عن التطبيق"))
-        col.addView(a.text("QuickIPTV 1.0 — مشغّل خفيف بـ ExoPlayer", 12.5f, C.MUTED))
-        if (Store.accounts.size > 1 || acc != null) {
-            col.addView(a.button("تسجيل خروج من هذا الحساب", R.drawable.ic_logout) {
+        col.addView(a.sectionHeader("روابط الدليل (XMLTV)"))
+        Store.epgUrls.forEach { u ->
+            val row = a.listRow(R.drawable.ic_link, u.removePrefix("https://").removePrefix("http://"), chevron = false) {
                 AlertDialog.Builder(a, android.R.style.Theme_Material_Dialog_Alert)
-                    .setMessage("حذف الحساب من الجهاز؟")
-                    .setPositiveButton("حذف") { _, _ -> acc?.let { Store.removeAccount(it.id) }; Store.current?.let { a.enter(it, true) } ?: a.showLogin() }
+                    .setMessage("حذف هذا الرابط؟\n$u")
+                    .setPositiveButton("حذف") { _, _ -> Store.epgUrls = Store.epgUrls - u; onShow() }
                     .setNegativeButton("إلغاء", null).show()
-            }, lp(WRAP, WRAP).apply { topMargin = a.dp(14) })
+            }
+            ((row.getChildAt(2) as? LinearLayout)?.getChildAt(0) as? TextView)?.apply {
+                textSize = 13f; textDirection = View.TEXT_DIRECTION_LTR
+            }
+            row.addView(a.icon(R.drawable.ic_close, C.MUTED, 18))
+            col.addView(row); col.addView(a.divider())
+        }
+        col.addView(a.listRow(R.drawable.ic_plus, "إضافة رابط", chevron = false) { addUrl() }.apply {
+            ((getChildAt(2) as? LinearLayout)?.getChildAt(0) as? TextView)?.setTextColor(C.ACCENT)
+        })
+        col.addView(a.divider())
+        col.addView(a.button("تحديث الدليل الآن", R.drawable.ic_refresh, primary = true) { refresh() },
+            lp(MATCH, WRAP).apply { setMargins(a.dp(16), a.dp(18), a.dp(16), a.dp(8)) })
+        col.addView(a.text("للربط اليدوي: اضغط مطوّلاً على أي قناة ← ربط دليل البرامج.", 12.5f, C.MUTED, lines = 3)
+            .apply { setPadding(a.dp(16), a.dp(4), a.dp(16), 0) })
+    }
+
+    private fun addUrl() {
+        val input = a.field("https://…/epg.xml.gz")
+        AlertDialog.Builder(a, android.R.style.Theme_Material_Dialog_Alert)
+            .setTitle("إضافة رابط دليل")
+            .setView(input)
+            .setPositiveButton("إضافة") { _, _ ->
+                val u = input.text.toString().trim()
+                if (u.isNotEmpty() && u !in Store.epgUrls) { Store.epgUrls = Store.epgUrls + u; refresh() }
+            }
+            .setNegativeButton("إلغاء", null).show()
+    }
+
+    private fun refresh() {
+        a.toast("جاري تحديث الدليل…")
+        a.scope.launch {
+            withContext(Dispatchers.IO) { Epg.load(Store.epgUrls, a.cacheDir, force = true) }
+            if (a.current == "epg") onShow()
         }
     }
 
     override fun focusDefault() { (first ?: view).requestFocus() }
+}
+
+// =====================================================================
+/** سجل المشاهدة: أسطر (صورة، الاسم، التفاصيل، المتبقي). */
+class HistoryScreen(private val a: MainActivity) : Screen {
+    private val col = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL; setPadding(0, a.dp(8), 0, a.dp(24)) }
+    override val view: View = ScrollView(a).apply { addView(col) }
+    private var first: View? = null
+
+    override fun onShow() {
+        col.removeAllViews(); first = null
+        col.addView(a.text("سجل المشاهدة", 22f, C.TEXT, bold = true).apply { setPadding(a.dp(16), a.dp(10), a.dp(16), a.dp(8)) })
+        val hist = Store.history()
+        if (hist.isEmpty()) {
+            col.addView(a.text("ما شاهدت شي للحين.", 14f, C.MUTED).apply { setPadding(a.dp(16), a.dp(20), a.dp(16), 0) })
+            return
+        }
+        val api = Session.api
+        hist.forEach { h ->
+            val sub = when {
+                h.type == "live" -> "مباشر"
+                h.dur > 0 && h.pos >= h.dur - 60 -> "✓ شاهدته"
+                h.dur > 0 -> "متبقي ${fmtTime(h.dur - h.pos)}" + if (h.sub.isNotEmpty()) " · ${h.sub}" else ""
+                else -> h.sub
+            }
+            val row = a.listRow(0, h.title, subtitle = sub) {
+                if (h.type == "live") a.scope.launch {
+                    val ch = api?.let { x -> withContext(Dispatchers.IO) { runCatching { x.liveStreams() }.getOrNull() } }
+                        ?.firstOrNull { "live:${it.id}" == h.key }
+                    if (ch != null) PlayerActivity.playLive(a, listOf(ch), 0, "السجل") else a.toast("القناة مو موجودة")
+                } else a.playHistory(h)
+            }
+            val img = ImageView(a).apply {
+                scaleType = if (h.type == "live") ImageView.ScaleType.FIT_CENTER else ImageView.ScaleType.CENTER_CROP
+                background = rounded(C.SURFACE2, a.dpf(6f)); clipToOutline = true
+                load(h.image.ifEmpty { null }) { size(160, 100) }
+            }
+            row.addView(img, 0, lp(a.dp(64), a.dp(40)).apply { marginEnd = a.dp(12) })
+            col.addView(row); col.addView(a.divider())
+            if (first == null) first = row
+        }
+    }
+
+    override fun focusDefault() { (first ?: view).requestFocus() }
+}
+
+/** قائمة اختيار مع بحث (للتصنيفات): ترجع المعرّف المختار. */
+fun pickDialog(a: MainActivity, title: String, items: List<Pair<String, String>>, selected: String, onPick: (String) -> Unit) {
+    var shown = items
+    val col = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL; setPadding(a.dp(16), a.dp(6), a.dp(16), 0) }
+    val q = a.field("ابحث…").apply { layoutDirection = View.LAYOUT_DIRECTION_RTL; textDirection = View.TEXT_DIRECTION_FIRST_STRONG }
+    col.addView(q, lp(MATCH, WRAP))
+    val ad = android.widget.ArrayAdapter(a, android.R.layout.simple_list_item_1,
+        shown.map { (id, n) -> if (id == selected) "✓  $n" else n }.toMutableList())
+    val list = android.widget.ListView(a).apply { adapter = ad }
+    col.addView(list, lp(MATCH, a.dp(380)))
+    val dlg = AlertDialog.Builder(a, android.R.style.Theme_Material_Dialog_Alert).setTitle(title).setView(col)
+        .setNegativeButton("إغلاق", null).create()
+    list.setOnItemClickListener { _, _, pos, _ -> onPick(shown[pos].first); dlg.dismiss() }
+    q.addTextChangedListener(object : android.text.TextWatcher {
+        override fun afterTextChanged(s: android.text.Editable?) {
+            val k = Epg.keys(s?.toString() ?: "").first
+            shown = if (k.isEmpty()) items else items.filter { Epg.keys(it.second).first.contains(k) }
+            ad.clear(); ad.addAll(shown.map { (id, n) -> if (id == selected) "✓  $n" else n }); ad.notifyDataSetChanged()
+        }
+        override fun beforeTextChanged(s: CharSequence?, st: Int, c: Int, af: Int) {}
+        override fun onTextChanged(s: CharSequence?, st: Int, b: Int, c: Int) {}
+    })
+    dlg.show()
 }
