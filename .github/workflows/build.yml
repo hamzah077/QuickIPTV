@@ -16,8 +16,7 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - uses: android-actions/setup-android@v3
-
+      # Android SDK موجود مسبقاً على أجهزة GitHub (ANDROID_HOME)، وGradle ينزّل الناقص تلقائياً
       - uses: gradle/actions/setup-gradle@v4
 
       - name: Build release APKs
