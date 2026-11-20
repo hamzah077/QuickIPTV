@@ -12,7 +12,7 @@ def nodes(x):
         t = m.group(0)
         g = lambda k: (re.search(k + r'="([^"]*)"', t) or [None, ""])[1]
         b = re.findall(r'\d+', g("bounds"))
-        if len(b) == 4: yield dict(text=g("text"), cls=g("class"), desc=g("content-desc"), b=list(map(int, b)))
+        if len(b) == 4: yield dict(text=g("text"), cls=g("class"), desc=g("content-desc"), rid=g("resource-id"), b=list(map(int, b)))
 def tap_node(n): x = (n["b"][0] + n["b"][2]) // 2; y = (n["b"][1] + n["b"][3]) // 2; sh("shell", "input", "tap", str(x), str(y))
 def tap_text(t, contains=False, tries=10):
     for _ in range(tries):
@@ -44,6 +44,16 @@ sh("shell", "input", "keyevent", "4"); time.sleep(2); sh("shell", "input", "keye
 tap_text("أفلام"); time.sleep(3)
 tap_text("فيلم", contains=True); time.sleep(5)
 tap_text("تحميل"); time.sleep(4); shot("08_movie_downloading")
+# عمودي: التشغيل فوق مكان الصورة، وزر التكبير = أفقي ملء الشاشة، والرجوع يكمل في المصغّر
+tap_text("تشغيل", contains=True); time.sleep(6); shot("08b_inline_player")
+x = dump(); print("INLINE_OK" if "exo_" in x or "PlayerView" in x else "INLINE_MISSING", flush=True)
+sh("shell", "input", "tap", "540", "350"); time.sleep(1); shot("08c_inline_controls")
+fs = [n for n in nodes(dump()) if n["rid"].endswith("exo_fullscreen")]
+print("fullscreen buttons", len(fs), flush=True)
+if fs: tap_node(fs[0])
+time.sleep(5); shot("08d_fullscreen")
+print("ORIENT", sh("shell", "dumpsys", "window", "displays").decode(errors="ignore").count("cur=2400x1080"), flush=True)
+sh("shell", "input", "keyevent", "4"); time.sleep(5); shot("08e_back_inline")
 sh("shell", "input", "keyevent", "4"); time.sleep(2)
 tap_text("المزيد"); time.sleep(2); shot("10_more")
 tap_text("بحث"); time.sleep(1); shot("09a_search_open")

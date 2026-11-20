@@ -17,10 +17,16 @@ import android.widget.ProgressBar
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.PlayerView
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import coil.load
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
@@ -103,7 +109,8 @@ class DetailsActivity : Activity() {
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
-        render()
+        if (mini != null && wide) goFull()      // لفّيت الجوال أفقي وهو يشتغل = ملء الشاشة
+        else render()
     }
 
     private fun meta(year: String, genre: String, rating: String, dur: String = ""): String =
@@ -131,7 +138,13 @@ class DetailsActivity : Activity() {
         val heroH = resources.displayMetrics.widthPixels * 9 / 16 + inT
         val head = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val hero = FrameLayout(this)
-        hero.addView(ImageView(this).apply {
+        val mv = miniView
+        if (mv != null) {
+            // المشغّل المصغّر مكان الصورة (تحت شريط الساعة)
+            hero.setBackgroundColor(0xFF000000.toInt())
+            (mv.parent as? ViewGroup)?.removeView(mv)
+            hero.addView(mv, FrameLayout.LayoutParams(MATCH, MATCH).apply { topMargin = inT })
+        } else hero.addView(ImageView(this).apply {
             scaleType = ImageView.ScaleType.CENTER_CROP; alpha = 0.5f
             load(icon.ifEmpty { null }) { size(900, 520) }
         }, FrameLayout.LayoutParams(MATCH, MATCH))
@@ -492,11 +505,84 @@ class DetailsActivity : Activity() {
         episodes.refreshDl()
     }
 
+    /** الجوال عمودي: يشتغل فوق مكان الصورة. أفقي/تلفزيون: ملء الشاشة مباشرة. */
     private fun play(url: String, key: String, title: String, sub: String, start: Long, type: String) {
+        val r = PlayReq(url, key, title, sub, type)
+        if (wide) { stopMini(); openFull(r, start) } else startMini(r, start)
+    }
+
+    private fun openFull(r: PlayReq, start: Long) {
         startActivity(Intent(this, PlayerActivity::class.java)
-            .putExtra("url", url).putExtra("key", key).putExtra("title", title).putExtra("sub", sub)
-            .putExtra("image", icon).putExtra("type", type).putExtra("seriesId", if (series) id else "")
+            .putExtra("url", r.url).putExtra("key", r.key).putExtra("title", r.title).putExtra("sub", r.sub)
+            .putExtra("image", icon).putExtra("type", r.type).putExtra("seriesId", if (series) id else "")
             .putExtra("start", start))
+    }
+
+    // ---------- المشغّل المصغّر (الجوال عمودي) ----------
+    private data class PlayReq(val url: String, val key: String, val title: String, val sub: String, val type: String)
+    private var mini: ExoPlayer? = null
+    private var miniView: PlayerView? = null
+    private var miniReq: PlayReq? = null
+    private var miniJob: Job? = null
+    private var miniWatching = false
+    private var backToMini: PlayReq? = null      // رجعنا من ملء الشاشة: نكمل في المصغّر
+
+    private fun startMini(r: PlayReq, start: Long) {
+        stopMini()
+        Store.addHistory(HistoryItem(r.key, r.type, r.title, r.sub, icon, r.url, if (series) id else ""))
+        val local = Downloads.localFile(r.key)
+        val src = if (local != null) android.net.Uri.fromFile(local).toString() else {
+            Downloads.setWatching("vod", true); miniWatching = true; r.url
+        }
+        val p = buildPlayer(this, false)
+        p.addListener(object : Player.Listener {
+            override fun onPlaybackStateChanged(state: Int) {
+                if (state == Player.STATE_ENDED) root.post { saveMini(); stopMini(); hist = Store.history().associateBy { it.key }; render() }
+            }
+        })
+        p.setMediaItem(MediaItem.fromUri(src), start * 1000)
+        p.playWhenReady = true
+        mini = p; miniReq = r
+        miniView = PlayerView(this).apply {
+            player = p
+            setShutterBackgroundColor(0xFF000000.toInt())
+            setBackgroundColor(0xFF000000.toInt())
+            layoutDirection = View.LAYOUT_DIRECTION_LTR          // شريط التقدّم من اليسار لليمين
+            setShowNextButton(false); setShowPreviousButton(false)
+            controllerShowTimeoutMs = 3000
+            setFullscreenButtonClickListener { goFull() }       // زر التكبير = أفقي ملء الشاشة
+        }
+        miniJob = scope.launch {
+            // المشاهدة تاخذ اتصال من حد الاشتراك؛ لو فيه تحميل ماسكه ننتظر لحظة لين يتنازل
+            if (local == null && Downloads.mustYieldFor()) delay(1200)
+            p.prepare()
+            while (true) { delay(10_000); saveMini() }
+        }
+        hist = Store.history().associateBy { it.key }
+        render()
+    }
+
+    private fun goFull() {
+        val r = miniReq ?: return
+        val pos = (mini?.currentPosition ?: 0) / 1000
+        saveMini(); stopMini()
+        backToMini = r
+        openFull(r, pos)
+    }
+
+    private fun saveMini() {
+        val p = mini ?: return; val r = miniReq ?: return
+        val d = p.duration
+        if (d <= 0 || d == androidx.media3.common.C.TIME_UNSET) return
+        Store.saveProgress(r.key, p.currentPosition / 1000, d / 1000)
+    }
+
+    private fun stopMini() {
+        miniJob?.cancel(); miniJob = null
+        miniView?.let { v -> v.player = null; (v.parent as? ViewGroup)?.removeView(v) }
+        miniView = null
+        mini?.release(); mini = null; miniReq = null
+        if (miniWatching) { Downloads.setWatching("vod", false); miniWatching = false }
     }
 
     private var paused = false
@@ -505,6 +591,7 @@ class DetailsActivity : Activity() {
         super.onPause()
         paused = true
         Downloads.removeListener(dlListener)
+        saveMini(); mini?.playWhenReady = false
     }
 
     override fun onResume() {
@@ -516,9 +603,16 @@ class DetailsActivity : Activity() {
             hist = Store.history().associateBy { it.key }
             render()
         }
+        // رجعنا من ملء الشاشة والجوال عمودي: نكمل من نفس المكان في المصغّر
+        backToMini?.let { r ->
+            backToMini = null
+            val h = hist[r.key]
+            if (!wide && mini == null && h != null && !(h.dur > 0 && h.pos >= h.dur - 10)) startMini(r, h.pos)
+        }
     }
 
     override fun onDestroy() {
+        saveMini(); stopMini()
         scope.cancel()
         super.onDestroy()
     }
