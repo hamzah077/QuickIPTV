@@ -446,6 +446,7 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
             ensurePlayer()
             player?.playWhenReady = true
             syncPause()
+            LivePlayer.healAfterSwitch(a, a.scope)      // لو الصورة علّقت بعد التصغير نعيد الاتصال
         } else if (current != null && player == null) preview(current!!)
     }
 

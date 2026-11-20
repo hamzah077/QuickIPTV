@@ -243,6 +243,7 @@ class PlayerActivity : Activity() {
         // نفس القناة الشغّالة في الشاشة الصغيرة؟ نكمل عليها مباشرة بدون إعادة اتصال
         loading.visibility = View.VISIBLE
         LivePlayer.play(this, Session.api!!.liveUrl(ch.id), force = !reuse)
+        if (reuse) LivePlayer.healAfterSwitch(this, scope)      // لو الصورة علّقت بعد التكبير نعيد الاتصال
         if (player?.playbackState == Player.STATE_READY) loading.visibility = View.GONE
         Store.addHistory(HistoryItem("live:${ch.id}", "live", ch.name, Session.playCategory, ch.icon, ""))
         showBar()

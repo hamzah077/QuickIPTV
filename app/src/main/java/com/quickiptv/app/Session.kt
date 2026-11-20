@@ -10,6 +10,8 @@ import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /** الحالة المشتركة بين الشاشات: الحساب الحالي وقائمة التشغيل للمشغّل. */
 object Session {
@@ -83,6 +85,28 @@ object LivePlayer {
         p.setMediaItem(androidx.media3.common.MediaItem.fromUri(u))
         p.prepare()
         p.playWhenReady = true
+    }
+
+    /**
+     * حارس بعد نقل البث لشاشة ثانية (تكبير/تصغير): بعض أجهزة التلفزيون تعلّق الصورة لما تتغيّر الشاشة.
+     * بعد 3 ثواني: لو ما وصلت صور جديدة أو البث ما تقدّم → نعيد الاتصال بنفس القناة تلقائياً.
+     */
+    @OptIn(UnstableApi::class)
+    fun healAfterSwitch(ctx: Context, scope: kotlinx.coroutines.CoroutineScope) {
+        val p = player ?: return
+        val app = ctx.applicationContext
+        scope.launch {
+            val frames0 = p.videoDecoderCounters?.let { it.ensureUpdated(); it.renderedOutputBufferCount } ?: 0
+            val pos0 = p.currentPosition
+            delay(3000)
+            if (player !== p || !p.playWhenReady || url.isEmpty()) return@launch
+            val state = p.playbackState
+            val frames1 = p.videoDecoderCounters?.let { it.ensureUpdated(); it.renderedOutputBufferCount } ?: 0
+            val stuck = state == androidx.media3.common.Player.STATE_IDLE || state == androidx.media3.common.Player.STATE_ENDED ||
+                (state == androidx.media3.common.Player.STATE_READY &&
+                    ((p.videoFormat != null && frames1 <= frames0) || p.currentPosition - pos0 < 500))
+            if (stuck) play(app, url, force = true)
+        }
     }
 
     fun release() {
