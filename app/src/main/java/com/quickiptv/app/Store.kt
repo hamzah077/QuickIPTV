@@ -56,6 +56,29 @@ object Store {
         p = ctx.getSharedPreferences("quickiptv", Context.MODE_PRIVATE)
     }
 
+    // ---------- المقدمة والتتر: يتعلّمها لكل مسلسل من طريقة مشاهدتك (آخر 3 مرات، ناخذ الوسط) ----------
+    private fun skipList(k: String): List<Long> = (p.getString(k, "") ?: "").split(',').mapNotNull { it.toLongOrNull() }
+    private fun pushSkip(k: String, v: Long) = p.edit().putString(k, (skipList(k) + v).takeLast(3).joinToString(",")).apply()
+    private fun median(l: List<Long>): Long? = if (l.isEmpty()) null else l.sorted()[l.size / 2]
+
+    /** تخطّيت المقدمة: من [start] إلى [end] (ملّي ثانية من بداية الحلقة). */
+    fun learnIntro(series: String, start: Long, end: Long) {
+        pushSkip("introS:$series", start); pushSkip("introE:$series", end)
+    }
+
+    /** بداية ونهاية المقدمة المتعلّمة لهالمسلسل (أو null). */
+    fun intro(series: String): Pair<Long, Long>? {
+        val s = median(skipList("introS:$series")) ?: return null
+        val e = median(skipList("introE:$series")) ?: return null
+        return if (e > s) s to e else null
+    }
+
+    /** تخطّيت التتر وكان باقي على نهاية الحلقة [leftMs]. */
+    fun learnCredits(series: String, leftMs: Long) = pushSkip("credits:$series", leftMs)
+
+    /** كم باقي على نهاية الحلقة لما يبدأ التتر (أو null لو ما تعلّمناه). */
+    fun credits(series: String): Long? = median(skipList("credits:$series"))
+
     // ---------- الحسابات ----------
     var accounts: List<Account>
         get() {

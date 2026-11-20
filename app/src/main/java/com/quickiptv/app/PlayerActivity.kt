@@ -287,6 +287,7 @@ class PlayerActivity : Activity() {
     override fun onBackPressed() {
         // رجوع: يقفل قائمة القنوات أول، وبعدها يرجّعك لصفحة المباشر
         if (panelOpen) { closePanel(); return }
+        if (!live && bar.cancelAutoNext()) return        // وقت عدّاد الحلقة التالية: رجوع = أكمل التتر
         @Suppress("DEPRECATION")
         super.onBackPressed()
     }

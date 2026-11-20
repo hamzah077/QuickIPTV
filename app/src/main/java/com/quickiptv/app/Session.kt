@@ -168,7 +168,9 @@ object SeriesQueue {
 
     fun nav(key: String, open: (Int) -> Unit): EpisodeNav? {
         if (!has(key)) return null
+        val sid = seriesId
         return object : EpisodeNav {
+            override val seriesId = sid
             private val i get() = indexOfKey(key)
             override val hasPrev get() = i > 0
             override val hasNext get() = i in 0 until list.size - 1

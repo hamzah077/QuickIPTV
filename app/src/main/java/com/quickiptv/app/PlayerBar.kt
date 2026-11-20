@@ -19,6 +19,7 @@ import androidx.media3.common.util.UnstableApi
 
 /** التنقّل بين الحلقات (المسلسلات). */
 interface EpisodeNav {
+    val seriesId: String           // لتعلّم المقدمة والتتر لكل مسلسل
     val hasPrev: Boolean
     val hasNext: Boolean
     fun prev()
@@ -38,7 +39,13 @@ interface EpisodeNav {
 class PlayerBar(private val act: Activity, private val live: Boolean, private val autoHide: Boolean) : FrameLayout(act) {
 
     var player: Player? = null
-        set(v) { field = v; refresh() }
+        set(v) {
+            field?.removeListener(learnListener)
+            field = v
+            v?.addListener(learnListener)
+            resetItem()
+            refresh()
+        }
 
     /** زر التكبير/التصغير (null = مخفي). */
     var onFullscreen: (() -> Unit)? = null
@@ -95,7 +102,7 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
     private val playIcon = playPair.second
     private val btnFwd = act.seekButton(true, 40, 0x33FFFFFF) { seek(true) }
     private val btnPrev = roundBtn(R.drawable.ic_skip_prev, "الحلقة السابقة") { nav?.let { if (it.hasPrev) it.prev() } }.first
-    private val btnNext = roundBtn(R.drawable.ic_skip_next, "الحلقة التالية") { nav?.let { if (it.hasNext) it.next() } }.first
+    private val btnNext = roundBtn(R.drawable.ic_skip_next, "الحلقة التالية") { nav?.let { if (it.hasNext) { learnManualNext(); it.next() } } }.first
     private val btnSettings = roundBtn(R.drawable.ic_settings, "الإعدادات") { settings() }.first
     private val fullPair = roundBtn(R.drawable.ic_fullscreen, "تكبير") { onFullscreen?.invoke() }
     private val btnFull = fullPair.first.apply { visibility = View.GONE }
@@ -179,10 +186,100 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
         addView(nextCount, LinearLayout.LayoutParams(act.dp(26), act.dp(26)))
         addView(act.text("الحلقة التالية", 14f, C.PRIMARY_TEXT, bold = true).apply { maxLines = 1; includeFontPadding = false; setPadding(act.dp(8), 0, act.dp(8), 0) })
         addView(act.icon(R.drawable.ic_skip_next, C.PRIMARY_TEXT, 20), LinearLayout.LayoutParams(act.dp(20), act.dp(20)))
-        setOnClickListener { nav?.let { if (it.hasNext) it.next() } }
+        setOnClickListener { nav?.let { if (it.hasNext) { learnManualNext(); it.next() } } }
         visibility = View.GONE
     }
     private var nextShownOnce = false
+
+    // زر "تخطي المقدمة" المنفصل (نفس المكان والشكل)
+    private val introFloat = LinearLayout(act).apply {
+        orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+        layoutDirection = View.LAYOUT_DIRECTION_RTL
+        isFocusable = true; isClickable = true
+        contentDescription = "تخطي المقدمة"
+        setPadding(act.dp(14), 0, act.dp(14), 0)
+        background = android.graphics.drawable.StateListDrawable().apply {
+            addState(intArrayOf(android.R.attr.state_focused), rounded(0xFFFFFFFF.toInt(), act.dpf(12f), C.ACCENT, act.dp(3)))
+            addState(intArrayOf(), rounded(0xFFF2F3F5.toInt(), act.dpf(12f)))
+        }
+        addView(act.text("تخطي المقدمة", 14f, C.PRIMARY_TEXT, bold = true).apply { maxLines = 1; includeFontPadding = false; setPadding(0, 0, act.dp(8), 0) })
+        addView(act.icon(R.drawable.ic_skip_next, C.PRIMARY_TEXT, 20), LinearLayout.LayoutParams(act.dp(20), act.dp(20)))
+        setOnClickListener { skipIntro() }
+        visibility = View.GONE
+    }
+    private var introShownOnce = false
+    private var introSkipped = false
+
+    // ---------- التعلّم: من تقديمك أنت (سحب الشريط، +10، ضغطتين، الريموت) ----------
+    private var internalSeek = false          // قفزة سوّيناها نحن (تخطي المقدمة): ما نتعلّم منها
+    private var burstFrom = -1L
+    private var burstTo = -1L
+    private val burstEnd = Runnable { finishBurst() }
+
+    private val learnListener = object : Player.Listener {
+        override fun onPositionDiscontinuity(oldPos: Player.PositionInfo, newPos: Player.PositionInfo, reason: Int) {
+            if (reason == Player.DISCONTINUITY_REASON_SEEK) onUserSeek(oldPos.positionMs, newPos.positionMs)
+        }
+        override fun onMediaItemTransition(item: androidx.media3.common.MediaItem?, reason: Int) { resetItem() }
+    }
+
+    private fun onUserSeek(from: Long, to: Long) {
+        if (internalSeek) { internalSeek = false; return }
+        if (live || nav == null) return
+        if (to < from) { burstFrom = -1; removeCallbacks(burstEnd); return }     // رجوع = مو تخطي
+        if (burstFrom < 0) burstFrom = from                                    // ضغطات +10 ورا بعض = قفزة وحدة
+        burstTo = to
+        removeCallbacks(burstEnd)
+        postDelayed(burstEnd, 4000)
+    }
+
+    private fun finishBurst() {
+        val sid = nav?.seriesId ?: return
+        val f = burstFrom; val t = burstTo
+        burstFrom = -1
+        if (f < 0) return
+        val jump = t - f
+        val d = duration()
+        if (f <= 8 * 60_000 && t <= 10 * 60_000 && jump in 20_000..180_000) {
+            Store.learnIntro(sid, f, t)                          // تخطّى المقدمة
+        } else if (d > 0) {
+            val left = d - f
+            if (left in 10_000..6 * 60_000 && t >= d - 20_000) Store.learnCredits(sid, left)   // قدّم للنهاية من داخل التتر
+        }
+    }
+
+    /** ضغطت "الحلقة التالية" بنفسك قبل النهاية = بداية التتر تقريباً. */
+    private fun learnManualNext() {
+        val sid = nav?.seriesId ?: return
+        val p = player ?: return
+        val d = duration()
+        if (d <= 0) return
+        val left = d - p.currentPosition
+        if (left in 10_000..6 * 60_000) Store.learnCredits(sid, left)
+    }
+
+    private fun skipIntro() {
+        val sid = nav?.seriesId ?: return
+        val p = player ?: return
+        val (_, e) = Store.intro(sid) ?: return
+        introSkipped = true
+        internalSeek = true
+        p.seekTo(e)
+        introFloat.visibility = View.GONE
+        poke()
+    }
+
+    // عدّاد الحلقة التالية (لما نعرف بداية التتر)
+    private var countdownEnd = 0L
+    private var autoCancelled = false
+    private var autoFired = false
+
+    /** حلقة جديدة: نصفّر كل شي. */
+    private fun resetItem() {
+        countdownEnd = 0L; autoCancelled = false; autoFired = false
+        introSkipped = false; introShownOnce = false; nextShownOnce = false
+        burstFrom = -1; removeCallbacks(burstEnd)
+    }
 
     init {
         layoutDirection = View.LAYOUT_DIRECTION_LTR           // أزرار الميديا وشريط التقدّم من اليسار لليمين
@@ -202,6 +299,7 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
         panel.addView(btnRow, LinearLayout.LayoutParams(MATCH, WRAP))
         addView(panel, LayoutParams(MATCH, WRAP, Gravity.BOTTOM))
         addView(nextFloat, LayoutParams(WRAP, act.dp(44), Gravity.BOTTOM or Gravity.END).apply { setMargins(0, 0, act.dp(12), act.dp(16)) })
+        addView(introFloat, LayoutParams(WRAP, act.dp(44), Gravity.BOTTOM or Gravity.END).apply { setMargins(0, 0, act.dp(12), act.dp(16)) })
         arrange(false)
         seekBar.isFocusable = false            // الريموت: يمين/يسار = ±10 ثواني (والشريط باللمس)
     }
@@ -297,13 +395,20 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
     /** يحط التركيز على زر التشغيل (الريموت). */
     fun focusPlay() { show(); btnPlay.requestFocus() }
 
-    fun hasFocusInside() = panel.hasFocus() || nextFloat.hasFocus()
+    fun hasFocusInside() = panel.hasFocus() || nextFloat.hasFocus() || introFloat.hasFocus()
+
+    /** الريموت: رجوع وقت العدّاد = نلغي التشغيل التلقائي (يرجّع true لو استهلكها). */
+    fun cancelAutoNext(): Boolean {
+        if (nextFloat.visibility == View.VISIBLE && countdownEnd > 0 && !autoCancelled) { autoCancelled = true; refresh(); return true }
+        return false
+    }
 
     // ---------- اللمس: ضغطة = إظهار/إخفاء، ضغطتين يمين/يسار = ±10 ثواني ----------
     private val gd = GestureDetector(act, object : GestureDetector.SimpleOnGestureListener() {
         override fun onDown(e: MotionEvent) = true
         override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
             if (onTap?.invoke() == true) return true
+            if (nextFloat.visibility == View.VISIBLE && countdownEnd > 0 && !autoCancelled) { autoCancelled = true; refresh() }   // تبي تكمل التتر
             if (autoHide) toggle() else show()
             return true
         }
@@ -369,17 +474,54 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
                 tDur.text = fmtTime(d / 1000)
             } else { tPos.text = "--:--"; tDur.text = "--:--" }
             nav?.let { btnPrev.alpha = if (it.hasPrev) 1f else 0.35f; btnNext.alpha = if (it.hasNext) 1f else 0.35f }
+            updateIntro(p)
             updateNext(p, d)
         }
     }
 
+    /** "تخطي المقدمة": يطلع من بداية المقدمة المتعلّمة لين نهايتها. */
+    private fun updateIntro(p: Player?) {
+        val sid = nav?.seriesId
+        val iv = if (sid != null) Store.intro(sid) else null
+        val pos = p?.currentPosition ?: -1
+        val show = iv != null && p != null && !introSkipped && pos >= iv.first && pos < iv.second - 3000
+        if (show) {
+            if (introFloat.visibility != View.VISIBLE) {
+                introFloat.visibility = View.VISIBLE
+                if (!introShownOnce && act.isTv()) introFloat.requestFocus()      // الريموت: OK = تخطي
+                introShownOnce = true
+            }
+        } else {
+            if (introFloat.visibility == View.VISIBLE && introFloat.hasFocus()) btnPlay.requestFocus()
+            introFloat.visibility = View.GONE
+        }
+    }
+
+    /**
+     * "الحلقة التالية": لو نعرف بداية التتر لهالمسلسل يطلع أول ما يبدأ التتر، مع عدّاد 10 ثواني وبعدها
+     * تشتغل الحلقة التالية. لو ما نعرفه: آخر 30 ثانية والعدّاد لين النهاية.
+     */
     private fun updateNext(p: Player?, d: Long) {
         val n = nav
         val left = if (p != null && d > 0) d - p.currentPosition else Long.MAX_VALUE
         val ended = p?.playbackState == Player.STATE_ENDED
-        val show = n != null && n.hasNext && (ended || left <= 30_000)
+        val learned = n?.seriesId?.let { Store.credits(it) }?.takeIf { d > 0 && it < d / 3 }
+        val threshold = learned ?: 30_000L
+        val show = n != null && n.hasNext && (ended || left <= threshold)
         if (show) {
-            nextCount.text = if (ended) "0" else ((left + 999) / 1000).coerceIn(0, 30).toString()
+            if (learned != null && !ended) {
+                if (countdownEnd == 0L) countdownEnd = System.currentTimeMillis() + 10_000
+                val secs = (countdownEnd - System.currentTimeMillis() + 999) / 1000
+                if (autoCancelled) nextCount.visibility = View.GONE
+                else {
+                    nextCount.visibility = View.VISIBLE
+                    nextCount.text = secs.coerceAtLeast(0).toString()
+                    if (secs <= 0 && !autoFired && p?.playWhenReady == true) { autoFired = true; n.next(); return }
+                }
+            } else {
+                nextCount.visibility = View.VISIBLE
+                nextCount.text = if (ended) "0" else ((left + 999) / 1000).coerceIn(0, 30).toString()
+            }
             if (nextFloat.visibility != View.VISIBLE) {
                 nextFloat.visibility = View.VISIBLE
                 if (!nextShownOnce && act.isTv()) nextFloat.requestFocus()      // الريموت: OK = الحلقة التالية
@@ -388,16 +530,18 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
         } else {
             if (nextFloat.visibility == View.VISIBLE && nextFloat.hasFocus()) btnPlay.requestFocus()
             nextFloat.visibility = View.GONE
-            if (left > 30_000) nextShownOnce = false
+            if (left > threshold + 5_000) { countdownEnd = 0L; autoCancelled = false; autoFired = false; nextShownOnce = false }
         }
         placeNext()
     }
 
     /** الزر المنفصل فوق شريط الأزرار (أو تحت لو الشريط مخفي). */
     private fun placeNext() {
-        val lp = nextFloat.layoutParams as? LayoutParams ?: return
         val b = if (barVisible && panel.height > 0) panel.height + act.dp(10) else act.dp(16)
-        if (lp.bottomMargin != b) { lp.bottomMargin = b; nextFloat.layoutParams = lp }
+        for (v in listOf<View>(nextFloat, introFloat)) {
+            val lp = v.layoutParams as? LayoutParams ?: continue
+            if (lp.bottomMargin != b) { lp.bottomMargin = b; v.layoutParams = lp }
+        }
     }
 
     // ---------- الإعدادات: السرعة، الصوت، الترجمة ----------
