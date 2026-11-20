@@ -509,7 +509,8 @@ class DetailsActivity : Activity() {
     /** الجوال عمودي: يشتغل فوق مكان الصورة. أفقي/تلفزيون: ملء الشاشة مباشرة. */
     private fun play(url: String, key: String, title: String, sub: String, start: Long, type: String) {
         val r = PlayReq(url, key, title, sub, type)
-        if (wide) { stopMini(); openFull(r, start) } else startMini(r, start)
+        clearBackJob?.cancel()
+        if (wide) { stopMini(); backToMini = r; openFull(r, start) } else startMini(r, start)
     }
 
     private fun openFull(r: PlayReq, start: Long) {
@@ -553,7 +554,7 @@ class DetailsActivity : Activity() {
 
     private val miniListener = object : Player.Listener {
         override fun onPlaybackStateChanged(state: Int) {
-            if (state == Player.STATE_ENDED) root.post { saveMini(); stopMini(); hist = Store.history().associateBy { it.key }; render() }
+            if (state == Player.STATE_ENDED) root.post { saveMini(); stopMini(); unlockPortrait(); hist = Store.history().associateBy { it.key }; render() }
         }
     }
 
@@ -563,10 +564,7 @@ class DetailsActivity : Activity() {
         player = p
         setShutterBackgroundColor(0xFF000000.toInt())
         setBackgroundColor(0xFF000000.toInt())
-        layoutDirection = View.LAYOUT_DIRECTION_LTR          // شريط التقدّم من اليسار لليمين
-        setShowNextButton(false); setShowPreviousButton(false)
-        controllerShowTimeoutMs = 3000
-        setFullscreenButtonClickListener { goFull() }       // زر التكبير = أفقي ملء الشاشة
+        vodControls { goFull() }                           // زر التكبير = أفقي ملء الشاشة
     }
 
     private var handedView: PlayerView? = null      // الشاشة الصغيرة وقت ما المشغّل بملء الشاشة
@@ -575,6 +573,8 @@ class DetailsActivity : Activity() {
     private fun goFull() {
         val r = miniReq ?: return
         val p = mini ?: return
+        clearBackJob?.cancel()
+        unlockPortrait()
         saveMini()
         miniJob?.cancel(); miniJob = null
         p.removeListener(miniListener)
@@ -643,20 +643,43 @@ class DetailsActivity : Activity() {
         // رجعنا من ملء الشاشة والجوال عمودي: نكمل من نفس المكان في المصغّر
         // (لو الشاشة لسا أفقي لحظة الرجوع، نكمل أول ما ترجع عمودي)
         resumedAt = System.currentTimeMillis()
+        // زر التصغير: نثبّت الصفحة عمودي (حتى لو الجوال أفقي) لين يخلص المشغّل المصغّر أو تطلع
+        if (VodHandoff.toPortrait) {
+            VodHandoff.toPortrait = false
+            if (!isTv()) { requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT; portraitLocked = true }
+        }
         backToMini?.let { r ->
             if (adoptBack(r)) {
                 backToMini = null
                 hist = Store.history().associateBy { it.key }
                 render()
                 // رجعت والجوال أفقي فعلاً (مو بس تأخير لفّ الشاشة): نوقف المصغّر
-                if (wide) scope.launch { delay(1500); if (wide && mini != null) { saveMini(); stopMini(); render() } }
+                if (wide && !portraitLocked) scope.launch { delay(1500); if (wide && mini != null) { saveMini(); stopMini(); render() } }
                 return
             }
         }
         if (!wide) resumeMini()
+        // ما قدرنا ناخذ المشغّل (الصفحة ما تعرضه): لا نخليه شغّال بالخلفية
+        if (VodHandoff.player != null && mini == null && backToMini?.key != VodHandoff.key) VodHandoff.drop()
+        // الرجوع ينتظر لفّ الشاشة 3 ثواني بس؛ بعدها ننساه (عشان ما يشتغل لحاله بعدين)
+        clearBackJob?.cancel()
+        if (backToMini != null) clearBackJob = scope.launch {
+            delay(3000)
+            backToMini = null
+            if (mini == null && VodHandoff.player != null) VodHandoff.drop()
+        }
     }
 
+    private var clearBackJob: Job? = null
+
     private var resumedAt = 0L
+    private var portraitLocked = false
+
+    private fun unlockPortrait() {
+        if (!portraitLocked) return
+        portraitLocked = false
+        requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED   // يرجع يلف مع الجوال
+    }
 
     private fun resumeMini() {
         val r = backToMini ?: return

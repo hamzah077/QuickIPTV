@@ -94,6 +94,8 @@ class PlayerActivity : Activity() {
             setShowNextButton(false); setShowPreviousButton(false)
             layoutDirection = View.LAYOUT_DIRECTION_LTR          // شريط التقدّم من اليسار لليمين
             useController = !live                                  // المباشر: شريطنا الخاص
+            // الأفلام والمسلسلات: الأزرار كاملة (تشغيل/إيقاف، ±10 ثواني، الإعدادات) + زر التصغير بالجوال
+            if (!live) vodControls(if (isTv()) null else ({ VodHandoff.toPortrait = true; finish() }))   // زر التصغير = رجوع عمودي
         }
         root.addView(pv, FrameLayout.LayoutParams(MATCH, MATCH))
 
@@ -422,6 +424,11 @@ class PlayerActivity : Activity() {
                 KeyEvent.KEYCODE_INFO, KeyEvent.KEYCODE_MENU -> { showBar(); return true }
             }
             if (k in KeyEvent.KEYCODE_0..KeyEvent.KEYCODE_9) { digit(k - KeyEvent.KEYCODE_0); return true }
+        } else if ((k == KeyEvent.KEYCODE_DPAD_LEFT || k == KeyEvent.KEYCODE_DPAD_RIGHT) && !pv.isControllerFullyVisible) {
+            // الريموت والأزرار مخفية: يمين = تقديم 10 ثواني، يسار = تأخير 10 ثواني
+            player?.let { if (k == KeyEvent.KEYCODE_DPAD_LEFT) it.seekBack() else it.seekForward() }
+            pv.showController()
+            return true
         }
         return false
     }

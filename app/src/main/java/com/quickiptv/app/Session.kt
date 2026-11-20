@@ -56,6 +56,8 @@ fun buildPlayer(ctx: Context, live: Boolean): ExoPlayer {
     return ExoPlayer.Builder(ctx, renderers)
         .setMediaSourceFactory(DefaultMediaSourceFactory(DefaultDataSource.Factory(ctx, http)))   // http + ملفات محمّلة
         .setLoadControl(load)
+        .setSeekBackIncrementMs(10_000)        // تأخير 10 ثواني
+        .setSeekForwardIncrementMs(10_000)     // تقديم 10 ثواني
         .build()
 }
 
@@ -114,6 +116,36 @@ object LivePlayer {
 }
 
 /**
+ * أزرار مشغّل الفيلم/المسلسل (عمودي وأفقي): تشغيل/إيقاف، تأخير وتقديم 10 ثواني، شريط التقدّم والوقت،
+ * الإعدادات (سرعة التشغيل، الصوت، الترجمة) وزر التكبير/التصغير.
+ * باللمس: ضغطتين يمين الشاشة = تقديم 10 ثواني، ضغطتين يسار = تأخير 10 ثواني، ضغطة وحدة = إظهار/إخفاء الأزرار.
+ */
+@OptIn(UnstableApi::class)
+fun androidx.media3.ui.PlayerView.vodControls(onFullscreen: (() -> Unit)?) {
+    layoutDirection = android.view.View.LAYOUT_DIRECTION_LTR      // شريط التقدّم والأزرار من اليسار لليمين
+    useController = true
+    setShowRewindButton(true)
+    setShowFastForwardButton(true)
+    setShowSubtitleButton(true)
+    setShowNextButton(false); setShowPreviousButton(false)
+    setShowShuffleButton(false)
+    controllerShowTimeoutMs = 3500
+    if (onFullscreen != null) setFullscreenButtonClickListener { onFullscreen() }
+    val pv = this
+    val gd = android.view.GestureDetector(context, object : android.view.GestureDetector.SimpleOnGestureListener() {
+        override fun onDown(e: android.view.MotionEvent) = true
+        override fun onSingleTapConfirmed(e: android.view.MotionEvent): Boolean { pv.performClick(); return true }
+        override fun onDoubleTap(e: android.view.MotionEvent): Boolean {
+            val p = pv.player ?: return false
+            if (e.x < pv.width / 2f) p.seekBack() else p.seekForward()
+            pv.showController()
+            return true
+        }
+    })
+    setOnTouchListener { _, e -> gd.onTouchEvent(e) }
+}
+
+/**
  * تسليم مشغّل الفيلم/الحلقة بين المشغّل المصغّر (صفحة التفاصيل) وملء الشاشة:
  * نفس المشغّل ينتقل بدون ما يوقف أو يعيد التحميل.
  */
@@ -122,6 +154,7 @@ object VodHandoff {
     var key: String = ""
     var watching = false          // ماسك اتصال مشاهدة من حد الاشتراك
     var ownerAlive = false        // صفحة التفاصيل اللي بترجع لها لسا موجودة
+    var toPortrait = false        // ضغط زر التصغير: نرجع عمودي ونكمل في المصغّر حتى لو الجوال بيده أفقي
 
     fun take(): ExoPlayer? = player.also { player = null }
 
