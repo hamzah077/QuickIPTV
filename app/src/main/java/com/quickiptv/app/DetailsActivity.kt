@@ -129,7 +129,15 @@ class DetailsActivity : Activity() {
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
-        if (mini != null && wide && System.currentTimeMillis() - resumedAt > 3000) goFull()      // لفّيت الجوال أفقي وهو يشتغل = ملء الشاشة
+        // ملء الشاشة بنفس الصفحة (زر التكبير/التصغير)
+        if (fsPending == 1 && landscape) { fsEntered(); return }
+        if (fsPending == -1 && !landscape) { fsExited(); return }
+        // لفّيت الجوال بيدك وهو يشتغل: يدخل/يطلع من ملء الشاشة بدون حركتنا (أندرويد يلف)
+        if (!isTv() && mini != null && landscape && !fs && !portraitLocked) {
+            fs = true; immersive(true); miniBar?.fullscreenMode = true; render(); slotBack?.visibility = View.GONE; return
+        }
+        if (fs && !landscape) { fs = false; immersive(false); miniBar?.fullscreenMode = false; render(); return }
+        if (mini != null && wide && System.currentTimeMillis() - resumedAt > 3000) goFull()      // (احتياط)
         else if (!wide && backToMini != null && System.currentTimeMillis() - resumedAt < 3000) { render(); resumeMini() }
         else render()
     }
@@ -141,7 +149,134 @@ class DetailsActivity : Activity() {
 
     // =====================================================================
     // البناء
-    private val wide get() = isTv() || landscape
+    private val wide get() = isTv() || (landscape && !fs)
+
+    // ---------- ملء الشاشة بنفس الصفحة (زي يوتيوب): نفس المشغّل ونفس الصورة، بدون صفحة جديدة ----------
+    private var fs = false
+    private var fsPending = 0            // 1 = داخل لملء الشاشة، -1 = طالع منه (ننتظر لفّ الشاشة)
+    private var exitSign = 1f            // اتجاه اللفّة بالرجوع (حسب اتجاه الجوال الأفقي)
+
+    private fun immersive(on: Boolean) {
+        @Suppress("DEPRECATION")
+        window.decorView.systemUiVisibility = if (on) (View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or View.SYSTEM_UI_FLAG_FULLSCREEN
+            or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+            or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN)
+        else (View.SYSTEM_UI_FLAG_LAYOUT_STABLE or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION)
+    }
+
+    /** يكبر ويلف (الحركة أ) ثم الشاشة تلف فوراً — والصورة أصلاً بمكانها النهائي = بدون قفزة. */
+    private fun enterFs() {
+        if (fs || animating || mini == null || isTv()) return
+        val box = miniBox; val slot = topSlot
+        fsPending = 1
+        setRotationAnim(rotationJumpcut)
+        if (box == null || slot == null || root.width == 0 || box.width == 0) {
+            requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE; return
+        }
+        animating = true
+        val W = root.width.toFloat(); val H = root.height.toFloat()
+        val bw = box.width.toFloat(); val bh = box.height.toFloat()
+        val bl = IntArray(2); val rl = IntArray(2)
+        box.getLocationInWindow(bl); root.getLocationInWindow(rl)
+        val cy = bl[1] - rl[1] + bh / 2f
+        val scale = minOf(H / bw, W / bh)        // بعد اللف: عرض الفيديو = عرض الشاشة الأفقي بالضبط
+        root.clipChildren = false; slot.clipChildren = false
+        val d = View(this).apply { setBackgroundColor(0xFF000000.toInt()); alpha = 0f }
+        root.addView(d, FrameLayout.LayoutParams(MATCH, MATCH)); dim = d
+        slot.bringToFront()
+        miniBar?.visibility = View.INVISIBLE; slotBack?.visibility = View.INVISIBLE
+        d.animate().alpha(1f).setDuration(320).start()
+        box.animate().translationY(H / 2f - cy).rotation(90f).scaleX(scale).scaleY(scale)
+            .setDuration(420).setInterpolator(android.view.animation.PathInterpolator(0.2f, 0.8f, 0.2f, 1f))
+            .withEndAction {
+                animating = false
+                requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+                fsTimeout()
+            }.start()
+    }
+
+    /** يرجع عمودي: الشاشة تلف فوراً والفيديو يبدأ بنفس شكله الأفقي ثم يلف ويصغر لمكانه. */
+    private fun exitFs() {
+        if (!fs || animating) return
+        @Suppress("DEPRECATION")
+        exitSign = if (windowManager.defaultDisplay.rotation == android.view.Surface.ROTATION_270) -1f else 1f
+        fsPending = -1
+        setRotationAnim(rotationJumpcut)
+        requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        portraitLocked = true          // يبقى عمودي (حتى لو الجوال بيدك أفقي) لين تكبّر مرة ثانية أو تطلع
+        fsTimeout()
+    }
+
+    /** لو لفّ الشاشة ما وصل (نادر): نكمل على كل حال. */
+    private fun fsTimeout() {
+        val want = fsPending
+        root.postDelayed({ if (fsPending == want && want != 0) onConfigurationChanged(resources.configuration) }, 1500)
+    }
+
+    /** بعد ما الشاشة لفّت أفقي: الفيديو يملى الشاشة بدون حركة (هو أصلاً بنفس الشكل). */
+    private fun fsEntered() {
+        fsPending = 0
+        fs = true
+        immersive(true)
+        miniBar?.fullscreenMode = true
+        render()
+        val box = miniBox ?: return
+        root.viewTreeObserver.addOnPreDrawListener(object : android.view.ViewTreeObserver.OnPreDrawListener {
+            override fun onPreDraw(): Boolean {
+                root.viewTreeObserver.removeOnPreDrawListener(this)
+                resetBox(box); slotBack?.visibility = View.GONE
+                setRotationAnim(rotationJumpcut)
+                return true
+            }
+        })
+        // بعد شوي: نسمح يقلب للأفقي الثاني حسب مسكة الجوال
+        root.postDelayed({ if (fs) requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE }, 1500)
+    }
+
+    /** بعد ما الشاشة لفّت عمودي: نبدأ الفيديو بشكله الأفقي ثم يلف ويصغر لمكانه (عكس الحركة). */
+    private fun fsExited() {
+        fsPending = 0
+        fs = false
+        immersive(false)
+        miniBar?.fullscreenMode = false
+        render()
+        val box = miniBox ?: return
+        root.viewTreeObserver.addOnPreDrawListener(object : android.view.ViewTreeObserver.OnPreDrawListener {
+            override fun onPreDraw(): Boolean {
+                root.viewTreeObserver.removeOnPreDrawListener(this)
+                val slot = topSlot ?: return true
+                val W = root.width.toFloat(); val H = root.height.toFloat()
+                val bw = box.width.toFloat(); val bh = box.height.toFloat()
+                if (W == 0f || bw == 0f) return true
+                val bl = IntArray(2); val rl = IntArray(2)
+                box.getLocationInWindow(bl); root.getLocationInWindow(rl)
+                val cy = bl[1] - rl[1] - box.translationY + bh / 2f
+                val scale = minOf(H / bw, W / bh)
+                root.clipChildren = false; slot.clipChildren = false
+                val d = dim?.takeIf { it.parent === root } ?: View(this@DetailsActivity).apply { setBackgroundColor(0xFF000000.toInt()) }.also {
+                    root.addView(it, FrameLayout.LayoutParams(MATCH, MATCH)); dim = it
+                }
+                d.alpha = 1f
+                slot.bringToFront()
+                box.translationY = H / 2f - cy; box.rotation = 90f * exitSign; box.scaleX = scale; box.scaleY = scale
+                miniBar?.visibility = View.INVISIBLE
+                box.post { animateBack(box) }
+                return true
+            }
+        })
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus && fs) immersive(true)
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onBackPressed() {
+        if (fs) { exitFs(); return }           // رجوع بملء الشاشة = تصغير (زي يوتيوب)
+        @Suppress("DEPRECATION")
+        super.onBackPressed()
+    }
 
     // عمودي ووقت التشغيل: مكان ثابت فوق للمشغّل. ما ينبني من جديد ولا ينتقل (= بدون ومضة سودا)،
     // والقائمة تحته بس اللي تتحرك.
@@ -175,12 +310,17 @@ class DetailsActivity : Activity() {
                 topSlot = s
                 root.addView(s, 0, FrameLayout.LayoutParams(MATCH, heroH))
             }
-            (slot.layoutParams as FrameLayout.LayoutParams).let { if (it.height != heroH) { it.height = heroH; slot.layoutParams = it } }
+            // ملء الشاشة: نفس المكان يكبر لكل الشاشة (بدون ما ننقل الصورة)
+            val slotH = if (fs) MATCH else heroH
+            val top = if (fs) 0 else inT
+            (slot.layoutParams as FrameLayout.LayoutParams).let { if (it.height != slotH) { it.height = slotH; slot.layoutParams = it } }
             if (mv.parent !== slot) {
                 (mv.parent as? ViewGroup)?.removeView(mv)
-                slot.addView(mv, 0, FrameLayout.LayoutParams(MATCH, MATCH).apply { topMargin = inT })
-            } else (mv.layoutParams as FrameLayout.LayoutParams).let { if (it.topMargin != inT) { it.topMargin = inT; mv.layoutParams = it } }
-            if (slotBack?.parent !== slot) {
+                slot.addView(mv, 0, FrameLayout.LayoutParams(MATCH, MATCH).apply { topMargin = top })
+            } else (mv.layoutParams as FrameLayout.LayoutParams).let { if (it.topMargin != top) { it.topMargin = top; mv.layoutParams = it } }
+            if (fs) slot.bringToFront()
+            if (fs) slotBack?.visibility = View.GONE
+            if (slotBack?.parent !== slot && !fs) {
                 slotBack = backButton()
                 slot.addView(slotBack, FrameLayout.LayoutParams(dp(44), dp(44), Gravity.TOP or Gravity.START).apply { topMargin = inT + dp(6); marginStart = dp(10) + maxOf(inL, inR) })
             }
@@ -615,6 +755,7 @@ class DetailsActivity : Activity() {
         p.setMediaItem(MediaItem.fromUri(src), start * 1000)
         p.playWhenReady = true
         mini = p; miniReq = r
+        window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         makeMini(p)
         miniJob = scope.launch {
             // المشاهدة تاخذ اتصال من حد الاشتراك؛ لو فيه تحميل ماسكه ننتظر لحظة لين يتنازل
@@ -643,16 +784,15 @@ class DetailsActivity : Activity() {
 
     /** يبني الشاشة الصغيرة: الصورة + شريط الأزرار الموحّد. */
     private fun makeMini(p: ExoPlayer) {
-        val pv = PlayerView(this).apply {
+        // TextureView: الصورة نفسها تكبر وتلف مع الحركة (SurfaceView ما يلف = تقطيع)
+        val pv = (layoutInflater.inflate(R.layout.mini_player, root, false) as PlayerView).apply {
             useController = false                         // أزرارنا (PlayerBar) بدل أزرار المكتبة
             player = p
-            setShutterBackgroundColor(0xFF000000.toInt())
-            setBackgroundColor(0xFF000000.toInt())
         }
         val bar = PlayerBar(this, live = false, autoHide = true).apply {
             player = p
             fullscreenMode = false
-            onFullscreen = { goFull(animate = true) }    // زر التكبير = يكبر ويلف لين يملى الشاشة أفقي
+            onFullscreen = { if (fs) exitFs() else enterFs() }   // تكبير/تصغير بنفس الصفحة ونفس المشغّل (زي يوتيوب)
         }
         miniBox = FrameLayout(this).apply {
             setBackgroundColor(0xFF000000.toInt())
@@ -809,6 +949,11 @@ class DetailsActivity : Activity() {
 
     private fun stopMini() {
         miniBox?.let { if (it.rotation != 0f || dim != null) resetBox(it) }
+        window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        if (fs || fsPending != 0) {
+            fs = false; fsPending = 0; immersive(false)
+            requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED   // خلص وهو بملء الشاشة: نرجع عادي
+        }
         miniJob?.cancel(); miniJob = null
         miniBar?.player = null
         miniPv?.detachPlayer()
