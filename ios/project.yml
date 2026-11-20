@@ -52,3 +52,25 @@ targets:
         UIRequiresFullScreen: false
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
+  # اختبار جولة تلقائي (لقطات شاشة على المحاكي في GitHub) — ما يدخل في التطبيق نفسه
+  QuickTvUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: QuickTvUITests
+    dependencies:
+      - target: QuickTv
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.quicktv.app.uitests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: QuickTv
+schemes:
+  QuickTv:
+    build:
+      targets:
+        QuickTv: all
+        QuickTvUITests: [test]
+    test:
+      targets:
+        - QuickTvUITests

@@ -1,0 +1,85 @@
+# يشغّل نسخة الآيفون والآيباد على محاكي حقيقي (ماك في السحابة) مع سيرفر وهمي، ويحفظ صور وفيديو في فرع ci-shots-ios
+name: iOS screenshots
+on:
+  push:
+    branches: [ios-shots]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  run:
+    runs-on: macos-15
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+      - name: Xcode
+        run: |
+          X=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
+          if [ -n "$X" ]; then sudo xcode-select -s "$X"; fi
+          xcodebuild -version
+          xcrun simctl list devices available | grep -E "iPhone|iPad" | head -40
+      - name: Mock server
+        run: |
+          brew install xcodegen ffmpeg >/dev/null
+          ffmpeg -loglevel error -f lavfi -i testsrc2=size=960x540:rate=25 -f lavfi -i sine=frequency=440 -t 300 -c:v libx264 -pix_fmt yuv420p -b:v 450k -maxrate 500k -bufsize 1M -c:a aac -shortest -movflags +faststart ci/test.mp4
+          mkdir -p ci/hls && ffmpeg -loglevel error -f lavfi -i testsrc=size=1280x720:rate=25 -f lavfi -i sine=frequency=330 -t 180 -c:v libx264 -pix_fmt yuv420p -b:v 700k -c:a aac -shortest -f hls -hls_time 4 -hls_list_size 0 -hls_segment_filename ci/hls/seg%03d.ts ci/hls/index.m3u8
+          MOCK_HOST=http://127.0.0.1:8000 nohup python3 ci/mock_xtream.py > mock.log 2>&1 &
+          sleep 3; curl -s "http://127.0.0.1:8000/player_api.php?username=test&password=test" | head -c 200; echo
+      - name: Build for testing
+        run: |
+          cd ios && xcodegen
+          xcodebuild -project QuickTv.xcodeproj -scheme QuickTv -sdk iphonesimulator -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' -derivedDataPath ../dd CODE_SIGNING_ALLOWED=NO build-for-testing | tail -30
+          exit ${PIPESTATUS[0]}
+      - name: Run on iPhone and iPad
+        run: |
+          mkdir -p shots
+          pick() { xcrun simctl list devices available -j | python3 -c "
+          import json,sys,re
+          d=json.load(sys.stdin)['devices']; want=sys.argv[1:]
+          allv=[(rt,x) for rt,l in d.items() if 'iOS' in rt for x in l]
+          allv.sort(key=lambda t:[int(n) for n in re.findall(r'\d+',t[0])], reverse=True)
+          for w in want:
+            for rt,x in allv:
+              if x['name']==w: print(x['udid']); sys.exit()
+          " "$@"; }
+          IPHONE=$(pick "iPhone 17 Pro" "iPhone 16 Pro" "iPhone 16" "iPhone 15 Pro")
+          IPAD=$(pick "iPad Pro 13-inch (M5)" "iPad Pro 13-inch (M4)" "iPad Air 13-inch (M3)" "iPad Air 13-inch (M2)" "iPad Pro 11-inch (M4)")
+          echo "iphone=$IPHONE ipad=$IPAD"
+          for D in $IPHONE $IPAD; do
+            NAME=$(xcrun simctl list devices | grep "$D" | sed 's/ (.*//' | xargs)
+            xcrun simctl boot "$D" || true
+            xcrun simctl bootstatus "$D" -b
+            xcrun simctl status_bar "$D" override --time "9:41" --batteryState charged --batteryLevel 100 --wifiBars 3 || true
+            xcrun simctl ui "$D" appearance dark || true
+            TAG=$(echo "$NAME" | tr ' ()' '___')
+            xcrun simctl io "$D" recordVideo --codec=h264 --force "shots/video-$TAG.mp4" & REC=$!
+            sleep 2
+            SIMCTL_CHILD_SHOTS_DIR="$PWD/shots" TEST_RUNNER_SHOTS_DIR="$PWD/shots" \
+            xcodebuild test-without-building -xctestrun $(ls dd/Build/Products/*.xctestrun | head -1) \
+              -destination "id=$D" -resultBundlePath "res-$TAG.xcresult" 2>&1 | grep -E "SHOT|MISS|error|failed|passed|Test Case" | tail -80 || true
+            kill -INT $REC || true; sleep 4
+            mkdir -p "att-$TAG"
+            xcrun xcresulttool export attachments --path "res-$TAG.xcresult" --output-path "att-$TAG" >/dev/null 2>&1 || true
+            python3 - "att-$TAG" shots <<'PY' || true
+          import json,os,shutil,sys
+          src,dst=sys.argv[1],sys.argv[2]
+          m=os.path.join(src,'manifest.json')
+          if os.path.exists(m):
+            for t in json.load(open(m)):
+              for a in t.get('attachments',[]):
+                name=a.get('suggestedHumanReadableName','x').split('_0_')[0].replace('.png','')+'.png'
+                out=os.path.join(dst,name)
+                if not os.path.exists(out): shutil.copy(os.path.join(src,a['exportedFileName']),out)
+          PY
+            xcrun simctl shutdown "$D" || true
+          done
+          ls -la shots
+      - name: Save to ci-shots-ios branch
+        if: always()
+        run: |
+          mkdir -p shots; cp mock.log shots/ 2>/dev/null || true
+          cd shots
+          git init -q -b ci-shots-ios && git add -A
+          git -c user.name=ci -c user.email=ci@local commit -qm "ios shots ${{ github.sha }}"
+          git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}" ci-shots-ios

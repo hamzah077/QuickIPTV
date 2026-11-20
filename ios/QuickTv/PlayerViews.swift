@@ -297,6 +297,7 @@ struct PlayerOverlay: View {
         }
         .buttonStyle(.plain)
         .glassCircle()
+        .accessibilityIdentifier(sym)
     }
 
     private func iconButton(_ sym: String, _ action: @escaping () -> Void) -> some View {
@@ -304,6 +305,7 @@ struct PlayerOverlay: View {
             Image(systemName: sym).font(.system(size: 17, weight: .semibold)).frame(width: 36, height: 36)
         }
         .buttonStyle(.plain)
+        .accessibilityIdentifier(sym)
     }
 
     private func floatButton(_ t: String, icon: String, count: Int? = nil, _ action: @escaping () -> Void) -> some View {

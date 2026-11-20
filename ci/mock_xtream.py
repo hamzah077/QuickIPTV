@@ -1,10 +1,10 @@
 """سيرفر Xtream وهمي للاختبار على المحاكي (بيانات عربية + صور حقيقية PNG)."""
-import json, zlib, struct, random, sys
+import json, zlib, struct, random, sys, os
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 
 random.seed(7)
-HOST = "http://10.0.2.2:8000"
+HOST = os.environ.get("MOCK_HOST", "http://10.0.2.2:8000")
 
 def png(w, h, rgb):
     raw = b"".join(b"\x00" + bytes(rgb) * w for _ in range(h))
