@@ -77,7 +77,7 @@ final class TourTests: XCTestCase {
             fill(tf.element(boundBy: 0), "Hamzah")
             fill(tf.element(boundBy: 1), "test")
             fill(app.secureTextFields.firstMatch, "test")
-            fill(tf.element(boundBy: 2), "http://127.0.0.1:8000")
+            fill(tf.element(boundBy: 2), "http://127.0.0.1:8000/get.php?username=test&password=test")   // لصق رابط الاشتراك كامل
             shot("login-filled")
             app.typeText("\n")                                     // زر "انتقال" يدخل مباشرة
             if !el("الخير").waitForExistence(timeout: 20) {         // احتياط: نسكّر الكيبورد ونضغط دخول
