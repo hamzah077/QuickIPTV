@@ -2,14 +2,12 @@ package com.quickiptv.app
 
 import android.app.Activity
 import android.app.AlertDialog
-import android.content.res.ColorStateList
 import android.view.GestureDetector
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.widget.FrameLayout
 import android.widget.LinearLayout
-import android.widget.SeekBar
 import android.widget.TextView
 import androidx.annotation.OptIn
 import androidx.media3.common.C as MC
@@ -73,34 +71,76 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
         set(v) { field = v; fit(); refresh() }
 
     private val btnSize = act.dp(40)
+    private val playSize = act.dp(48)
     private val gap = act.dp(6)
 
-    private fun roundBtn(res: Int, desc: String, onClick: () -> Unit): Pair<FrameLayout, android.widget.ImageView> {
-        val ic = act.icon(res, 0xFFFFFFFF.toInt(), 22).apply {
-            layoutParams = LayoutParams(act.dp(22), act.dp(22), Gravity.CENTER)
+    /** تحديد رمادي خفيف (الريموت) + ضغطة خفيفة (اللمس). عادي: شفاف — أيقونات بيضاء بدون دوائر. */
+    private fun grayFocus(radiusDp: Float): android.graphics.drawable.StateListDrawable {
+        fun g(fill: Int, stroke: Int) = android.graphics.drawable.GradientDrawable().apply {
+            cornerRadius = act.dpf(radiusDp); setColor(fill)
+            if (stroke != 0) setStroke(act.dp(1) + act.dp(1) / 2, stroke)
+        }
+        return android.graphics.drawable.StateListDrawable().apply {
+            setEnterFadeDuration(120); setExitFadeDuration(120)
+            addState(intArrayOf(android.R.attr.state_focused), g(0x47C8CCD4, 0x8CD6DAE2.toInt()))
+            addState(intArrayOf(android.R.attr.state_pressed), g(0x33FFFFFF, 0))
+            addState(intArrayOf(), g(0x00000000, 0))
+        }
+    }
+
+    /** حركة التحديد (يكبر شوي) + اسم الزر فوقه بالتلفزيون. */
+    private fun focusable(v: View) {
+        v.isFocusable = true; v.isClickable = true
+        v.setTag(R.id.own_focus_anim, true)          // حركتنا الخاصة بدل الحركة العامة
+        v.setOnFocusChangeListener { _, has ->
+            v.animate().scaleX(if (has) 1.08f else 1f).scaleY(if (has) 1.08f else 1f).setDuration(140).start()
+            if (has) showTip(v) else if (tipFor === v) hideTip()
+            if (has) poke()
+        }
+    }
+
+    private fun roundBtn(res: Int, desc: String, size: Int = 40, iconDp: Int = 24, onClick: () -> Unit): Pair<FrameLayout, android.widget.ImageView> {
+        val ic = act.icon(res, 0xFFFFFFFF.toInt(), iconDp).apply {
+            layoutParams = LayoutParams(act.dp(iconDp), act.dp(iconDp), Gravity.CENTER)
         }
         val b = FrameLayout(act).apply {
-            background = act.focusBg(normal = 0x33FFFFFF, radius = 20)
-            isFocusable = true; isClickable = true
+            background = grayFocus(size / 2f)
             contentDescription = desc
             addView(ic)
             setOnClickListener { onClick(); poke() }
         }
+        focusable(b)
         return b to ic
+    }
+
+    /** تأخير/تقديم 10 ثواني: سهم دائري و"10" بالنص بالضبط. */
+    private fun seekBtn(forward: Boolean): FrameLayout = FrameLayout(act).apply {
+        background = grayFocus(20f)
+        contentDescription = if (forward) "تقديم 10 ثواني" else "تأخير 10 ثواني"
+        addView(act.icon(if (forward) R.drawable.ic_seek_fwd else R.drawable.ic_seek_back, 0xFFFFFFFF.toInt(), 28).apply {
+            layoutParams = LayoutParams(act.dp(28), act.dp(28), Gravity.CENTER)
+        })
+        addView(act.text("10", 9f, 0xFFFFFFFF.toInt(), bold = true).apply {
+            gravity = Gravity.CENTER; includeFontPadding = false; maxLines = 1
+            layoutParams = LayoutParams(act.dp(28), act.dp(28), Gravity.CENTER)
+        })
+        setOnClickListener { seek(forward); poke() }
+        focusable(this)
     }
 
     private fun pill(): LinearLayout = LinearLayout(act).apply {
         orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER
-        isFocusable = true; isClickable = true
         setPadding(act.dp(12), 0, act.dp(12), 0)
         minimumWidth = btnSize
+        background = grayFocus(10f)
+        focusable(this)
     }
 
-    private val btnBack = act.seekButton(false, 40, 0x33FFFFFF) { seek(false) }
-    private val playPair = roundBtn(R.drawable.ic_pause, "إيقاف مؤقت") { togglePlay() }
+    private val btnBack = seekBtn(false)
+    private val playPair = roundBtn(R.drawable.ic_pause, "إيقاف مؤقت", 48, 32) { togglePlay() }
     private val btnPlay = playPair.first
     private val playIcon = playPair.second
-    private val btnFwd = act.seekButton(true, 40, 0x33FFFFFF) { seek(true) }
+    private val btnFwd = seekBtn(true)
     private val btnPrev = roundBtn(R.drawable.ic_skip_prev, "الحلقة السابقة") { nav?.let { if (it.hasPrev) it.prev() } }.first
     private val btnNext = roundBtn(R.drawable.ic_skip_next, "الحلقة التالية") { nav?.let { if (it.hasNext) { learnManualNext(); it.next() } } }.first
     private val btnSettings = roundBtn(R.drawable.ic_settings, "الإعدادات") { settings() }.first
@@ -108,7 +148,8 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
     private val btnFull = fullPair.first.apply { visibility = View.GONE }
     private val fullIcon = fullPair.second
 
-    private val liveText = act.text("●  مباشر", 12.5f, 0xFFFFFFFF.toInt(), bold = true).apply { maxLines = 1; includeFontPadding = false }
+    // "مباشر": نص أحمر بدون كبسولة (رمادي "↻ مباشر" لو متأخر)
+    private val liveText = act.text("●  مباشر", 13f, C.LIVE, bold = true).apply { maxLines = 1; includeFontPadding = false }
     private val btnLive = pill().apply {
         contentDescription = "مباشر"
         addView(liveText)
@@ -116,46 +157,76 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
     }
     private val btnChannels = pill().apply {
         contentDescription = "القنوات"
-        background = act.focusBg(normal = 0x33FFFFFF, radius = 20)
-        addView(act.icon(R.drawable.ic_list, 0xFFFFFFFF.toInt(), 20), LinearLayout.LayoutParams(act.dp(20), act.dp(20)))
-        addView(act.text("القنوات", 12.5f, 0xFFFFFFFF.toInt(), bold = true).apply { maxLines = 1; includeFontPadding = false; setPadding(act.dp(6), 0, 0, 0) })
+        addView(act.icon(R.drawable.ic_list, 0xFFFFFFFF.toInt(), 22), LinearLayout.LayoutParams(act.dp(22), act.dp(22)))
+        addView(act.text("القنوات", 13f, 0xFFFFFFFF.toInt(), bold = true).apply { maxLines = 1; includeFontPadding = false; setPadding(act.dp(6), 0, 0, 0) })
         setOnClickListener { onChannels?.invoke() }
         visibility = View.GONE
     }
 
-    // شريط التقدّم + الوقت
-    private val tPos = act.text("0:00", 11.5f, 0xFFE6E8EB.toInt()).apply { maxLines = 1 }
-    private val tDur = act.text("0:00", 11.5f, 0xFFE6E8EB.toInt()).apply { maxLines = 1 }
-    private var dragging = false
-    private val seekBar = SeekBar(act).apply {
-        max = 1000
-        progressTintList = ColorStateList.valueOf(C.ACCENT)
-        thumbTintList = ColorStateList.valueOf(0xFFFFFFFF.toInt())
-        progressBackgroundTintList = ColorStateList.valueOf(0x66FFFFFF)
-        secondaryProgressTintList = ColorStateList.valueOf(0x99FFFFFF.toInt())
-        setPadding(act.dp(10), 0, act.dp(10), 0)
-        setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(sb: SeekBar, p: Int, fromUser: Boolean) {
-                if (!fromUser) return
-                val d = duration()
-                if (d > 0) tPos.text = fmtTime(d * p / 1000 / 1000)
-                poke()
-            }
-            override fun onStartTrackingTouch(sb: SeekBar) { dragging = true; poke() }
-            override fun onStopTrackingTouch(sb: SeekBar) {
-                dragging = false
-                val d = duration()
-                if (d > 0) player?.seekTo(d * sb.progress / 1000)
-                poke()
-            }
-        })
+    // شريط التقدّم الرفيع (أحمر) + الوقت + فقاعة الوقت فوق المؤشّر
+    private val tPos = act.text("0:00", 12f, 0xFFE6E8EB.toInt()).apply { maxLines = 1 }
+    private val tDur = act.text("0:00", 12f, 0xFFE6E8EB.toInt()).apply { maxLines = 1 }
+    private val seekLine = SeekLine(act).apply {
+        onScrub = { v -> val d = duration(); if (d > 0) { tPos.text = fmtTime(d * v / 1000 / 1000); showBubble(d * v / 1000) }; poke() }
+        onCommit = { v -> val d = duration(); if (d > 0) player?.seekTo(d * v / 1000); hideBubble(); poke() }
+        onActive = { a -> if (a) poke() else hideBubble() }
+        isFocusable = act.isTv()                     // الريموت: سهم فوق = الشريط، يمين/يسار = ±10 ثواني
+        setTag(R.id.own_focus_anim, true)
+    }
+    private val dragging get() = seekLine.scrubbing
+    private val bubble = act.text("", 12f, 0xFF111214.toInt(), bold = true).apply {
+        maxLines = 1; includeFontPadding = false; gravity = Gravity.CENTER
+        setPadding(act.dp(8), act.dp(3), act.dp(8), act.dp(3))
+        background = rounded(0xFFE9EBEF.toInt(), act.dpf(6f))
+        visibility = View.INVISIBLE
     }
     private val progRow = LinearLayout(act).apply {
         orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
         addView(tPos, LinearLayout.LayoutParams(WRAP, WRAP))
-        addView(seekBar, LinearLayout.LayoutParams(0, act.dp(28), 1f))
+        addView(seekLine, LinearLayout.LayoutParams(0, act.dp(30), 1f).apply { setMargins(act.dp(10), 0, act.dp(10), 0) })
         addView(tDur, LinearLayout.LayoutParams(WRAP, WRAP))
     }
+
+    private fun showBubble(ms: Long) {
+        bubble.text = fmtTime(ms / 1000)
+        bubble.visibility = View.VISIBLE
+        bubble.post {
+            val loc = IntArray(2); val me = IntArray(2)
+            seekLine.getLocationInWindow(loc); getLocationInWindow(me)
+            val x = loc[0] - me[0] + seekLine.thumbX() - bubble.width / 2f
+            bubble.translationX = x.coerceIn(0f, (width - bubble.width).toFloat().coerceAtLeast(0f))
+            bubble.translationY = (loc[1] - me[1] - bubble.height - act.dp(4)).toFloat()
+        }
+    }
+
+    private fun hideBubble() { if (!seekLine.isFocused) bubble.visibility = View.INVISIBLE }
+
+    // اسم الزر فوقه (التلفزيون)
+    private val tip = act.text("", 11.5f, 0xFFFFFFFF.toInt()).apply {
+        maxLines = 1; includeFontPadding = false
+        setPadding(act.dp(8), act.dp(3), act.dp(8), act.dp(3))
+        background = rounded(0xEB14161C.toInt(), act.dpf(6f))
+        visibility = View.INVISIBLE
+    }
+    private var tipFor: View? = null
+
+    private fun showTip(v: View) {
+        if (!act.isTv()) return
+        val d = v.contentDescription?.toString().orEmpty()
+        if (d.isEmpty() || v === seekLine) { hideTip(); return }
+        tipFor = v
+        tip.text = d
+        tip.visibility = View.VISIBLE
+        tip.post {
+            val loc = IntArray(2); val me = IntArray(2)
+            v.getLocationInWindow(loc); getLocationInWindow(me)
+            val x = loc[0] - me[0] + v.width / 2f - tip.width / 2f
+            tip.translationX = x.coerceIn(0f, (width - tip.width).toFloat().coerceAtLeast(0f))
+            tip.translationY = (loc[1] - me[1] - tip.height - act.dp(8)).toFloat()
+        }
+    }
+
+    private fun hideTip() { tipFor = null; tip.visibility = View.INVISIBLE }
 
     private val leftGroup = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
     private val rightGroup = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
@@ -163,8 +234,11 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
     private val btnRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
     private val panel = LinearLayout(act).apply {
         orientation = LinearLayout.VERTICAL
-        setBackgroundColor(0xB3000000.toInt())
-        setPadding(act.dp(8), act.dp(6), act.dp(8), act.dp(8))
+        // تدرّج سينمائي من تحت (غامق) لفوق (شفاف) بدل صندوق أسود
+        background = android.graphics.drawable.GradientDrawable(
+            android.graphics.drawable.GradientDrawable.Orientation.BOTTOM_TOP,
+            intArrayOf(0xE6000000.toInt(), 0x99000000.toInt(), 0x00000000))
+        setPadding(act.dp(12), act.dp(28), act.dp(12), act.dp(8))
         isClickable = true            // اللمس على الشريط نفسه ما يخفيه
     }
 
@@ -283,10 +357,10 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
 
     init {
         layoutDirection = View.LAYOUT_DIRECTION_LTR           // أزرار الميديا وشريط التقدّم من اليسار لليمين
-        fun lpBtn(v: View, w: Int = btnSize) = LinearLayout.LayoutParams(w, btnSize).apply { marginEnd = gap }
-        leftGroup.addView(btnBack, lpBtn(btnBack))
-        leftGroup.addView(btnPlay, lpBtn(btnPlay))
-        leftGroup.addView(btnFwd, lpBtn(btnFwd).apply { marginEnd = 0 })
+        // يسار: تأخير ← تشغيل/إيقاف (أكبر) ← تقديم (يمين التشغيل)
+        leftGroup.addView(btnBack, LinearLayout.LayoutParams(btnSize, btnSize).apply { marginEnd = gap * 2 })
+        leftGroup.addView(btnPlay, LinearLayout.LayoutParams(playSize, playSize).apply { marginEnd = gap * 2 })
+        leftGroup.addView(btnFwd, LinearLayout.LayoutParams(btnSize, btnSize))
         if (live) {
             rightGroup.addView(btnLive, LinearLayout.LayoutParams(WRAP, btnSize).apply { marginStart = gap })
             rightGroup.addView(btnChannels, LinearLayout.LayoutParams(WRAP, btnSize).apply { marginStart = gap })
@@ -300,8 +374,9 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
         addView(panel, LayoutParams(MATCH, WRAP, Gravity.BOTTOM))
         addView(nextFloat, LayoutParams(WRAP, act.dp(44), Gravity.BOTTOM or Gravity.END).apply { setMargins(0, 0, act.dp(12), act.dp(16)) })
         addView(introFloat, LayoutParams(WRAP, act.dp(44), Gravity.BOTTOM or Gravity.END).apply { setMargins(0, 0, act.dp(12), act.dp(16)) })
+        addView(bubble, LayoutParams(WRAP, WRAP, Gravity.TOP or Gravity.START))
+        addView(tip, LayoutParams(WRAP, WRAP, Gravity.TOP or Gravity.START))
         arrange(false)
-        seekBar.isFocusable = false            // الريموت: يمين/يسار = ±10 ثواني (والشريط باللمس)
     }
 
     // ---------- الترتيب حسب حجم المشغّل ----------
@@ -318,17 +393,12 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
         for (v in listOf<View>(leftGroup, rightGroup, spacer, progRow)) (v.parent as? android.view.ViewGroup)?.removeView(v)
         btnRow.removeAllViews()
         btnRow.addView(leftGroup, LinearLayout.LayoutParams(WRAP, WRAP))
-        if (live) {
-            btnRow.addView(spacer, LinearLayout.LayoutParams(0, 1, 1f))
-        } else if (c) {
-            // صغير: شريط التقدّم فوق بعرض المشغّل، والأزرار تحته
-            panel.addView(progRow, 0, LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = act.dp(4) })
-            btnRow.addView(spacer, LinearLayout.LayoutParams(0, 1, 1f))
-        } else {
-            // كبير: كل شي بسطر واحد
-            btnRow.addView(progRow, LinearLayout.LayoutParams(0, WRAP, 1f).apply { setMargins(act.dp(12), 0, act.dp(6), 0) })
-        }
+        // التصميم (أ): شريط التقدّم الرفيع فوق، والأزرار تحته (يسار التحكم، يمين الباقي)
+        if (!live) panel.addView(progRow, 0, LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = act.dp(if (c) 2 else 6) })
+        btnRow.addView(spacer, LinearLayout.LayoutParams(0, 1, 1f))
         btnRow.addView(rightGroup, LinearLayout.LayoutParams(WRAP, WRAP))
+        val h = act.dp(if (c) 10 else 20)
+        panel.setPadding(h, act.dp(if (c) 22 else 36), h, act.dp(if (c) 6 else 12))
         fit()
     }
 
@@ -341,7 +411,7 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
         btnNext.visibility = btnPrev.visibility
         btnSettings.visibility = if (live) View.GONE else View.VISIBLE
         btnBack.visibility = View.VISIBLE; btnFwd.visibility = View.VISIBLE
-        val minProg = if (!live && compact == false) act.dp(160) else 0
+        val minProg = 0
         fun need(): Int {
             var n = minProg
             for (g in listOf(leftGroup, rightGroup)) for (i in 0 until g.childCount) {
@@ -380,6 +450,7 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
     fun hide() {
         if (!autoHide || panel.visibility != View.VISIBLE) return
         if (panel.hasFocus()) act.window?.decorView?.requestFocus()
+        hideTip(); bubble.visibility = View.INVISIBLE
         panel.animate().alpha(0f).setDuration(150).withEndAction { panel.visibility = View.GONE; placeNext() }.start()
         onVisibility?.invoke(false)
     }
@@ -462,15 +533,15 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
             btnBack.alpha = if (canSeek) 1f else 0.4f; btnFwd.alpha = btnBack.alpha
             val behind = p != null && (!p.isPlaying || (p.isCurrentMediaItemLive && p.currentLiveOffset.let { it != MC.TIME_UNSET && it > 20_000 }))
             liveText.text = if (behind) "↻  مباشر" else "●  مباشر"
-            btnLive.background = act.focusBg(normal = if (behind) 0xFF3A404A.toInt() else C.LIVE, radius = 20)
+            liveText.setTextColor(if (behind) 0xFFC9CDD3.toInt() else C.LIVE)
         } else {
             val d = duration()
             if (p != null && d > 0) {
                 if (!dragging) {
-                    seekBar.progress = (p.currentPosition * 1000 / d).toInt()
+                    seekLine.progress = (p.currentPosition * 1000 / d).toInt()
                     tPos.text = fmtTime(p.currentPosition / 1000)
                 }
-                seekBar.secondaryProgress = (p.bufferedPosition * 1000 / d).toInt()
+                seekLine.secondary = (p.bufferedPosition * 1000 / d).toInt()
                 tDur.text = fmtTime(d / 1000)
             } else { tPos.text = "--:--"; tDur.text = "--:--" }
             nav?.let { btnPrev.alpha = if (it.hasPrev) 1f else 0.35f; btnNext.alpha = if (it.hasNext) 1f else 0.35f }
@@ -598,5 +669,101 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
                 p.trackSelectionParameters = b.build()
                 d.dismiss()
             }.show()
+    }
+
+    // ---------- الريموت على شريط التقدّم: يمين/يسار = ±10 ثواني (ضغط مطوّل أسرع) ----------
+    private var pendingSeek = -1L
+    private val commitSeek = Runnable {
+        if (pendingSeek >= 0) player?.seekTo(pendingSeek)
+        pendingSeek = -1
+        seekLine.scrubbing = false
+        refresh()
+    }
+
+    init {
+        seekLine.setOnKeyListener { _, code, ev ->
+            if (code != android.view.KeyEvent.KEYCODE_DPAD_LEFT && code != android.view.KeyEvent.KEYCODE_DPAD_RIGHT) return@setOnKeyListener false
+            if (ev.action != android.view.KeyEvent.ACTION_DOWN) return@setOnKeyListener true
+            val p = player ?: return@setOnKeyListener true
+            val d = duration()
+            if (d <= 0) return@setOnKeyListener true
+            val step = if (ev.repeatCount > 6) 60_000L else if (ev.repeatCount > 0) 30_000L else 10_000L
+            val base = if (pendingSeek >= 0) pendingSeek else p.currentPosition
+            pendingSeek = (base + if (code == android.view.KeyEvent.KEYCODE_DPAD_RIGHT) step else -step).coerceIn(0, d)
+            seekLine.scrubbing = true
+            seekLine.progress = (pendingSeek * 1000 / d).toInt()
+            tPos.text = fmtTime(pendingSeek / 1000)
+            showBubble(pendingSeek)
+            removeCallbacks(commitSeek); postDelayed(commitSeek, 700)
+            poke()
+            true
+        }
+        seekLine.setOnFocusChangeListener { _, has ->
+            seekLine.active = has
+            if (has) { hideTip(); player?.let { p -> val d = duration(); if (d > 0) showBubble(p.currentPosition) } } else hideBubble()
+            // الأزرار تبهت شوي وقت الشريط محدّد
+            btnRow.animate().alpha(if (has) 0.55f else 1f).setDuration(140).start()
+            poke()
+        }
+    }
+}
+
+/**
+ * شريط تقدّم رفيع مرسوم بنفسه: خط أحمر رفيع ومؤشّر دائري، يتضخّم لما تسحبه أو يكون محدّد بالريموت
+ * (وحول المؤشّر هالة رمادية).
+ */
+class SeekLine(ctx: android.content.Context) : View(ctx) {
+    var progress = 0; set(v) { field = v.coerceIn(0, 1000); invalidate() }
+    var secondary = 0; set(v) { field = v.coerceIn(0, 1000); invalidate() }
+    var scrubbing = false; set(v) { field = v; invalidate() }
+    var active = false; set(v) { field = v; invalidate() }
+    var onScrub: ((Int) -> Unit)? = null
+    var onCommit: ((Int) -> Unit)? = null
+    var onActive: ((Boolean) -> Unit)? = null
+
+    private val d = ctx.resources.displayMetrics.density
+    private val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+    private val r = android.graphics.RectF()
+    private val pad get() = 10 * d               // مكان للمؤشّر على الأطراف
+
+    fun thumbX(): Float = pad + (width - 2 * pad) * progress / 1000f
+
+    override fun onDraw(c: android.graphics.Canvas) {
+        super.onDraw(c)
+        val big = active || scrubbing
+        val th = (if (big) 6f else 3f) * d
+        val cy = height / 2f
+        val l = pad; val w = width - 2 * pad
+        fun bar(to: Float, color: Int) {
+            paint.color = color
+            r.set(l, cy - th / 2, l + w * to, cy + th / 2)
+            c.drawRoundRect(r, th / 2, th / 2, paint)
+        }
+        bar(1f, 0x40FFFFFF)
+        bar(secondary / 1000f, 0x66FFFFFF)
+        bar(progress / 1000f, 0xFFE5484D.toInt())
+        val x = l + w * progress / 1000f
+        if (isFocused) { paint.color = 0x73C8CCD4; c.drawCircle(x, cy, 13 * d, paint) }      // هالة رمادية (الريموت)
+        paint.color = 0xFFE5484D.toInt()
+        c.drawCircle(x, cy, (if (big) 9f else 6.5f) * d, paint)
+    }
+
+    private fun valueAt(x: Float) = (((x - pad) / (width - 2 * pad).coerceAtLeast(1f)) * 1000).toInt().coerceIn(0, 1000)
+
+    override fun onTouchEvent(e: android.view.MotionEvent): Boolean {
+        when (e.actionMasked) {
+            android.view.MotionEvent.ACTION_DOWN -> {
+                parent?.requestDisallowInterceptTouchEvent(true)
+                scrubbing = true; onActive?.invoke(true)
+                progress = valueAt(e.x); onScrub?.invoke(progress)
+            }
+            android.view.MotionEvent.ACTION_MOVE -> { progress = valueAt(e.x); onScrub?.invoke(progress) }
+            android.view.MotionEvent.ACTION_UP -> {
+                progress = valueAt(e.x)
+                scrubbing = false; onCommit?.invoke(progress); onActive?.invoke(false)
+            }
+            android.view.MotionEvent.ACTION_CANCEL -> { scrubbing = false; onActive?.invoke(false) }
+        }
+        return true
     }
 }
