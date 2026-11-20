@@ -385,18 +385,28 @@ class DetailsActivity : Activity() {
             val h = hist[key]
             val watched = h != null && h.dur > 0 && h.pos >= h.dur - 60
             val partial = h != null && h.dur > 0 && h.pos > 30 && !watched
+            val playing = miniReq?.key == key
+            val current = playing || (miniReq == null && key == lastEpKey)
             holder.row.tag = "ep:${e.id}"
-            holder.row.background = focusBg(radius = 10, normal = if (partial) C.ACCENT_SOFT else 0)
+            // الحلقة الحالية (شغّالة الحين أو آخر وحدة شفتها): خلفية مميّزة وإطار
+            holder.row.background = if (current) android.graphics.drawable.LayerDrawable(arrayOf(
+                focusBg(radius = 10, normal = 0x2E7AA2FF),
+                rounded(0x00000000, dpf(10f), 0xB37AA2FF.toInt(), dp(2))))
+            else focusBg(radius = 10, normal = if (partial) C.ACCENT_SOFT else 0)
             holder.row.setOnClickListener { playEpisode(e) }
             holder.thumb.load((e.image.ifEmpty { icon }).ifEmpty { null }) { size(320, 180) }
             holder.title.text = "${e.num}. ${e.title.ifEmpty { "الحلقة ${e.num}" }}"
+            holder.title.setTextColor(if (current) 0xFFB9CCFF.toInt() else C.TEXT)
             holder.sub.text = when {
+                playing -> "▶ تعرض الآن"
+                current && partial -> "آخر حلقة شاهدتها · متبقي ${fmtTime(h!!.dur - h.pos)}"
+                current -> "آخر حلقة شاهدتها"
                 watched -> "✓ شاهدتها"
                 partial -> "متبقي ${fmtTime(h!!.dur - h.pos)}"
                 else -> e.duration
             }
             holder.sub.visibility = if (holder.sub.text.isEmpty()) View.GONE else View.VISIBLE
-            holder.sub.setTextColor(if (watched) 0xFF6FCF97.toInt() else C.MUTED)
+            holder.sub.setTextColor(if (current) 0xFFB9CCFF.toInt() else if (watched) 0xFF6FCF97.toInt() else C.MUTED)
             holder.bar.visibility = if (partial) View.VISIBLE else View.GONE
             if (partial) holder.bar.progress = (h!!.pos * 1000 / h.dur).toInt()
             holder.dl.tag = "epdl:${e.id}"
@@ -541,6 +551,20 @@ class DetailsActivity : Activity() {
     private var backToMini: VodReq? = null      // رجعنا من ملء الشاشة: نكمل في المصغّر
 
     private fun startMini(r: VodReq, start: Long) {
+        // المشغّل الصغير شغّال: نفس المشغّل يبدّل الحلقة على طول (بدون ما نقفله ونبني واحد جديد)
+        mini?.let { p ->
+            saveMini()
+            Store.addHistory(HistoryItem(r.key, r.type, r.title, r.sub, icon, r.url, if (series) id else ""))
+            val local = Downloads.localFile(r.key)
+            if (local == null && !miniWatching) { Downloads.setWatching("vod", true); miniWatching = true }
+            p.setMediaItem(MediaItem.fromUri(local?.let { android.net.Uri.fromFile(it).toString() } ?: r.url), start * 1000)
+            p.prepare(); p.playWhenReady = true
+            miniReq = r
+            updateMiniNav()
+            hist = Store.history().associateBy { it.key }
+            render()
+            return
+        }
         stopMini()
         Store.addHistory(HistoryItem(r.key, r.type, r.title, r.sub, icon, r.url, if (series) id else ""))
         val local = Downloads.localFile(r.key)
@@ -622,6 +646,10 @@ class DetailsActivity : Activity() {
         hist = Store.history().associateBy { it.key }
         render()
     }
+
+    /** آخر حلقة شفتها من هالمسلسل (للتحديد لما ما فيه شي شغّال). */
+    private val lastEpKey: String?
+        get() = Store.history().firstOrNull { it.type == "episode" && it.seriesId == id }?.key
 
     private var handedBox: FrameLayout? = null      // الشاشة الصغيرة وقت ما المشغّل بملء الشاشة
     private var handedPv: PlayerView? = null

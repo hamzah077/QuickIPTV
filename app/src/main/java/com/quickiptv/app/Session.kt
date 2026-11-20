@@ -58,11 +58,52 @@ fun buildPlayer(ctx: Context, live: Boolean): ExoPlayer {
         .setEnableDecoderFallback(true)
         .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF)
     return ExoPlayer.Builder(ctx, renderers)
-        .setMediaSourceFactory(FastSourceFactory(ctx, http))   // http + ملفات محمّلة، بداية سريعة لبث TS/HLS
+        .setMediaSourceFactory(FastSourceFactory(ctx, MemoRedirects(http)))   // http + ملفات محمّلة، بداية سريعة لبث TS/HLS
         .setLoadControl(load)
         .setSeekBackIncrementMs(10_000)        // تأخير 10 ثواني
         .setSeekForwardIncrementMs(10_000)     // تقديم 10 ثواني
         .build()
+}
+
+/**
+ * يحفظ التحويل (redirect) لروابط الأفلام والحلقات: سيرفرات Xtream تحوّل كل طلب لعنوان ثاني،
+ * والمشغّل يطلب الملف أكثر من مرة قبل ما يبدأ (البداية، النهاية، الرجوع…). بدل ما نمر على
+ * التحويل كل مرة، نروح للعنوان النهائي مباشرة = بداية أسرع وتقديم أسرع.
+ * لو العنوان المحفوظ ما اشتغل (انتهت صلاحيته) نرجع للرابط الأصلي تلقائياً.
+ */
+@OptIn(UnstableApi::class)
+private class MemoRedirects(private val up: androidx.media3.datasource.DataSource.Factory) : androidx.media3.datasource.DataSource.Factory {
+    override fun createDataSource(): androidx.media3.datasource.DataSource = Src(up.createDataSource())
+
+    private class Src(private val up: androidx.media3.datasource.DataSource) : androidx.media3.datasource.DataSource {
+        override fun addTransferListener(l: androidx.media3.datasource.TransferListener) = up.addTransferListener(l)
+
+        override fun open(spec: androidx.media3.datasource.DataSpec): Long {
+            val orig = spec.uri.toString()
+            val vod = orig.startsWith("http") && (orig.contains("/movie/") || orig.contains("/series/") || orig.contains("/live/"))
+            if (!vod) return up.open(spec)
+            cache(orig)?.let { fin ->
+                try { return up.open(spec.withUri(android.net.Uri.parse(fin))) }
+                catch (e: java.io.IOException) { drop(orig); runCatching { up.close() } }
+            }
+            val n = up.open(spec)
+            val fin = up.uri?.toString()
+            if (fin != null && fin != orig) put(orig, fin)
+            return n
+        }
+
+        override fun read(buffer: ByteArray, offset: Int, length: Int): Int = up.read(buffer, offset, length)
+        override fun getUri(): android.net.Uri? = up.uri
+        override fun getResponseHeaders(): Map<String, List<String>> = up.responseHeaders
+        override fun close() = up.close()
+    }
+
+    companion object {
+        private val map = java.util.concurrent.ConcurrentHashMap<String, Pair<String, Long>>()
+        fun cache(u: String): String? = map[u]?.takeIf { System.currentTimeMillis() - it.second < 20 * 60_000 }?.first
+        fun put(u: String, f: String) { if (map.size > 64) map.clear(); map[u] = f to System.currentTimeMillis() }
+        fun drop(u: String) { map.remove(u) }
+    }
 }
 
 /**
@@ -120,6 +161,7 @@ object LivePlayer {
         }
         url = u
         Downloads.setWatching("live", true)
+        p.stop()                                  // نقفل اتصال القناة السابقة قبل نفتح الجديدة (حد الاتصالات)
         p.setMediaItem(androidx.media3.common.MediaItem.fromUri(u))
         p.prepare()
         p.playWhenReady = true

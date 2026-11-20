@@ -229,7 +229,10 @@ class PlayerActivity : Activity() {
     }
 
     // ---------- المباشر ----------
-    private fun playChannel(i: Int, reuse: Boolean = false) {
+    private var zapJob: Job? = null
+
+    /** zap = تقليب سريع بالريموت (فوق/تحت): الاسم يتغيّر فوراً والبث يبدأ لما توقف (بدون اتصالات ضايعة). */
+    private fun playChannel(i: Int, reuse: Boolean = false, zap: Boolean = false) {
         val list = Session.playlist
         if (list.isEmpty()) { finish(); return }
         val idx = ((i % list.size) + list.size) % list.size
@@ -242,8 +245,13 @@ class PlayerActivity : Activity() {
         // نفس القناة الشغّالة في الشاشة الصغيرة؟ نكمل عليها مباشرة بدون إعادة اتصال
         loading.visibility = View.VISIBLE
         val shared = LivePlayer.player
+        val api = Session.api ?: run { finish(); return }
+        zapJob?.cancel()
         if (reuse && shared != null && shared.playbackState != Player.STATE_IDLE) shared.playWhenReady = true   // نفس البث يكمل (حتى لو صيغته TS)
-        else LivePlayer.play(this, (Session.api ?: run { finish(); return }).liveUrl(ch.id), force = !reuse)
+        else if (zap) {
+            shared?.stop()                         // نقفل اتصال القناة السابقة فوراً (السيرفرات تسمح باتصال واحد غالباً)
+            zapJob = scope.launch { delay(300); LivePlayer.play(this@PlayerActivity, api.liveUrl(ch.id), force = true) }
+        } else LivePlayer.play(this, api.liveUrl(ch.id), force = !reuse)
         if (reuse) LivePlayer.healAfterSwitch(this, scope)      // لو الصورة علّقت بعد التكبير نعيد الاتصال
         if (player?.playbackState == Player.STATE_READY) loading.visibility = View.GONE
         Store.addHistory(HistoryItem("live:${ch.id}", "live", ch.name, Session.playCategory, ch.icon, ""))
@@ -419,8 +427,8 @@ class PlayerActivity : Activity() {
         }
         if (live) {
             when (k) {
-                KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_CHANNEL_UP -> { playChannel(Session.playIndex - 1); return true }
-                KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_CHANNEL_DOWN -> { playChannel(Session.playIndex + 1); return true }
+                KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_CHANNEL_UP -> { playChannel(Session.playIndex - 1, zap = true); return true }
+                KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_CHANNEL_DOWN -> { playChannel(Session.playIndex + 1, zap = true); return true }
             }
             if (k in KeyEvent.KEYCODE_0..KeyEvent.KEYCODE_9) { digit(k - KeyEvent.KEYCODE_0); return true }
         } else if ((k == KeyEvent.KEYCODE_DPAD_UP || k == KeyEvent.KEYCODE_DPAD_DOWN) && !bar.barVisible) {
