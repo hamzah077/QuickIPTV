@@ -29,6 +29,10 @@ final class PlayerController {
     private(set) var buffering = false
     private(set) var failed: String?
     var fullscreen = false
+    /// دخل ملء الشاشة لأنك لفّيت الجوال (يطلع لما ترجعه عمودي)
+    var autoFullscreen = false
+    /// مكان المشغّل الصغير بالشاشة (تبدأ منه حركة التكبير وترجع له)
+    @ObservationIgnored var inlineFrame: CGRect = .zero
 
     var isLive: Bool { req?.type == "live" }
     var hasPrev: Bool { guard let q = queue, let r = req, let i = q.index(of: r.key) else { return false }; return i > 0 }
@@ -66,7 +70,10 @@ final class PlayerController {
         return ["m3u8", "mp4", "m4v", "mov", "mp3", "m4a"].contains(ext) ? .av : .vlc
     }
 
-    func play(_ r: PlayRequest) {
+    func play(_ r0: PlayRequest) {
+        var r = r0
+        // محمّل بالجهاز؟ نشغّله منه (بدون إنترنت)
+        if r.type != "live", !r.url.isFileURL, let local = Downloads.shared.localURL(r.key) { r.url = local }
         saveNow()
         failed = nil
         req = r

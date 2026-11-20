@@ -106,6 +106,12 @@ struct PlayerOverlay: View {
                 tapZone(1)
             }
             .environment(\.layoutDirection, .leftToRight)
+            .gesture(DragGesture(minimumDistance: 40).onEnded { d in
+                let dx = d.translation.width, dy = d.translation.height
+                if !compact && dy > 110 && abs(dx) < 80 { onFullscreen(); return }          // سحب لتحت = تصغير
+                guard abs(dx) > 90, abs(dy) < 60, pc.isLive || pc.queue != nil else { return }
+                if dx < 0 { pc.learnManualNext(); pc.next() } else { pc.prev() }         // سحب = الحلقة/القناة التالية أو السابقة
+            })
 
             // قوس التقديم/التأخير
             if tapSide != 0 { seekArc }
@@ -343,37 +349,61 @@ struct InlinePlayer: View {
         ZStack {
             Color.black
             VideoSurface(active: !pc.fullscreen)
-            PlayerOverlay(compact: true) { enterFullscreen() }
+            PlayerOverlay(compact: true) { pc.autoFullscreen = false; pc.fullscreen = true }
         }
         .aspectRatio(16 / 9, contentMode: .fit)
-    }
-
-    private func enterFullscreen() {
-        withAnimation(.spring(duration: 0.45, bounce: 0.05)) { pc.fullscreen = true }
+        .opacity(pc.fullscreen ? 0 : 1)                 // وقت ملء الشاشة الفيديو "طالع" من هنا
+        .background(GeometryReader { g in
+            Color.clear
+                .onAppear { pc.inlineFrame = g.frame(in: .global) }
+                .onChange(of: g.frame(in: .global)) { _, f in if !pc.fullscreen { pc.inlineFrame = f } }
+        })
     }
 }
 
-// MARK: - ملء الشاشة (يغطي التطبيق كله، ويلف الجوال أفقي)
+// MARK: - ملء الشاشة: يكبر من مكان المشغّل الصغير ويلف ربع لفّة (زي يوتيوب) — مرسوم داخل التطبيق = سلس 100٪
 
 struct FullscreenPlayer: View {
     @Environment(PlayerController.self) private var pc
-    @Environment(\.horizontalSizeClass) private var hsize
+    @State private var shown = false
+    @State private var angle: Double = 90
 
     var body: some View {
-        ZStack {
-            Color.black.ignoresSafeArea()
-            VideoSurface(active: true).ignoresSafeArea()
-            PlayerOverlay(compact: false) { exit() }
+        GeometryReader { g in
+            let W = g.size.width, H = g.size.height
+            // الجوال عمودي: نلف الفيديو بأنفسنا (بدون لفّة النظام) — الجوال أفقي أو آيباد: بدون لف
+            let rot = UIDevice.current.userInterfaceIdiom == .phone && H > W
+            let fw = rot ? H : W, fh = rot ? W : H
+            let f = pc.inlineFrame.width > 0 ? pc.inlineFrame : CGRect(x: 0, y: (H - W * 9 / 16) / 2, width: W, height: W * 9 / 16)
+            ZStack {
+                Color.black.opacity(shown ? 1 : 0)
+                ZStack {
+                    Color.black
+                    VideoSurface(active: true)
+                    if shown { PlayerOverlay(compact: false) { exit() }.transition(.opacity) }
+                }
+                .frame(width: shown ? fw : f.width, height: shown ? fh : f.height)
+                .clipped()
+                .rotationEffect(.degrees(shown && rot ? angle : 0))
+                .position(x: shown ? W / 2 : f.midX, y: shown ? H / 2 : f.midY)
+            }
         }
+        .ignoresSafeArea()
         .statusBarHidden()
         .persistentSystemOverlays(.hidden)
-        .onAppear { if UIDevice.current.userInterfaceIdiom == .phone { Orientation.set(.landscape) } }
-        .gesture(DragGesture(minimumDistance: 40).onEnded { d in if d.translation.height > 120 { exit() } })   // سحب لتحت = تصغير
+        .onAppear {
+            // اتجاه اللفّة حسب مسكة الجوال
+            angle = UIDevice.current.orientation == .landscapeRight ? -90 : 90
+            if UIDevice.current.userInterfaceIdiom == .phone && !pc.autoFullscreen { Orientation.lock(.portrait) }
+            withAnimation(.spring(duration: 0.5, bounce: 0.06)) { shown = true }
+        }
     }
 
     private func exit() {
-        if UIDevice.current.userInterfaceIdiom == .phone { Orientation.set(.portrait) }
-        withAnimation(.spring(duration: 0.45, bounce: 0.05)) { pc.fullscreen = false }
-        Task { try? await Task.sleep(for: .seconds(1)); Orientation.unlock() }
+        withAnimation(.spring(duration: 0.45, bounce: 0.04)) { shown = false } completion: {
+            pc.fullscreen = false
+            pc.autoFullscreen = false
+            Orientation.unlockWhenPortrait()            // يرجع يلف عادي بس لما تمسك الجوال عمودي
+        }
     }
 }

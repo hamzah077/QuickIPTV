@@ -1,7 +1,7 @@
 import SwiftUI
 
 enum AppSection: String, CaseIterable, Identifiable {
-    case home, live, movies, series, history, settings
+    case home, live, movies, series, downloads, history, settings
     var id: String { rawValue }
     var title: String {
         switch self {
@@ -9,6 +9,7 @@ enum AppSection: String, CaseIterable, Identifiable {
         case .live: return "المباشر"
         case .movies: return "الأفلام"
         case .series: return "المسلسلات"
+        case .downloads: return "التحميلات"
         case .history: return "السجل"
         case .settings: return "الإعدادات"
         }
@@ -19,6 +20,7 @@ enum AppSection: String, CaseIterable, Identifiable {
         case .live: return "dot.radiowaves.left.and.right"
         case .movies: return "film"
         case .series: return "tv"
+        case .downloads: return "arrow.down.circle"
         case .history: return "clock.arrow.circlepath"
         case .settings: return "gearshape"
         }
@@ -29,6 +31,7 @@ enum AppSection: String, CaseIterable, Identifiable {
         case .live: LiveView()
         case .movies: VodGridView(series: false)
         case .series: VodGridView(series: true)
+        case .downloads: DownloadsView()
         case .history: HistoryView()
         case .settings: SettingsView()
         }
@@ -44,11 +47,16 @@ struct PhoneShell: View {
     var body: some View {
         ZStack {
             tabs
-            if pc.fullscreen {
-                FullscreenPlayer().transition(.scale(scale: 0.6).combined(with: .opacity)).zIndex(10)
-            }
+            if pc.fullscreen { FullscreenPlayer().zIndex(10) }
+        }
+        // لفّيت الجوال أفقي وهو يشغّل = ملء الشاشة، ورجعته عمودي = يرجع
+        .onChange(of: vsize) { _, v in
+            if v == .compact, pc.req != nil, !pc.fullscreen { pc.autoFullscreen = true; pc.fullscreen = true }
+            else if v == .regular, pc.fullscreen, pc.autoFullscreen { pc.fullscreen = false; pc.autoFullscreen = false }
         }
     }
+
+    @Environment(\.verticalSizeClass) private var vsize
 
     @ViewBuilder private var tabs: some View {
         if #available(iOS 18.0, *) {
@@ -86,9 +94,7 @@ struct IPadShell: View {
             } detail: {
                 NavigationStack { (sel ?? .home).screen }
             }
-            if pc.fullscreen {
-                FullscreenPlayer().transition(.scale(scale: 0.6).combined(with: .opacity)).zIndex(10)
-            }
+            if pc.fullscreen { FullscreenPlayer().zIndex(10) }
         }
     }
 }
@@ -205,6 +211,14 @@ struct HomeView: View {
         }
         .refreshable { await model.loadAll(force: true) }
         .scrollContentBackground(.hidden)
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                NavigationLink { SettingsView() } label: { Image(systemName: "gearshape") }
+            }
+            ToolbarItem(placement: .topBarLeading) {
+                NavigationLink { DownloadsView() } label: { Image(systemName: "arrow.down.circle") }
+            }
+        }
     }
 
     @ViewBuilder private func posterRow(_ title: String, _ items: [Vod]) -> some View {

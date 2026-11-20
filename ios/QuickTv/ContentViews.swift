@@ -230,6 +230,9 @@ struct DetailsView: View {
                     .frame(maxWidth: .infinity).frame(height: 50)
                     .background(.white, in: Capsule()).foregroundStyle(.black)
             }
+            if !vod.isSeries {
+                DownloadButton(req: { movieRequest() }, key: "movie:\(vod.id)").glassCircle()
+            }
             Button { model.toggleFav(key) } label: {
                 Image(systemName: model.isFav(key) ? "heart.fill" : "heart").font(.title3).frame(width: 50, height: 50)
             }.glassCircle()
@@ -276,6 +279,7 @@ struct DetailsView: View {
                         .font(.caption).foregroundStyle(watched && !current ? Color.green.opacity(0.8) : Theme.muted)
                 }
                 Spacer()
+                DownloadButton(req: { episodeRequest(e) }, key: k, size: 42)
             }
             .padding(8)
             .background(current ? Theme.current : .clear, in: RoundedRectangle(cornerRadius: 12, style: .continuous))     // رمادي خفيف
@@ -309,11 +313,22 @@ struct DetailsView: View {
         else { playMovie() }
     }
 
+    private func movieRequest() -> PlayRequest? {
+        guard let api = model.api, let u = api.vodURL(vod.id, ext: vod.ext.isEmpty ? "mp4" : vod.ext) else { return nil }
+        return PlayRequest(url: u, key: "movie:\(vod.id)", title: vod.name, sub: "", type: "movie", image: vod.icon,
+                           start: model.resumePoint("movie:\(vod.id)"))
+    }
+
+    private func episodeRequest(_ e: Episode) -> PlayRequest? {
+        let all = seasons.keys.sorted().flatMap { seasons[$0] ?? [] }
+        let q = SeriesQueue(seriesId: vod.id, name: vod.name, image: vod.icon, list: all)
+        return q.index(of: "ep:\(e.id)").flatMap { q.request($0) }
+    }
+
     private func playMovie() {
-        guard let api = model.api, let u = api.vodURL(vod.id, ext: vod.ext.isEmpty ? "mp4" : vod.ext) else { return }
+        guard let r = movieRequest() else { return }
         pc.queue = nil
-        pc.play(PlayRequest(url: u, key: "movie:\(vod.id)", title: vod.name, sub: "", type: "movie", image: vod.icon,
-                            start: model.resumePoint("movie:\(vod.id)")))
+        pc.play(r)
     }
 
     private func playEpisode(_ e: Episode) {
@@ -420,7 +435,11 @@ struct SettingsView: View {
                 }
                 Button("إضافة حساب") { adding = true }
             }
-            SwiftUI.Section { Button("تحديث المحتوى") { Task { await model.loadAll(force: true) } } }
+            SwiftUI.Section {
+                NavigationLink { DownloadsView() } label: { Label("التحميلات", systemImage: "arrow.down.circle") }
+                NavigationLink { HistoryView() } label: { Label("سجل المشاهدة", systemImage: "clock.arrow.circlepath") }
+                Button("تحديث المحتوى") { Task { await model.loadAll(force: true) } }
+            }
             SwiftUI.Section { LabeledContent("QuickTv", value: "1.0") }
         }
         .scrollContentBackground(.hidden)

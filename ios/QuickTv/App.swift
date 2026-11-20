@@ -11,6 +11,7 @@ struct QuickTvApp: App {
             RootView()
                 .environment(model)
                 .environment(PlayerController.shared)
+                .environment(Downloads.shared)
                 .environment(\.layoutDirection, .rightToLeft)       // التطبيق بالعربي
                 .preferredColorScheme(.dark)
                 .tint(.white)
@@ -25,7 +26,13 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         // الصوت يكمل بصورة داخل صورة وبالخلفية
         try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
+        UIDevice.current.beginGeneratingDeviceOrientationNotifications()
         return true
+    }
+
+    /// التحميلات بالخلفية: النظام يصحّي التطبيق لما تخلص
+    func application(_ application: UIApplication, handleEventsForBackgroundURLSession identifier: String, completionHandler: @escaping () -> Void) {
+        MainActor.assumeIsolated { Downloads.shared.bgCompletion = completionHandler }
     }
 
     func application(_ application: UIApplication, supportedInterfaceOrientationsFor window: UIWindow?) -> UIInterfaceOrientationMask {
@@ -41,6 +48,27 @@ enum Orientation {
         guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene else { return }
         scene.requestGeometryUpdate(.iOS(interfaceOrientations: mask)) { _ in }
         scene.keyWindow?.rootViewController?.setNeedsUpdateOfSupportedInterfaceOrientations()
+    }
+
+    /// يقفل الاتجاه بدون ما يلف الشاشة (حركتنا هي اللي تلف الفيديو)
+    @MainActor
+    static func lock(_ mask: UIInterfaceOrientationMask) {
+        AppDelegate.orientationLock = mask
+        (UIApplication.shared.connectedScenes.first as? UIWindowScene)?.keyWindow?.rootViewController?.setNeedsUpdateOfSupportedInterfaceOrientations()
+    }
+
+    /// يفتح اللف بس لما الجوال يكون عمودي فعلاً (عشان ما يرجع يدخل ملء الشاشة لحاله بعد التصغير)
+    @MainActor
+    static func unlockWhenPortrait() {
+        let o = UIDevice.current.orientation
+        if o == .portrait || o == .faceUp || o == .faceDown || o == .unknown { unlock(); return }
+        var token: NSObjectProtocol?
+        token = NotificationCenter.default.addObserver(forName: UIDevice.orientationDidChangeNotification, object: nil, queue: .main) { _ in
+            if UIDevice.current.orientation == .portrait {
+                MainActor.assumeIsolated { unlock() }
+                if let t = token { NotificationCenter.default.removeObserver(t) }
+            }
+        }
     }
 
     @MainActor
