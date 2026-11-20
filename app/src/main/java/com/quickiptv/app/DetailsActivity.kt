@@ -109,7 +109,7 @@ class DetailsActivity : Activity() {
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
-        if (mini != null && wide) goFull()      // لفّيت الجوال أفقي وهو يشتغل = ملء الشاشة
+        if (mini != null && wide && System.currentTimeMillis() - resumedAt > 3000) goFull()      // لفّيت الجوال أفقي وهو يشتغل = ملء الشاشة
         else if (!wide && backToMini != null && System.currentTimeMillis() - resumedAt < 3000) { render(); resumeMini() }
         else render()
     }
@@ -535,40 +535,76 @@ class DetailsActivity : Activity() {
         val src = if (local != null) android.net.Uri.fromFile(local).toString() else {
             Downloads.setWatching("vod", true); miniWatching = true; r.url
         }
-        val p = buildPlayer(this, false)
-        p.addListener(object : Player.Listener {
-            override fun onPlaybackStateChanged(state: Int) {
-                if (state == Player.STATE_ENDED) root.post { saveMini(); stopMini(); hist = Store.history().associateBy { it.key }; render() }
-            }
-        })
+        val p = buildPlayer(applicationContext, false)
+        p.addListener(miniListener)
         p.setMediaItem(MediaItem.fromUri(src), start * 1000)
         p.playWhenReady = true
         mini = p; miniReq = r
-        miniView = PlayerView(this).apply {
-            player = p
-            setShutterBackgroundColor(0xFF000000.toInt())
-            setBackgroundColor(0xFF000000.toInt())
-            layoutDirection = View.LAYOUT_DIRECTION_LTR          // شريط التقدّم من اليسار لليمين
-            setShowNextButton(false); setShowPreviousButton(false)
-            controllerShowTimeoutMs = 3000
-            setFullscreenButtonClickListener { goFull() }       // زر التكبير = أفقي ملء الشاشة
-        }
+        miniView = makeMiniView(p)
         miniJob = scope.launch {
             // المشاهدة تاخذ اتصال من حد الاشتراك؛ لو فيه تحميل ماسكه ننتظر لحظة لين يتنازل
             if (local == null && Downloads.mustYieldFor()) delay(1200)
             p.prepare()
-            while (true) { delay(10_000); saveMini() }
+            saveLoop()
         }
         hist = Store.history().associateBy { it.key }
         render()
     }
 
+    private val miniListener = object : Player.Listener {
+        override fun onPlaybackStateChanged(state: Int) {
+            if (state == Player.STATE_ENDED) root.post { saveMini(); stopMini(); hist = Store.history().associateBy { it.key }; render() }
+        }
+    }
+
+    private suspend fun saveLoop() { while (true) { delay(10_000); saveMini() } }
+
+    private fun makeMiniView(p: ExoPlayer) = PlayerView(this).apply {
+        player = p
+        setShutterBackgroundColor(0xFF000000.toInt())
+        setBackgroundColor(0xFF000000.toInt())
+        layoutDirection = View.LAYOUT_DIRECTION_LTR          // شريط التقدّم من اليسار لليمين
+        setShowNextButton(false); setShowPreviousButton(false)
+        controllerShowTimeoutMs = 3000
+        setFullscreenButtonClickListener { goFull() }       // زر التكبير = أفقي ملء الشاشة
+    }
+
+    private var handedView: PlayerView? = null      // الشاشة الصغيرة وقت ما المشغّل بملء الشاشة
+
+    /** تكبير بدون انقطاع: نفس المشغّل (وهو شغّال) ينتقل لملء الشاشة — بدون إيقاف ولا إعادة تحميل. */
     private fun goFull() {
         val r = miniReq ?: return
-        val pos = (mini?.currentPosition ?: 0) / 1000
-        saveMini(); stopMini()
+        val p = mini ?: return
+        saveMini()
+        miniJob?.cancel(); miniJob = null
+        p.removeListener(miniListener)
+        VodHandoff.drop()                   // (أي بقايا قديمة)
+        VodHandoff.player = p; VodHandoff.key = r.key
+        VodHandoff.watching = miniWatching; miniWatching = false
+        VodHandoff.ownerAlive = true
+        handedView = miniView                // الصورة تبقى هنا لين ملء الشاشة ياخذها (بدون فراغ)
+        mini = null; miniReq = null; miniView = null
         backToMini = r
-        openFull(r, pos)
+        startActivity(Intent(this, PlayerActivity::class.java)
+            .putExtra("url", r.url).putExtra("key", r.key).putExtra("title", r.title).putExtra("sub", r.sub)
+            .putExtra("image", icon).putExtra("type", r.type).putExtra("seriesId", if (series) id else "")
+            .putExtra("start", p.currentPosition / 1000).putExtra("handoff", true))
+    }
+
+    /** رجعنا من ملء الشاشة: ناخذ نفس المشغّل ونكمل في الصغير بدون أي توقف. */
+    private fun adoptBack(r: PlayReq): Boolean {
+        if (VodHandoff.key != r.key) return false
+        val p = VodHandoff.take() ?: return false
+        mini = p; miniReq = r
+        miniWatching = VodHandoff.watching; VodHandoff.watching = false; VodHandoff.key = ""
+        p.addListener(miniListener)
+        val v = handedView ?: makeMiniView(p)
+        handedView = null
+        v.player = null; v.player = p       // نرجّع الصورة للشاشة الصغيرة
+        miniView = v
+        p.playWhenReady = true
+        miniJob = scope.launch { saveLoop() }
+        return true
     }
 
     private fun saveMini() {
@@ -607,6 +643,16 @@ class DetailsActivity : Activity() {
         // رجعنا من ملء الشاشة والجوال عمودي: نكمل من نفس المكان في المصغّر
         // (لو الشاشة لسا أفقي لحظة الرجوع، نكمل أول ما ترجع عمودي)
         resumedAt = System.currentTimeMillis()
+        backToMini?.let { r ->
+            if (adoptBack(r)) {
+                backToMini = null
+                hist = Store.history().associateBy { it.key }
+                render()
+                // رجعت والجوال أفقي فعلاً (مو بس تأخير لفّ الشاشة): نوقف المصغّر
+                if (wide) scope.launch { delay(1500); if (wide && mini != null) { saveMini(); stopMini(); render() } }
+                return
+            }
+        }
         if (!wide) resumeMini()
     }
 
@@ -621,6 +667,9 @@ class DetailsActivity : Activity() {
 
     override fun onDestroy() {
         saveMini(); stopMini()
+        VodHandoff.ownerAlive = false
+        if (VodHandoff.player != null && VodHandoff.key == backToMini?.key) VodHandoff.drop()
+        handedView?.player = null; handedView = null
         scope.cancel()
         super.onDestroy()
     }

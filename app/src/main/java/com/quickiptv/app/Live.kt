@@ -346,7 +346,8 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
     /** ملء الشاشة بدون انقطاع: نفس المشغّل ينتقل للشاشة الكبيرة (ما يعيد الاتصال). */
     private fun openFull(ch: Channel) {
         LivePlayer.keepForPreview = true
-        detach()
+        player?.removeListener(listener)      // الصورة تبقى هنا لين الشاشة الكبيرة تاخذها (بدون فراغ = بدون بافرينج)
+        player = null
         val i = visible.indexOfFirst { it.id == ch.id }.coerceAtLeast(0)
         PlayerActivity.playLive(a, visible.ifEmpty { listOf(ch) }, i, catAdapter.items.firstOrNull { it.id == catId }?.name ?: "")
     }
@@ -364,8 +365,9 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
     }
 
     private fun stopPlayer() {
+        if (LivePlayer.keepForPreview) { player?.removeListener(listener); player = null; return }   // انتقل لملء الشاشة: لا نفك الصورة
         detach()
-        if (!LivePlayer.keepForPreview) LivePlayer.release()
+        LivePlayer.release()
     }
 
     // ---------- الدليل ----------
@@ -443,8 +445,11 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
             Session.playlist.getOrNull(Session.playIndex)?.let { ch ->
                 current = ch; chAdapter.playingId = ch.id; title.text = ch.name; showEpg(ch)
             }
-            ensurePlayer()
+            player?.removeListener(listener); player = null
+            playerView.player = null          // (ما يمسح شي: الصورة حالياً على الشاشة الكبيرة)
+            ensurePlayer()                    // نرجع الصورة للشاشة الصغيرة بنفس المشغّل
             player?.playWhenReady = true
+            loading.visibility = if (player?.playbackState == Player.STATE_BUFFERING) View.VISIBLE else View.GONE
             syncPause()
             LivePlayer.healAfterSwitch(a, a.scope)      // لو الصورة علّقت بعد التصغير نعيد الاتصال
         } else if (current != null && player == null) preview(current!!)

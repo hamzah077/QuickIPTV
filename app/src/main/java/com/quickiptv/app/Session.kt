@@ -96,16 +96,12 @@ object LivePlayer {
         val p = player ?: return
         val app = ctx.applicationContext
         scope.launch {
-            val frames0 = p.videoDecoderCounters?.let { it.ensureUpdated(); it.renderedOutputBufferCount } ?: 0
-            val pos0 = p.currentPosition
-            delay(3000)
+            // نعيد الاتصال بس لو البث فعلاً واقف (خطأ/انتهى) — عدّاد الصور يتصفّر طبيعي لما تتغيّر الشاشة
+            // فما نعتمد عليه (كان يسبب إعادة اتصال وبافرينج بدون داعي).
+            delay(4000)
             if (player !== p || !p.playWhenReady || url.isEmpty()) return@launch
             val state = p.playbackState
-            val frames1 = p.videoDecoderCounters?.let { it.ensureUpdated(); it.renderedOutputBufferCount } ?: 0
-            val stuck = state == androidx.media3.common.Player.STATE_IDLE || state == androidx.media3.common.Player.STATE_ENDED ||
-                (state == androidx.media3.common.Player.STATE_READY &&
-                    ((p.videoFormat != null && frames1 <= frames0) || p.currentPosition - pos0 < 500))
-            if (stuck) play(app, url, force = true)
+            if (state == androidx.media3.common.Player.STATE_IDLE || state == androidx.media3.common.Player.STATE_ENDED) play(app, url, force = true)
         }
     }
 
@@ -114,6 +110,25 @@ object LivePlayer {
         player?.release()
         player = null
         url = ""
+    }
+}
+
+/**
+ * تسليم مشغّل الفيلم/الحلقة بين المشغّل المصغّر (صفحة التفاصيل) وملء الشاشة:
+ * نفس المشغّل ينتقل بدون ما يوقف أو يعيد التحميل.
+ */
+object VodHandoff {
+    var player: ExoPlayer? = null
+    var key: String = ""
+    var watching = false          // ماسك اتصال مشاهدة من حد الاشتراك
+    var ownerAlive = false        // صفحة التفاصيل اللي بترجع لها لسا موجودة
+
+    fun take(): ExoPlayer? = player.also { player = null }
+
+    fun drop() {
+        player?.release(); player = null
+        if (watching) { Downloads.setWatching("vod", false); watching = false }
+        key = ""
     }
 }
 

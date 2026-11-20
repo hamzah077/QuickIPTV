@@ -50,6 +50,7 @@ class PlayerActivity : Activity() {
     private val pauseIcon by lazy { icon(R.drawable.ic_pause, 0xFFFFFFFF.toInt(), 24) }
     private var live = false
     private var returnsToPreview = false      // انفتح من الشاشة الصغيرة وبيرجع لها (لا نطفي المشغّل)
+    private var handedOff = false             // المشغّل جاي من المصغّر وبيرجع له لما نرجع
     private var key = ""
     private var type = ""
     private var triedTs = false
@@ -176,7 +177,9 @@ class PlayerActivity : Activity() {
         setContentView(root)
 
         // المباشر: نفس مشغّل الشاشة الصغيرة (ما ينقطع ولا يعيد التحميل). الأفلام: مشغّل خاص.
-        player = (if (live) LivePlayer.get(this) else buildPlayer(this, false)).also { p ->
+        // فيلم/حلقة جاية من المشغّل المصغّر: ناخذ نفس المشغّل (يكمل بدون توقف)
+        handedOff = !live && intent.getBooleanExtra("handoff", false) && VodHandoff.player != null && VodHandoff.key == (intent.getStringExtra("key") ?: "")
+        player = (if (live) LivePlayer.get(this) else if (handedOff) VodHandoff.take()!! else buildPlayer(this, false)).also { p ->
             pv.player = p
             p.addListener(listener)
         }
@@ -242,7 +245,9 @@ class PlayerActivity : Activity() {
         sub.text = Session.playCategory
         // نفس القناة الشغّالة في الشاشة الصغيرة؟ نكمل عليها مباشرة بدون إعادة اتصال
         loading.visibility = View.VISIBLE
-        LivePlayer.play(this, (Session.api ?: run { finish(); return }).liveUrl(ch.id), force = !reuse)
+        val shared = LivePlayer.player
+        if (reuse && shared != null && shared.playbackState != Player.STATE_IDLE) shared.playWhenReady = true   // نفس البث يكمل (حتى لو صيغته TS)
+        else LivePlayer.play(this, (Session.api ?: run { finish(); return }).liveUrl(ch.id), force = !reuse)
         if (reuse) LivePlayer.healAfterSwitch(this, scope)      // لو الصورة علّقت بعد التكبير نعيد الاتصال
         if (player?.playbackState == Player.STATE_READY) loading.visibility = View.GONE
         Store.addHistory(HistoryItem("live:${ch.id}", "live", ch.name, Session.playCategory, ch.icon, ""))
@@ -347,7 +352,13 @@ class PlayerActivity : Activity() {
             intent.getStringExtra("image") ?: "", url, intent.getStringExtra("seriesId") ?: ""))
         val local = Downloads.localFile(key)
         val startAt = intent.getLongExtra("start", 0)
-        if (local != null) {
+        if (handedOff) {
+            // نفس المشغّل شغّال من المصغّر: ما نعيد شي
+            if (VodHandoff.watching) { watchingVod = true; VodHandoff.watching = false }
+            if (local != null) sub.text = listOf(sub.text.toString(), "من التحميلات").filter { it.isNotEmpty() }.joinToString(" · ")
+            loading.visibility = if (player?.playbackState == Player.STATE_BUFFERING) View.VISIBLE else View.GONE
+            player?.playWhenReady = true
+        } else if (local != null) {
             sub.text = listOf(sub.text.toString(), "من التحميلات").filter { it.isNotEmpty() }.joinToString(" · ")
             start(android.net.Uri.fromFile(local).toString(), startAt)
         } else {
@@ -434,6 +445,15 @@ class PlayerActivity : Activity() {
     override fun onPause() {
         super.onPause()
         saveProgress()
+        // رجوع للمشغّل المصغّر: نسلّمه نفس المشغّل وهو شغّال (قبل ما تكمل الصفحة اللي تحت)
+        if (handedOff && isFinishing && VodHandoff.ownerAlive && player?.playbackState != Player.STATE_ENDED) {
+            val p = player!!
+            p.removeListener(listener)
+            VodHandoff.player = p; VodHandoff.key = key
+            VodHandoff.watching = watchingVod; watchingVod = false
+            player = null
+            return
+        }
         // الأفلام: وقف مؤقت. المباشر لو راجع للشاشة الصغيرة يكمل بدون انقطاع.
         if (!(live && returnsToPreview && isFinishing)) player?.playWhenReady = false
     }
