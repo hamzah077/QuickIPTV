@@ -1,0 +1,235 @@
+TASK null id=2 userId=0
+  ACTIVITY com.google.android.apps.nexuslauncher/.NexusLauncherActivity 1d0d964 pid=4241
+--encoded-view-dump-v0--
+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
+    Misc:
+    	mWorkspaceLoading=false mPendingRequestArgs=null mPendingActivityResult=null
+ mRotationHelper: [mStateHandlerRequest=٠, mCurrentStateRequest=٠, mLastActivityFlags=٥, mIgnoreAutoRotateSettings=false, mAutoRotateEnabled=false]
+    DragLayer
+    	dragLayerAlpha : [1.0, 1.0, 1.0]
+    LauncherState
+    	mLastStableState:com.android.launcher3.LauncherState@7d4c050
+    	mCurrentStableState:com.android.launcher3.LauncherState@7d4c050
+    	mState:com.android.launcher3.LauncherState@7d4c050
+    	mRestState:null
+    	isInTransition:false
+ deviceProfile isTransposed=false
+ orientation=1
+ mSystemUiController: mStates=[10, 0, 0, 0, 0]
+ mActivityFlags: 0
+ mForceInvisible: 0
+    Data Model:
+     ---- workspace items 
+    	WorkspaceItemInfo(id=1 type=APP container=hotseat screen=1 cell(1,0) span(1,1) minSpan(1,1) rank=0 user=UserHandle{0} title=الرسائل)
+    	WorkspaceItemInfo(id=2 type=APP container=hotseat screen=3 cell(3,0) span(1,1) minSpan(1,1) rank=0 user=UserHandle{0} title=Chrome)
+     ---- appwidget items 
+     ---- folder items 
+     ---- items id map 
+    	WorkspaceItemInfo(id=1 type=APP container=hotseat screen=1 cell(1,0) span(1,1) minSpan(1,1) rank=0 user=UserHandle{0} title=الرسائل)
+    	WorkspaceItemInfo(id=2 type=APP container=hotseat screen=3 cell(3,0) span(1,1) minSpan(1,1) rank=0 user=UserHandle{0} title=Chrome)
+
+    SmartspaceController
+      weather null
+      current null
+    LauncherClient
+      isConnected: true
+      act.isBound: false
+      app.isBound: true
+      serviceVersion: 9
+      clientVersion: 14
+      mActivityState: 0
+      mServiceStatus: 27
+      mCurrentServiceConnectionOptions: 15
+      Client event history:
+        12:05:34.412+0000  stateChanged : 0
+        12:05:32.730+0000  stateChanged : 1
+        12:05:04.055+0000  attachedToWindow
+        12:05:03.851+0000  stateChanged : 3
+        12:05:03.851+0000  stateChanged : 1
+        12:05:03.845+0000  setPrivateOptions : background_secondary_color_hint,is_background_dark,system_ui_visibility,background_color_hint
+      Service event history:
+        12:05:07.528+0000  onScroll 0, overlay closed
+        12:05:05.051+0000  onScroll 0, overlay closed & 2 similar events
+        12:05:04.987+0000  stateChanged: 27
+        12:05:04.493+0000  Connected: true
+
+TASK com.quickiptv.app id=3 userId=0
+  ACTIVITY com.quickiptv.app/.MainActivity 442b8f9 pid=7179
+    Local Activity dbf783d State:
+      mResumed=true mStopped=false mFinished=false
+      mChangingConfigurations=false
+      mCurrentConfig={1.0 310mcc260mnc [ar_SA] ldrtl sw392dp w392dp h778dp 440dpi nrml long port finger qwerty/v/v -nav/h winConfig={ mBounds=Rect(0, 0 - 1080, 2340) mAppBounds=Rect(0, 0 - 1080, 2208) mWindowingMode=fullscreen mDisplayWindowingMode=fullscreen mActivityType=standard mAlwaysOnTop=undefined mRotation=ROTATION_0} s.1}
+      mLoadersStarted=true
+      FragmentManager misc state:
+        mHost=android.app.Activity$HostCallbacks@d56f832
+        mContainer=android.app.Activity$HostCallbacks@d56f832
+        mCurState=5 mStateSaved=false mDestroyed=false
+    ViewRoot:
+      mAdded=true mRemoved=false
+      mConsumeBatchedInputScheduled=false
+      mConsumeBatchedInputImmediatelyScheduled=false
+      mPendingInputEventCount=0
+      mProcessInputEventsScheduled=false
+      mTraversalScheduled=false      mIsAmbientMode=false
+      android.view.ViewRootImpl$NativePreImeInputStage: mQueueLength=0
+      android.view.ViewRootImpl$ImeInputStage: mQueueLength=0
+      android.view.ViewRootImpl$NativePostImeInputStage: mQueueLength=0
+    Choreographer:
+      mFrameScheduled=false
+      mLastFrameTime=121762 (9452 ms ago)
+    
+InsetsController:
+      InsetsState
+        InsetsSource type=TYPE_UNKNOWN_10 frame=[0,0][0,0] visible=false
+        InsetsSource type=TYPE_BOTTOM_TAPPABLE_ELEMENT frame=[0,2208][1080,2340] visible=true
+        InsetsSource type=TYPE_TOP_TAPPABLE_ELEMENT frame=[0,0][1080,66] visible=true
+        InsetsSource type=TYPE_RIGHT_GESTURES frame=[1080,0][1080,2340] visible=true
+        InsetsSource type=TYPE_LEFT_GESTURES frame=[0,0][0,2340] visible=true
+        InsetsSource type=TYPE_BOTTOM_GESTURES frame=[0,2208][1080,2340] visible=true
+        InsetsSource type=TYPE_TOP_GESTURES frame=[0,0][1080,66] visible=true
+        InsetsSource type=TYPE_SIDE_BAR_1 frame=[0,2208][1080,2340] visible=true
+        InsetsSource type=TYPE_TOP_BAR frame=[0,0][1080,66] visible=true
+    View Hierarchy:
+      DecorView@6531983[MainActivity]
+        android.widget.LinearLayout{efc8053 V.E...... ........ 0,0-1080,2340}
+          android.view.ViewStub{179f700 G.E...... ......I. 0,0-0,0 #1020194 android:id/action_mode_bar_stub}
+          android.widget.FrameLayout{924a689 V.E...... ........ 0,0-1080,2340 #1020002 android:id/content}
+            android.widget.LinearLayout{9567a7e V.E...... ........ 0,0-1080,2340}
+              android.widget.FrameLayout{e98bbdf V.E...... ........ 0,66-1080,2048}
+                android.widget.FrameLayout{e012cce V.E...... ........ 0,0-1080,1982}
+                  android.widget.LinearLayout{77b07ef V.E...... ........ 0,0-1080,1982}
+                    android.widget.LinearLayout{456a236 V.E...... ........ 0,0-1080,160}
+                      android.widget.TextView{b251aa4 V.ED..... ........ 160,49-1058,132}
+                      android.widget.FrameLayout{bc2800d VFE...C.. ........ 44,33-160,149}
+                        android.widget.ImageView{da762fc V.ED..... ........ 27,27-88,88}
+                    androidx.recyclerview.widget.RecyclerView{a13b537 VFED..... ........ 0,160-1080,1982}
+                      android.widget.LinearLayout{be2abc2 V.E...... ........ 0,0-1080,752}
+                        android.widget.LinearLayout{2241009 V.E...... ........ 0,17-1080,122}
+                          android.widget.TextView{dfe142f V.ED..... ........ 185,23-1052,87}
+                          android.widget.TextView{aaf1a3c VFED..C.. ........ 44,11-185,99}
+                        androidx.recyclerview.widget.RecyclerView{633c20e VFED..... .F...... 0,122-1080,735}
+                          android.widget.LinearLayout{cf4a3c5 VFE...C.. ........ 763,36-1038,569}
+                            android.widget.FrameLayout{c80b741 V.E...... ........ 8,8-267,406}
+                              android.widget.ImageView{b561d85 V.ED..... ........ 0,0-259,398}
+                              android.widget.TextView{4305b39 G.ED..... ..S...ID 0,0-0,0}
+                            android.widget.TextView{7ea04e6 V.ED..... ........ 8,406-267,525}
+                          android.widget.LinearLayout{d6df11a VFE...C.. ........ 460,36-735,569}
+                            android.widget.FrameLayout{c065a27 V.E...... ........ 8,8-267,406}
+                              android.widget.ImageView{f60867d V.ED..... ........ 0,0-259,398}
+                              android.widget.TextView{6c18972 V.ED..... ..S..... 161,14-259,67}
+                            android.widget.TextView{f5674d4 V.ED..... ........ 8,406-267,525}
+                          android.widget.LinearLayout{b61c44b VFE...C.. ........ 157,36-432,569}
+                            android.widget.FrameLayout{87471c3 V.E...... ........ 8,8-267,406}
+                              android.widget.ImageView{b740d79 V.ED..... ........ 0,0-259,398}
+                              android.widget.TextView{11acabe V.ED..... ..S..... 161,14-259,67}
+                            android.widget.TextView{4100a40 V.ED..... ........ 8,406-267,525}
+                          android.widget.LinearLayout{f719e28 VFE...C.. ........ -146,36-129,569}
+                            android.widget.FrameLayout{f22671f V.E...... ........ 8,8-267,406}
+                              android.widget.ImageView{a8747da V.ED..... ........ 0,0-259,398}
+                              android.widget.TextView{b78657e G.ED..... ..S...ID 0,0-0,0}
+                            android.widget.TextView{e0b8a6c V.ED..... ........ 8,406-267,525}
+                      android.widget.LinearLayout{9e46dd3 V.E...... ........ 0,752-1080,1504}
+                        android.widget.LinearLayout{a9f0835 V.E...... ........ 0,17-1080,122}
+                          android.widget.TextView{590563b V.ED..... ........ 185,23-1052,87}
+                          android.widget.TextView{55ce158 VFED..C.. ........ 44,11-185,99}
+                        androidx.recyclerview.widget.RecyclerView{834d4ca VFED..... ........ 0,122-1080,735}
+                          android.widget.LinearLayout{744f2b1 VFE...C.. ........ 763,36-1038,569}
+                            android.widget.FrameLayout{48508ed V.E...... ........ 8,8-267,406}
+                              android.widget.ImageView{5c551b3 V.ED..... ........ 0,0-259,398}
+                              android.widget.TextView{75a8370 V.ED..... ........ 161,14-259,67}
+                            android.widget.TextView{9ab3322 V.ED..... ........ 8,406-267,525}
+                          android.widget.LinearLayout{337396 VFE...C.. ........ 460,36-735,569}
+                            android.widget.FrameLayout{e3646e9 V.E...... ........ 8,8-267,406}
+                              android.widget.ImageView{285b2e8 V.ED..... ........ 0,0-259,398}
+                              android.widget.TextView{ea3cadf G.ED..... ......ID 0,0-0,0}
+                            android.widget.TextView{7ed5f6e V.ED..... ........ 8,406-267,525}
+                          android.widget.LinearLayout{f241b17 VFE...C.. ........ 157,36-432,569}
+                            android.widget.FrameLayout{39560f V.E...... ........ 8,8-267,406}
+                              android.widget.ImageView{1a340b V.ED..... ........ 0,0-259,398}
+                              android.widget.TextView{b07832c G.ED..... ......ID 0,0-0,0}
+                            android.widget.TextView{f3c669c V.ED..... ........ 8,406-267,525}
+                          android.widget.LinearLayout{d6abb04 VFE...C.. ........ -146,36-129,569}
+                            android.widget.FrameLayout{ca368a5 V.E...... ........ 8,8-267,406}
+                              android.widget.ImageView{23f442b V.ED..... ........ 0,0-259,398}
+                              android.widget.TextView{ff75088 V.ED..... ........ 161,14-259,67}
+                            android.widget.TextView{14047a V.ED..... ........ 8,406-267,525}
+                      android.widget.LinearLayout{3eb3d10 V.E...... ........ 0,1504-1080,2205}
+                        android.widget.LinearLayout{806ea21 V.E...... ........ 0,17-1080,122}
+                          android.widget.TextView{26bf807 V.ED..... ........ 185,23-1052,87}
+                          android.widget.TextView{9f4ed34 VFED..C.. ........ 44,11-185,99}
+                        androidx.recyclerview.widget.RecyclerView{ccdee46 VFED..... ........ 0,122-1080,684}
+                          android.widget.LinearLayout{7c7075d VFE...C.. ........ 763,36-1038,518}
+                            android.widget.FrameLayout{971bc59 V.E...... ........ 8,8-267,406}
+                              android.widget.ImageView{12207a6 V.ED..... ........ 0,0-259,398}
+                              android.widget.TextView{c3271f5 G.ED..... ......ID 0,0-0,0}
+                            android.widget.TextView{2a6801e V.ED..... ........ 8,406-267,474}
+                          android.widget.LinearLayout{2eaa8d2 VFE...C.. ........ 460,36-735,518}
+                            android.widget.FrameLayout{121e0ff V.E...... ........ 8,8-267,406}
+                              android.widget.ImageView{b78c515 V.ED..... ........ 0,0-259,398}
+                              android.widget.TextView{1b6802a V.ED..... ........ 161,14-259,67}
+                            android.widget.TextView{234aecc V.ED..... ........ 8,406-267,474}
+                          android.widget.LinearLayout{1c60da3 VFE...C.. ........ 157,36-432,518}
+                            android.widget.FrameLayout{3d8e1b V.E...... ........ 8,8-267,406}
+                              android.widget.ImageView{6e00d01 V.ED..... ........ 0,0-259,398}
+                              android.widget.TextView{8b15b8a G.ED..... ......ID 0,0-0,0}
+                            android.widget.TextView{f63ebb8 V.ED..... ........ 8,406-267,474}
+                          android.widget.LinearLayout{88da8a0 VFE...C.. ........ -146,36-129,518}
+                            android.widget.FrameLayout{7ad9d91 V.E...... ........ 8,8-267,406}
+                              android.widget.ImageView{29cf0f7 V.ED..... ........ 0,0-259,398}
+                              android.widget.TextView{4480b64 V.ED..... ........ 161,14-259,67}
+                            android.widget.TextView{a1474f6 V.ED..... ........ 8,406-267,474}
+                  android.widget.LinearLayout{42435fb G.E...... ......I. 0,0-0,0}
+                    android.widget.LinearLayout{6ffa618 V.E...... ......I. 0,0-0,0}
+                      android.widget.FrameLayout{e053871 VFE...C.. ......I. 0,0-0,0}
+                        android.widget.ImageView{7d1a656 V.ED..... ......ID 0,0-0,0}
+                      android.widget.TextView{17636d7 V.ED..... ......ID 0,0-0,0}
+                    android.widget.LinearLayout{5550bc4 V.E...... ......I. 0,0-0,0}
+                    androidx.recyclerview.widget.RecyclerView{c63eaad VFED..... ......I. 0,0-0,0}
+                  android.widget.ProgressBar{6d9d1e2 G.ED..... ......ID 0,0-0,0}
+                  android.widget.TextView{f7d6973 G.ED..... ......ID 0,0-0,0}
+              android.widget.LinearLayout{dc0202c V.E...... ........ 0,2048-1080,2340}
+                android.widget.LinearLayout{97d81cd VFE...C.. ........ 864,0-1080,160}
+                  android.widget.ImageView{209e4ab V.ED..... ........ 77,25-138,86}
+                  android.widget.TextView{924a708 V.ED..... ........ 0,86-216,135}
+                android.widget.LinearLayout{98aea82 VFE...C.. ........ 648,0-864,160}
+                  android.widget.ImageView{7afbea1 V.ED..... ........ 77,25-138,86}
+                  android.widget.TextView{36f68c6 V.ED..... ........ 0,86-216,135}
+                android.widget.LinearLayout{625a593 VFE...C.. ..S..... 432,0-648,160}
+                  android.widget.ImageView{7802087 V.ED..... ..S..... 77,25-138,86}
+                  android.widget.TextView{ae12bb4 V.ED..... ..S..... 0,86-216,135}
+                android.widget.LinearLayout{92c79d0 VFE...C.. ........ 216,0-432,160}
+                  android.widget.ImageView{e68a3dd V.ED..... ........ 77,25-138,86}
+                  android.widget.TextView{e694b52 V.ED..... ........ 0,86-216,135}
+                android.widget.LinearLayout{bed6dc9 VFE...C.. ........ 0,0-216,160}
+                  android.widget.ImageView{b343e23 V.ED..... ........ 77,25-138,86}
+                  android.widget.TextView{23f4f20 V.ED..... ........ 0,86-216,135}
+        android.view.View{3ce1d90 V.ED..... ........ 0,2208-1080,2340 #1020030 android:id/navigationBarBackground}
+    Looper (main, tid 2) {792030}
+      (Total messages: 0, polling=false, quitting=false)
+    AutofillManager:
+      sessionId: 2147483647
+      state: FINISHED
+      context: com.quickiptv.app.MainActivity@dbf783d
+      client: com.quickiptv.app.MainActivity@dbf783d (android.os.BinderProxy@e61b25d)
+      enabled: true
+      enabledAugmentedOnly: false
+      hasService: true
+      hasCallback: false
+      onInvisibleCalled false
+      last autofilled data: null
+      id of last fill UI shown: null
+      tracked views: null
+      fillable ids: null
+      entered ids: {1073741824, 1073741825, 1073741826, 1073741827}
+      save trigger id: null
+      save on finish(): false
+      options: logLvl=2, compatMode=false, augmented=false
+      compat mode enabled: false
+      debug: true verbose: false
+    Autofill Compat Mode: false
+    No ContentCaptureManager
+    ResourcesManager:
+      cached apks: 0 [cache disabled]
+      total apks: 1
+      resources: 3
+      resource impls: 3
