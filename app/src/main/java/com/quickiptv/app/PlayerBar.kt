@@ -2,6 +2,7 @@ package com.quickiptv.app
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.content.res.ColorStateList
 import android.view.GestureDetector
 import android.view.Gravity
 import android.view.MotionEvent
@@ -14,6 +15,7 @@ import androidx.media3.common.C as MC
 import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.util.UnstableApi
+import coil.load
 
 /** التنقّل بين الحلقات (المسلسلات). */
 interface EpisodeNav {
@@ -71,7 +73,11 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
         set(v) { val changed = (field == null) != (v == null); field = v; fit(); if (changed) relayoutYt(); refresh() }
 
     /** العنوان فوق (نمط الجوال). */
-    var titleProvider: (() -> String)? = null
+    var titleProvider: (() -> Pair<String, String>)? = null
+
+    /** صف تحت (التلفزيون): حلقات الموسم / قنوات التصنيف. */
+    class RowItem(val title: String, val image: String?, val current: Boolean, val onClick: () -> Unit)
+    var rowProvider: (() -> Pair<String, List<RowItem>>?)? = null
 
     /** الجوال: نمط يوتيوب (أزرار بالوسط، خط أحمر، ضغطتين = ±10 بقوس). التلفزيون: التصميم (أ). */
     private val yt = !act.isTv()
@@ -382,7 +388,7 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
         addView(introFloat, LayoutParams(WRAP, act.dp(44), Gravity.BOTTOM or Gravity.END).apply { setMargins(0, 0, act.dp(12), act.dp(16)) })
         addView(bubble, LayoutParams(WRAP, WRAP, Gravity.TOP or Gravity.START))
         addView(tip, LayoutParams(WRAP, WRAP, Gravity.TOP or Gravity.START))
-        if (!yt) arrange(false)
+        if (!yt && !autoHide) arrange(false)          // (التلفزيون بملء الشاشة يترتّب بآخر init)
     }
 
     // ---------- الترتيب حسب حجم المشغّل ----------
@@ -397,6 +403,8 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
 
     private fun arrange(c: Boolean) {
         if (yt) { arrangeYt(c); return }
+        if (!c && autoHide) { arrangeTv(); return }       // التلفزيون بملء الشاشة: نمط يوتيوب تي في
+        tvBig = false
         compact = c
         for (v in listOf<View>(leftGroup, rightGroup, spacer, progRow)) (v.parent as? android.view.ViewGroup)?.removeView(v)
         btnRow.removeAllViews()
@@ -412,7 +420,7 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
 
     /** لو المساحة ما تكفي: نخفي الأقل أهمية أول (ولا شي يطلع برا حدوده). */
     private fun fit() {
-        if (yt) return
+        if (yt || tvBig) return
         val w = width - panel.paddingLeft - panel.paddingRight
         if (w <= 0) return
         val hasNav = nav != null
@@ -460,6 +468,7 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
         if (!autoHide || panel.visibility != View.VISIBLE) return
         if (panel.hasFocus()) act.window?.decorView?.requestFocus()
         hideTip(); bubble.visibility = View.INVISIBLE
+        rowBox.visibility = View.GONE
         panel.animate().alpha(0f).setDuration(150).withEndAction { panel.visibility = View.GONE; placeNext() }.start()
         onVisibility?.invoke(false)
     }
@@ -543,8 +552,15 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
     override fun onDetachedFromWindow() { removeCallbacks(tick); removeCallbacks(hideRun); super.onDetachedFromWindow() }
 
     fun refresh() {
+        if (tvBig) titleProvider?.invoke()?.let { (t, sub) ->
+            if (tvTitle.text.toString() != t) tvTitle.text = t
+            if (tvSub.text.toString() != sub) { tvSub.text = sub; tvSub.visibility = if (sub.isBlank()) View.GONE else View.VISIBLE }
+        }
         if (yt) {
-            titleProvider?.invoke()?.let { if (ytTitle.text.toString() != it) ytTitle.text = it }
+            titleProvider?.invoke()?.let { (t, s) ->
+                val v = listOf(t, s.lineSequence().firstOrNull().orEmpty()).filter { it.isNotBlank() }.joinToString(" · ")
+                if (ytTitle.text.toString() != v) ytTitle.text = v
+            }
             edge.visibility = if (!live && !barVisible && duration() > 0) View.VISIBLE else View.GONE
         }
         val p = player
@@ -633,6 +649,7 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
     /** الزر المنفصل فوق شريط الأزرار (أو تحت لو الشريط مخفي). */
     private fun placeNext() {
         val b = if (yt) act.dp(if (barVisible) 78 else 16)
+            else if (tvBig) (if (barVisible && panel.height > 0) panel.height + act.dp(12) else act.dp(28))
             else if (barVisible && panel.height > 0) panel.height + act.dp(10) else act.dp(16)
         for (v in listOf<View>(nextFloat, introFloat)) {
             val lp = v.layoutParams as? LayoutParams ?: continue
@@ -694,6 +711,155 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
                 p.trackSelectionParameters = b.build()
                 d.dismiss()
             }.show()
+    }
+
+    // ---------- نمط يوتيوب تي في (التلفزيون بملء الشاشة) ----------
+    private var tvBig = false
+    private val tvTitle = act.text("", 22f, 0xFFFFFFFF.toInt(), bold = true).apply {
+        maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END; textDirection = View.TEXT_DIRECTION_FIRST_STRONG
+    }
+    private val tvSub = act.text("", 13.5f, 0xFFC9CDD3.toInt()).apply { maxLines = 2; textDirection = View.TEXT_DIRECTION_FIRST_STRONG }
+    private val tvTitleBox = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+    private val tvTimeRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+    private val tvTimeSpacer = View(act)
+    private val rowTitle = act.text("", 14f, 0xFFFFFFFF.toInt(), bold = true).apply { layoutDirection = View.LAYOUT_DIRECTION_RTL; textDirection = View.TEXT_DIRECTION_RTL }
+    private val rowList = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+    private val rowScroll = android.widget.HorizontalScrollView(act).apply {
+        isHorizontalScrollBarEnabled = false; clipToPadding = false; layoutDirection = View.LAYOUT_DIRECTION_RTL
+        addView(rowList)
+    }
+    private val rowBox = LinearLayout(act).apply {
+        orientation = LinearLayout.VERTICAL; visibility = View.GONE
+        addView(rowTitle, LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = act.dp(8) })
+        addView(rowScroll, LinearLayout.LayoutParams(MATCH, WRAP))
+    }
+
+    /** التحديد: دائرة بيضاء والأيقونة سودا (واضح من بعيد). */
+    private fun tvFocusBg(radiusDp: Float) = android.graphics.drawable.StateListDrawable().apply {
+        setEnterFadeDuration(110); setExitFadeDuration(110)
+        addState(intArrayOf(android.R.attr.state_focused), android.graphics.drawable.GradientDrawable().apply { cornerRadius = act.dpf(radiusDp); setColor(0xFFFFFFFF.toInt()) })
+        addState(intArrayOf(), android.graphics.drawable.GradientDrawable().apply { cornerRadius = act.dpf(radiusDp); setColor(0x00000000) })
+    }
+    private val tvTint = ColorStateList(arrayOf(intArrayOf(android.R.attr.state_focused), intArrayOf()), intArrayOf(0xFF111214.toInt(), 0xFFFFFFFF.toInt()))
+
+    /** الأيقونات والنص داخل الزر ياخذون حالة التحديد (أسود على الأبيض). */
+    private fun tvStyle(b: View, radiusDp: Float) {
+        b.background = tvFocusBg(radiusDp)
+        if (b is android.view.ViewGroup) for (i in 0 until b.childCount) {
+            val c = b.getChildAt(i)
+            c.isDuplicateParentStateEnabled = true
+            if (c is android.widget.ImageView) c.imageTintList = tvTint
+            else if (c is TextView && c !== liveText) c.setTextColor(tvTint)
+        }
+    }
+
+    private fun arrangeTv() {
+        tvBig = true
+        compact = false
+        val parts = listOf<View>(btnBack, btnPlay, btnFwd, btnPrev, btnNext, btnSettings, btnFull, btnLive, btnChannels, btnCC,
+            tPos, tDur, seekLine, progRow, leftGroup, rightGroup, btnRow, spacer, tvTitle, tvSub, tvTitleBox, tvTimeRow, tvTimeSpacer, rowBox)
+        for (v in parts) (v.parent as? android.view.ViewGroup)?.removeView(v)
+        for (g in listOf(leftGroup, rightGroup, btnRow, tvTitleBox, tvTimeRow)) g.removeAllViews()
+        panel.removeAllViews()
+        panel.background = android.graphics.drawable.GradientDrawable(
+            android.graphics.drawable.GradientDrawable.Orientation.BOTTOM_TOP,
+            intArrayOf(0xF0000000.toInt(), 0xB3000000.toInt(), 0x00000000))
+        panel.setPadding(act.dp(48), act.dp(90), act.dp(48), act.dp(24))
+        // العنوان كبير
+        tvTitleBox.addView(tvTitle); tvTitleBox.addView(tvSub)
+        panel.addView(tvTitleBox, LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = act.dp(14) })
+        // الشريط بعرض الشاشة والوقت تحته على الطرفين
+        if (!live) {
+            panel.addView(seekLine, LinearLayout.LayoutParams(MATCH, act.dp(26)).apply { setMargins(-act.dp(10), 0, -act.dp(10), 0) })
+            tvTimeRow.addView(tPos); tvTimeRow.addView(tvTimeSpacer, LinearLayout.LayoutParams(0, 1, 1f)); tvTimeRow.addView(tDur)
+            panel.addView(tvTimeRow, LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = act.dp(10) })
+        }
+        // الأزرار: تشغيل · السابقة · التالية (المباشر: تشغيل · مباشر)  …  ترجمة · إعدادات (المباشر: القنوات)
+        val s = act.dp(44)
+        val g = act.dp(10)
+        leftGroup.addView(btnPlay, LinearLayout.LayoutParams(s, s).apply { marginEnd = g })
+        if (live) leftGroup.addView(btnLive, LinearLayout.LayoutParams(WRAP, s))
+        else if (nav != null) {
+            leftGroup.addView(btnPrev, LinearLayout.LayoutParams(s, s).apply { marginEnd = g })
+            leftGroup.addView(btnNext, LinearLayout.LayoutParams(s, s))
+        }
+        if (live) { if (onChannels != null) rightGroup.addView(btnChannels, LinearLayout.LayoutParams(WRAP, s)) }
+        else {
+            rightGroup.addView(btnCC, LinearLayout.LayoutParams(s, s).apply { marginEnd = g })
+            rightGroup.addView(btnSettings, LinearLayout.LayoutParams(s, s))
+        }
+        for (b in listOf(btnPlay, btnPrev, btnNext, btnCC, btnSettings)) { tvStyle(b, 22f); b.visibility = View.VISIBLE; b.alpha = 1f }
+        tvStyle(btnLive, 22f); tvStyle(btnChannels, 22f)
+        btnRow.addView(leftGroup, LinearLayout.LayoutParams(WRAP, WRAP))
+        btnRow.addView(spacer, LinearLayout.LayoutParams(0, 1, 1f))
+        btnRow.addView(rightGroup, LinearLayout.LayoutParams(WRAP, WRAP))
+        panel.addView(btnRow, LinearLayout.LayoutParams(MATCH, WRAP))
+        panel.addView(rowBox, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = act.dp(18) })
+        rowBox.visibility = View.GONE
+        refresh()
+    }
+
+    // ---------- صف الحلقات/القنوات (سهم تحت) ----------
+    fun rowHasFocus() = rowBox.visibility == View.VISIBLE && rowBox.hasFocus()
+    fun seekFocused() = seekLine.isFocused
+
+    /** يطلّع الصف ويحدّد العنصر الحالي. false = ما فيه صف. */
+    fun showRow(): Boolean {
+        if (!tvBig) return false
+        val (title, items) = rowProvider?.invoke() ?: return false
+        if (items.isEmpty()) return false
+        rowTitle.text = title
+        rowList.removeAllViews()
+        var cur: View? = null
+        val w = act.dp(168); val h = act.dp(94)
+        for (it in items) {
+            val img = android.widget.ImageView(act).apply {
+                scaleType = android.widget.ImageView.ScaleType.CENTER_CROP
+                background = rounded(0xFF2A2D33.toInt(), act.dpf(8f)); clipToOutline = true
+                load(it.image?.ifEmpty { null }) { size(320, 180) }
+            }
+            val frame = FrameLayout(act).apply {
+                setPadding(act.dp(3), act.dp(3), act.dp(3), act.dp(3))
+                background = android.graphics.drawable.StateListDrawable().apply {
+                    addState(intArrayOf(android.R.attr.state_focused), rounded(0x00000000, act.dpf(11f), 0xFFFFFFFF.toInt(), act.dp(3)))
+                    addState(intArrayOf(), rounded(0x00000000, act.dpf(11f)))
+                }
+                addView(img, LayoutParams(MATCH, MATCH))
+                if (it.current) addView(View(act).apply { setBackgroundColor(0xFFE5484D.toInt()) }, LayoutParams(MATCH, act.dp(4), Gravity.BOTTOM))
+            }
+            val label = act.text(if (it.current) "▶ تعرض الآن" else it.title, 12.5f, if (it.current) 0xFFFFFFFF.toInt() else 0xFFC9CDD3.toInt(), bold = it.current).apply {
+                maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END; textDirection = View.TEXT_DIRECTION_FIRST_STRONG
+                setPadding(act.dp(3), act.dp(6), act.dp(3), 0)
+            }
+            val cell = LinearLayout(act).apply {
+                orientation = LinearLayout.VERTICAL
+                isFocusable = true; isClickable = true
+                setTag(R.id.own_focus_anim, true)
+                contentDescription = it.title
+                frame.isDuplicateParentStateEnabled = true
+                addView(frame, LinearLayout.LayoutParams(w, h))
+                addView(label, LinearLayout.LayoutParams(w, WRAP))
+                val click = it.onClick
+                setOnClickListener { hideRow(); click(); poke() }
+                setOnFocusChangeListener { v, has ->
+                    v.animate().scaleX(if (has) 1.06f else 1f).scaleY(if (has) 1.06f else 1f).setDuration(140).start()
+                    if (has) poke()
+                }
+            }
+            rowList.addView(cell, LinearLayout.LayoutParams(w, WRAP).apply { marginEnd = act.dp(16) })
+            if (it.current) cur = cell
+        }
+        rowBox.visibility = View.VISIBLE
+        val target = cur ?: rowList.getChildAt(0)
+        target?.post { target.requestFocus() }
+        placeNext(); poke()
+        return true
+    }
+
+    fun hideRow() {
+        if (rowBox.visibility != View.VISIBLE) return
+        rowBox.visibility = View.GONE
+        placeNext()
     }
 
     // ---------- نمط يوتيوب (الجوال) ----------
@@ -832,7 +998,7 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
             addView(edge, LayoutParams(MATCH, act.dp(3), Gravity.BOTTOM))
             panel.clipChildren = false
             arrange(true)
-        }
+        } else if (autoHide) arrange(false)           // التلفزيون بملء الشاشة: نمط يوتيوب تي في
         seekLine.setOnKeyListener { _, code, ev ->
             if (code != android.view.KeyEvent.KEYCODE_DPAD_LEFT && code != android.view.KeyEvent.KEYCODE_DPAD_RIGHT) return@setOnKeyListener false
             if (ev.action != android.view.KeyEvent.ACTION_DOWN) return@setOnKeyListener true

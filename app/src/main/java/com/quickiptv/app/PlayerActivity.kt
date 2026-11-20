@@ -106,11 +106,10 @@ class PlayerActivity : Activity() {
                 onChannels = { openPanel() }
                 onTap = { if (panelOpen) { closePanel(); true } else false }
             }
-            if (isTv()) onVisibility = { v -> topBar.visibility = if (v) View.VISIBLE else View.GONE }
-            else titleProvider = {        // الجوال (نمط يوتيوب): العنوان جنب سهم التصغير فوق
-                listOf(title.text.toString(), sub.text.toString().lineSequence().firstOrNull().orEmpty())
-                    .filter { it.isNotBlank() }.joinToString(" · ")
-            }
+            // العنوان داخل شريط الأزرار (الجوال: جنب سهم التصغير، التلفزيون: كبير فوق الشريط)
+            titleProvider = { title.text.toString() to sub.text.toString() }
+            // التلفزيون: سهم تحت = صف حلقات الموسم / قنوات التصنيف
+            rowProvider = { rowItems() }
         }
         root.addView(bar, FrameLayout.LayoutParams(MATCH, MATCH))
 
@@ -127,7 +126,7 @@ class PlayerActivity : Activity() {
         tcol.addView(title); tcol.addView(sub)
         topBar.addView(tcol, lp(0, WRAP, 1f))
         root.addView(topBar, FrameLayout.LayoutParams(MATCH, WRAP, Gravity.TOP))
-        if (!isTv()) topBar.visibility = View.GONE              // الجوال: العنوان داخل شريط الأزرار
+        topBar.visibility = View.GONE              // العنوان صار داخل شريط الأزرار
 
         if (live) {
             // لوحة القنوات: تطلع من الجنب فوق البث (البث يكمل وراها)
@@ -404,12 +403,41 @@ class PlayerActivity : Activity() {
         return handled || super.dispatchKeyEvent(event)
     }
 
+    /** صف تحت بالتلفزيون: حلقات نفس الموسم (مسلسل) أو قنوات حول القناة الحالية (مباشر). */
+    private fun rowItems(): Pair<String, List<PlayerBar.RowItem>>? {
+        if (live) {
+            val list = Session.playlist
+            if (list.isEmpty()) return null
+            val cur = Session.playIndex
+            val from = (cur - 25).coerceAtLeast(0); val to = (cur + 25).coerceAtMost(list.size - 1)
+            return Session.playCategory.ifEmpty { "القنوات" } to (from..to).map { i ->
+                val ch = list[i]
+                PlayerBar.RowItem("${i + 1}. ${ch.name}", ch.icon, i == cur) { playChannel(i) }
+            }
+        }
+        val i = SeriesQueue.indexOfKey(key)
+        if (i < 0) return null
+        val season = SeriesQueue.list[i].season
+        val img = intent.getStringExtra("image") ?: ""
+        return "حلقات الموسم $season" to SeriesQueue.list.withIndex().filter { it.value.season == season }.map { (j, e) ->
+            PlayerBar.RowItem("الحلقة ${e.num}" + (e.title.takeIf { it.isNotBlank() && !it.contains("S0") }?.let { " · $it" } ?: ""),
+                e.image.ifEmpty { img }, j == i) { switchEpisode(j) }
+        }
+    }
+
     private fun handleKey(event: KeyEvent): Boolean {
         val k = event.keyCode
         if (live && panelOpen) {
             // القائمة مفتوحة: الأسهم والاختيار للقائمة نفسها (الرجوع يقفلها)
             if (k == KeyEvent.KEYCODE_DPAD_LEFT || k == KeyEvent.KEYCODE_DPAD_RIGHT) { closePanel(); return true }
             return false
+        }
+        // الأزرار ظاهرة والتحديد داخلها: تحت = صف الحلقات/القنوات، فوق من الصف = رجوع للأزرار
+        if (isTv() && bar.barVisible && bar.hasFocusInside()) {
+            if (k == KeyEvent.KEYCODE_DPAD_DOWN && bar.seekFocused()) { bar.poke(); return false }      // من الشريط ← للأزرار
+            if (k == KeyEvent.KEYCODE_DPAD_DOWN) { if (!bar.rowHasFocus()) bar.showRow(); bar.poke(); return true }
+            if (k == KeyEvent.KEYCODE_DPAD_UP && bar.rowHasFocus()) { bar.hideRow(); bar.focusPlay(); return true }
+            if (k == KeyEvent.KEYCODE_DPAD_UP && live) { bar.poke(); return true }
         }
         when (k) {
             KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
