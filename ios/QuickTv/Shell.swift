@@ -120,6 +120,8 @@ struct LoginView: View {
                 field("اسم المستخدم", "اسم المستخدم", $user, ltr: true)
                 field("كلمة المرور", "كلمة المرور", $pass, secure: true)
                 field("عنوان السيرفر", "http://example.com:8080 أو الصق رابط الاشتراك", $server, ltr: true)
+                    .submitLabel(.go)
+                    .onSubmit { Task { await submit() } }        // زر "انتقال" في الكيبورد يدخل مباشرة
                 if let err { Text(err).font(.footnote).foregroundStyle(Theme.red) }
                 Button { Task { await submit() } } label: {
                     HStack { if busy { ProgressView() }; Text("دخول").font(.headline) }

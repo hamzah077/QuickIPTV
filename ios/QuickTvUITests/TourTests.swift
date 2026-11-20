@@ -69,12 +69,21 @@ final class TourTests: XCTestCase {
         // تسجيل الدخول: الاسم ← المستخدم ← المرور ← السيرفر
         let tf = app.textFields
         if tf.firstMatch.waitForExistence(timeout: 10) {
-            tf.element(boundBy: 0).tap(); tf.element(boundBy: 0).typeText("Hamzah")
-            tf.element(boundBy: 1).tap(); tf.element(boundBy: 1).typeText("test")
-            app.secureTextFields.firstMatch.tap(); app.secureTextFields.firstMatch.typeText("test")
-            tf.element(boundBy: 2).tap(); tf.element(boundBy: 2).typeText("http://127.0.0.1:8000")
+            func fill(_ e: XCUIElement, _ t: String) {
+                e.tap(); pause(0.6)
+                if !(e.value(forKey: "hasKeyboardFocus") as? Bool ?? true) { e.tap(); pause(0.6) }
+                e.typeText(t)
+            }
+            fill(tf.element(boundBy: 0), "Hamzah")
+            fill(tf.element(boundBy: 1), "test")
+            fill(app.secureTextFields.firstMatch, "test")
+            fill(tf.element(boundBy: 2), "http://127.0.0.1:8000")
             shot("login-filled")
-            tap(app.buttons["دخول"])
+            app.typeText("\n")                                     // زر "انتقال" يدخل مباشرة
+            if !el("الخير").waitForExistence(timeout: 20) {         // احتياط: نسكّر الكيبورد ونضغط دخول
+                app.staticTexts["QuickTv"].firstMatch.tap(); pause(1)
+                tap(app.buttons["دخول"])
+            }
         }
 
         // الرئيسية
