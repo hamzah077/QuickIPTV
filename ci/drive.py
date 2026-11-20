@@ -22,7 +22,7 @@ def tap_text(t, contains=False, tries=10):
     print("NOT FOUND", t, flush=True); return False
 
 sh("shell", "am", "start", "-n", "com.quickiptv.app/.MainActivity"); time.sleep(6); shot("01_login")
-for idx, val in enumerate(["http://10.0.2.2:8000", "test", "test"]):
+for idx, val in enumerate(["Hamzah", "test", "test", "http://10.0.2.2:8000"]):   # الاسم ← المستخدم ← المرور ← السيرفر
     eds = [n for n in nodes(dump()) if n["cls"] == "android.widget.EditText"]
     print("edittexts", len(eds), flush=True)
     tap_node(eds[idx]); time.sleep(0.8)
@@ -30,6 +30,7 @@ for idx, val in enumerate(["http://10.0.2.2:8000", "test", "test"]):
     sh("shell", "input", "keyevent", "111"); time.sleep(0.8)   # يخفي الكيبورد عشان الأماكن ما تتحرك
 shot("01b_filled")
 time.sleep(1); tap_text("دخول", contains=True); time.sleep(8); shot("02_home")
+print("GREETING_OK" if "Hamzah" in dump() else "GREETING_MISSING", flush=True)
 tap_text("أفلام"); time.sleep(8); shot("03_movies")
 open(f"{OUT}/ui_movies_page.xml", "w").write(dump())
 open(f"{OUT}/viewtree_movies.txt", "wb").write(sh("shell", "dumpsys", "activity", "top"))
@@ -49,7 +50,7 @@ tap_text("بحث"); time.sleep(1); shot("09a_search_open")
 for n in nodes(dump()):
     if n["cls"] == "android.widget.EditText": tap_node(n); break
 time.sleep(4)   # وقت تجهيز الفهرس (أول مرة)
-t0 = time.time(); sh("shell", "input", "text", "movie%s12"); time.sleep(0.8); shot("09b_search_typed")
+t0 = time.time(); sh("shell", "input", "text", "film%s12")   # جزء من وسط الاسم وبترتيب مختلف; time.sleep(0.8); shot("09b_search_typed")
 sh("shell", "input", "text", "34"); time.sleep(0.8); shot("09c_search_more")
 print("search typed in", round(time.time() - t0, 2), "s", flush=True)
 open(f"{OUT}/ui_search.xml", "w").write(dump())

@@ -254,8 +254,8 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
     }
 
     private fun applyFilter() {
-        val k = SearchIndex.norm(searchBox.text?.toString() ?: "")
-        visible = if (k.isEmpty()) inCat else inCat.filter { SearchIndex.norm(it.name).contains(k) }
+        val t = SearchIndex.tokens(searchBox.text?.toString() ?: "")
+        visible = if (t.isEmpty()) inCat else inCat.filter { SearchIndex.matches(SearchIndex.norm(it.name), t) }
         chAdapter.items = visible
     }
 
@@ -281,7 +281,7 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
         title.text = ch.name
         nowText.text = ""
         triedTs = false
-        playUrl(Session.api!!.liveUrl(ch.id))
+        playUrl((Session.api ?: return).liveUrl(ch.id))
         showEpg(ch)
         Store.addHistory(HistoryItem("live:${ch.id}", "live", ch.name, "", ch.icon, ""))
     }
@@ -298,7 +298,7 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
             val ch = current ?: return
             if (!triedTs && Store.liveFormat == "m3u8") {     // HLS ما اشتغل؟ نجرب TS مرة وحدة
                 triedTs = true
-                playUrl(Session.api!!.liveUrl(ch.id, "ts"), force = true)
+                Session.api?.let { playUrl(it.liveUrl(ch.id, "ts"), force = true) }
             } else showStatus("القناة ما اشتغلت (${error.errorCodeName}). جرّب مرة ثانية أو قناة ثانية.")
         }
     }
@@ -327,7 +327,7 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
     private fun goLive() {
         val p = player ?: return
         if (p.isCurrentMediaItemLive && p.isCurrentMediaItemSeekable) p.seekToDefaultPosition()
-        else current?.let { playUrl(Session.api!!.liveUrl(it.id), force = true) }
+        else current?.let { c -> Session.api?.let { playUrl(it.liveUrl(c.id), force = true) } }
         p.playWhenReady = true
     }
 
@@ -373,7 +373,7 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
         epgJob?.cancel()
         epgJob = a.scope.launch {
             val progs = Epg.programsFor(ch) ?: withContext(Dispatchers.IO) {
-                runCatching { Session.api!!.shortEpg(ch.id, 8) }.getOrDefault(emptyList())
+                runCatching { Session.api?.shortEpg(ch.id, 8) }.getOrNull() ?: emptyList()
             }
             if (current?.id != ch.id) return@launch
             val now = progs.firstOrNull { it.isNow }

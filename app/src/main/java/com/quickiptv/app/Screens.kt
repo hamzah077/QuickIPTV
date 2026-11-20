@@ -24,7 +24,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.UUID
 
-fun MainActivity.field(hint: String, value: String = "", password: Boolean = false): EditText = EditText(this).apply {
+fun MainActivity.field(hint: String, value: String = "", password: Boolean = false, rtl: Boolean = false): EditText = EditText(this).apply {
     typeface = Fonts.regular
     setText(value)
     this.hint = hint
@@ -32,12 +32,15 @@ fun MainActivity.field(hint: String, value: String = "", password: Boolean = fal
     setTextColor(C.TEXT)
     textSize = 15f
     isSingleLine = true
-    layoutDirection = View.LAYOUT_DIRECTION_LTR
-    textDirection = View.TEXT_DIRECTION_LTR
+    layoutDirection = if (rtl) View.LAYOUT_DIRECTION_RTL else View.LAYOUT_DIRECTION_LTR
+    textDirection = if (rtl) View.TEXT_DIRECTION_FIRST_STRONG else View.TEXT_DIRECTION_LTR
     setPadding(dp(14), dp(12), dp(14), dp(12))
     background = focusBg(normal = C.SURFACE, radius = 10)
-    inputType = if (password) InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-    else InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
+    inputType = when {
+        password -> InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+        rtl -> InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PERSON_NAME or InputType.TYPE_TEXT_FLAG_CAP_WORDS
+        else -> InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
+    }
     imeOptions = EditorInfo.IME_ACTION_NEXT or EditorInfo.IME_FLAG_NO_EXTRACT_UI
 }
 
@@ -77,10 +80,13 @@ fun MainActivity.playHistory(h: HistoryItem) {
 /** إضافة/تعديل الحساب. يقبل لصق رابط الاشتراك كامل (get.php…). */
 class LoginScreen(private val a: MainActivity, edit: Account?) : Screen {
     override val view: View
-    private val server = a.field("http://example.com:8080  أو الصق رابط الاشتراك كامل", edit?.server ?: "")
+    // الترتيب: الاسم ← اسم المستخدم ← كلمة المرور ← عنوان السيرفر
+    private val name = a.field("أي اسم تبيه (يظهر في الترحيب)", edit?.name ?: "", rtl = true)
     private val user = a.field("اسم المستخدم", edit?.username ?: "")
     private val pass = a.field("كلمة المرور", edit?.password ?: "", password = true)
-    private val name = a.field("اسم الحساب (اختياري)", edit?.name ?: "")
+    private val server = a.field("http://example.com:8080  أو الصق رابط الاشتراك كامل", edit?.server ?: "").apply {
+        imeOptions = EditorInfo.IME_ACTION_DONE or EditorInfo.IME_FLAG_NO_EXTRACT_UI
+    }
     private val err = a.text("", 13f, C.LIVE, lines = 3)
     private val id = edit?.id ?: UUID.randomUUID().toString().take(10)
 
@@ -92,9 +98,11 @@ class LoginScreen(private val a: MainActivity, edit: Account?) : Screen {
         }
         col.addView(a.text("QuickIPTV", 26f, C.TEXT, bold = true))
         col.addView(a.text("أضف حساب Xtream Codes للبدء", 14f, C.MUTED).apply { setPadding(0, a.dp(6), 0, a.dp(20)) })
-        for (f in listOf(server, user, pass, name)) {
-            col.addView(f, lp(MATCH, WRAP).apply { bottomMargin = a.dp(10) })
+        for ((label, f) in listOf("الاسم" to name, "اسم المستخدم" to user, "كلمة المرور" to pass, "عنوان السيرفر" to server)) {
+            col.addView(a.text(label, 13f, C.MUTED).apply { setPadding(a.dp(4), 0, a.dp(4), a.dp(4)) })
+            col.addView(f, lp(MATCH, WRAP).apply { bottomMargin = a.dp(12) })
         }
+        server.setOnEditorActionListener { _, act, _ -> if (act == EditorInfo.IME_ACTION_DONE) { submit(); true } else false }
         col.addView(err, lp(MATCH, WRAP).apply { bottomMargin = a.dp(8) })
         val ok = a.button("دخول", R.drawable.ic_play, primary = true) { submit() }
         col.addView(ok, lp(MATCH, WRAP))
@@ -141,7 +149,7 @@ class LoginScreen(private val a: MainActivity, edit: Account?) : Screen {
         }
     }
 
-    override fun focusDefault() { server.requestFocus() }
+    override fun focusDefault() { name.requestFocus() }
 }
 
 // =====================================================================
@@ -226,7 +234,11 @@ class HomeScreen(private val a: MainActivity) : Screen, EpgAware {
         col.removeAllViews()
         val head = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(padH, a.dp(8), a.dp(6), 0) }
         val hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
-        head.addView(a.text(if (hour in 4..11) "صباح الخير" else "مساء الخير", 21f, C.TEXT, bold = true), lp(0, WRAP, 1f))
+        val who = Store.current?.name?.trim().orEmpty()
+        val hello = if (hour in 4..11) "صباح الخير" else "مساء الخير"
+        head.addView(a.text(if (who.isEmpty()) hello else "$hello، $who", 21f, C.TEXT, bold = true).apply {
+            maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
+        }, lp(0, WRAP, 1f))
         if (!a.tv) head.addView(a.iconButton(R.drawable.ic_search, "بحث") { a.openExtra("search") })
         head.addView(a.iconButton(R.drawable.ic_download, "التحميلات") { a.openExtra("downloads") })
         col.addView(head)
@@ -438,12 +450,12 @@ class SearchScreen(private val a: MainActivity) : Screen {
         job?.cancel()
         val api = Session.api ?: return
         job = a.scope.launch {
-            val nq = SearchIndex.norm(q)
+            val nq = SearchIndex.tokens(q).joinToString("")
             if (nq.length < 2) { chResults = emptyList(); chAdapter.items = emptyList(); vodAdapter.items = emptyList(); status.text = ""; return@launch }
             delay(if (SearchIndex.readyFor(api)) 120 else 250)
             if (!SearchIndex.readyFor(api)) status.text = "جاري تجهيز البحث…"
             val idx = withContext(Bg.io) { SearchIndex.build(api) }
-            val (ch, vods) = withContext(Dispatchers.Default) { idx.find(nq) }
+            val (ch, vods) = withContext(Dispatchers.Default) { idx.find(q) }
             chResults = ch
             chAdapter.items = ch
             vodAdapter.items = vods

@@ -13,25 +13,45 @@ object SearchIndex {
         val live: List<Channel>, val liveN: Array<String>,
         val vods: List<Vod>, val vodsN: Array<String>,
     ) {
-        /** القنوات (أقصى 300) والأفلام/المسلسلات (أقصى 80)، اللي تبدأ بالكلمة أول. */
+        /** القنوات (أقصى 300) والأفلام/المسلسلات (أقصى 80). q = نص البحث كما كتبه المستخدم. */
         suspend fun find(q: String): Pair<List<Channel>, List<Vod>> {
-            val ch = pick(liveN, q, 300).map { live[it] }
-            val vs = pick(vodsN, q, 80).map { vods[it] }
+            val tokens = tokens(q)
+            val ch = pick(liveN, tokens, 300).map { live[it] }
+            val vs = pick(vodsN, tokens, 80).map { vods[it] }
             return ch to vs
         }
 
-        private suspend fun pick(names: Array<String>, q: String, max: Int): List<Int> {
-            val starts = ArrayList<Int>()
-            val other = ArrayList<Int>()
-            for (i in names.indices) {
-                if (i and 4095 == 0) coroutineContext.ensureActive()     // حرف جديد = نوقف البحث القديم فوراً
-                val n = names[i]
-                if (n.startsWith(q)) { starts.add(i); if (starts.size >= max) break }
-                else if (other.size < max && n.contains(q)) other.add(i)
-            }
-            return (starts + other).take(max)
-        }
+        private suspend fun pick(names: Array<String>, tokens: List<String>, max: Int): List<Int> =
+            pickIn(names, tokens, max) { i -> if (i and 4095 == 0) coroutineContext.ensureActive() }   // حرف جديد = نوقف البحث القديم فوراً
     }
+
+    /**
+     * بحث بأي جزء من الاسم: كل كلمة تكتبها لازم تكون موجودة بأي مكان بالاسم وبأي ترتيب.
+     * الترتيب: اللي يبدأ بالبحث أول، ثم اللي فيه البحث متصل زي ما كتبته، ثم الباقي.
+     */
+    inline fun pickIn(names: Array<String>, tokens: List<String>, max: Int, tick: (Int) -> Unit = {}): List<Int> {
+        if (tokens.isEmpty()) return emptyList()
+        val joined = tokens.joinToString("")
+        val starts = ArrayList<Int>(); val exact = ArrayList<Int>(); val other = ArrayList<Int>()
+        for (i in names.indices) {
+            tick(i)
+            val n = names[i]
+            if (!tokens.all { n.contains(it) }) continue
+            when {
+                n.startsWith(joined) || n.startsWith(tokens[0]) -> { starts.add(i); if (starts.size >= max) break }
+                n.contains(joined) -> if (exact.size < max) exact.add(i)
+                else -> if (other.size < max) other.add(i)
+            }
+        }
+        return (starts + exact + other).take(max)
+    }
+
+    /** كلمات البحث مطبّعة (الفواصل والرموز تفصل بين الكلمات). */
+    fun tokens(q: String): List<String> =
+        q.split(Regex("[^\\p{L}\\p{N}]+")).map { norm(it) }.filter { it.isNotEmpty() }
+
+    /** الاسم يطابق كل كلمات البحث (بأي مكان وبأي ترتيب)؟ */
+    fun matches(normName: String, tokens: List<String>) = tokens.all { normName.contains(it) }
 
     @Volatile private var idx: Idx? = null
     private val lock = Any()

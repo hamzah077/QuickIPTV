@@ -203,7 +203,7 @@ class PlayerActivity : Activity() {
                 override fun onPlayerError(error: PlaybackException) {
                     if (live && !triedTs && Store.liveFormat == "m3u8") {
                         triedTs = true
-                        Session.playlist.getOrNull(Session.playIndex)?.let { LivePlayer.play(this@PlayerActivity, Session.api!!.liveUrl(it.id, "ts"), force = true) }
+                        Session.playlist.getOrNull(Session.playIndex)?.let { c -> Session.api?.let { LivePlayer.play(this@PlayerActivity, it.liveUrl(c.id, "ts"), force = true) } }
                         return
                     }
                     loading.visibility = View.GONE
@@ -242,14 +242,14 @@ class PlayerActivity : Activity() {
         sub.text = Session.playCategory
         // نفس القناة الشغّالة في الشاشة الصغيرة؟ نكمل عليها مباشرة بدون إعادة اتصال
         loading.visibility = View.VISIBLE
-        LivePlayer.play(this, Session.api!!.liveUrl(ch.id), force = !reuse)
+        LivePlayer.play(this, (Session.api ?: run { finish(); return }).liveUrl(ch.id), force = !reuse)
         if (reuse) LivePlayer.healAfterSwitch(this, scope)      // لو الصورة علّقت بعد التكبير نعيد الاتصال
         if (player?.playbackState == Player.STATE_READY) loading.visibility = View.GONE
         Store.addHistory(HistoryItem("live:${ch.id}", "live", ch.name, Session.playCategory, ch.icon, ""))
         showBar()
         scope.launch {
             val progs = Epg.programsFor(ch) ?: withContext(Dispatchers.IO) {
-                runCatching { Session.api!!.shortEpg(ch.id, 3) }.getOrDefault(emptyList())
+                runCatching { Session.api?.shortEpg(ch.id, 3) }.getOrNull() ?: emptyList()
             }
             val now = progs.firstOrNull { it.isNow } ?: return@launch
             Live.nowCache[ch.id] = now

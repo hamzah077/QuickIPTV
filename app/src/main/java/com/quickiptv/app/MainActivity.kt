@@ -125,7 +125,7 @@ class MainActivity : Activity() {
         }
         if (checkLogin) scope.launch {
             try {
-                Session.userInfo = withContext(Dispatchers.IO) { Session.api!!.login() }.optJSONObject("user_info")
+                Session.userInfo = withContext(Dispatchers.IO) { (Session.api ?: error("لا يوجد حساب")).login() }.optJSONObject("user_info")
             } catch (e: Exception) {
                 toast(e.message ?: "تعذر التحقق من الاشتراك")
             }
