@@ -8,7 +8,35 @@ final class PlayerLayerView: UIView {
     var playerLayer: AVPlayerLayer { layer as! AVPlayerLayer }
 }
 
-struct VideoSurface: UIViewRepresentable {
+/// سطح الفيديو حسب المحرّك. active = هذي الشاشة اللي تعرض الحين (الصغيرة أو ملء الشاشة)
+struct VideoSurface: View {
+    @Environment(PlayerController.self) private var pc
+    var active: Bool = true
+    var body: some View {
+        if pc.engine == .vlc { VLCSurface(view: pc.vlcView, active: active) }
+        else { AVSurface(player: pc.player) }
+    }
+}
+
+/// شاشة VLC: نفس الشاشة تنتقل بين الصغيرة وملء الشاشة (بدون إعادة تشغيل)
+struct VLCSurface: UIViewRepresentable {
+    let view: UIView
+    let active: Bool
+    func makeUIView(context: Context) -> UIView {
+        let c = UIView(); c.backgroundColor = .black; c.clipsToBounds = true
+        return c
+    }
+    func updateUIView(_ c: UIView, context: Context) {
+        if active && view.superview !== c {
+            view.removeFromSuperview()
+            view.frame = c.bounds
+            view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            c.addSubview(view)
+        }
+    }
+}
+
+struct AVSurface: UIViewRepresentable {
     let player: AVPlayer
     var gravity: AVLayerVideoGravity = .resizeAspect
 
@@ -129,7 +157,7 @@ struct PlayerOverlay: View {
                     Text(titleLine).font(compact ? .footnote.weight(.semibold) : .subheadline.weight(.semibold)).lineLimit(1)
                     Spacer()
                     if !pc.isLive { iconButton("captions.bubble") { showSettings = true } }
-                    if !compact, PiP.shared.available { iconButton("pip.enter") { PiP.shared.start() } }
+                    if !compact, pc.engine == .av, PiP.shared.available { iconButton("pip.enter") { PiP.shared.start() } }
                     AirPlayButton().frame(width: 30, height: 30)
                 }
                 .padding(.horizontal, compact ? 8 : 20)
@@ -223,7 +251,7 @@ struct PlayerOverlay: View {
     }
 
     private func doubleTap(_ side: Int) {
-        guard !pc.isLive || pc.player.currentItem?.seekableTimeRanges.isEmpty == false else { return }
+        guard !pc.isLive || (pc.engine == .av && pc.player.currentItem?.seekableTimeRanges.isEmpty == false) else { return }
         if side != tapSide { tapAccum = 0 }
         tapSide = side
         tapAccum += 10
@@ -288,13 +316,13 @@ struct PlayerOverlay: View {
     }
 
     @ViewBuilder private var settingsButtons: some View {
-        Button("سرعة 1x") { pc.player.rate = 1 }
-        Button("سرعة 1.25x") { pc.player.rate = 1.25 }
-        Button("سرعة 1.5x") { pc.player.rate = 1.5 }
-        Button("سرعة 2x") { pc.player.rate = 2 }
-        Button("بدون ترجمة") { pc.select(nil, .legible) }
-        ForEach(pc.options(.legible), id: \.self) { o in Button("ترجمة: \(o.displayName)") { pc.select(o, .legible) } }
-        ForEach(pc.options(.audible), id: \.self) { o in Button("الصوت: \(o.displayName)") { pc.select(o, .audible) } }
+        Button("سرعة 1x") { pc.setRate(1) }
+        Button("سرعة 1.25x") { pc.setRate(1.25) }
+        Button("سرعة 1.5x") { pc.setRate(1.5) }
+        Button("سرعة 2x") { pc.setRate(2) }
+        Button("بدون ترجمة") { pc.selectTrack(nil, audio: false) }
+        ForEach(pc.tracks(audio: false)) { t in Button("ترجمة: \(t.name)") { pc.selectTrack(t, audio: false) } }
+        ForEach(pc.tracks(audio: true)) { t in Button("الصوت: \(t.name)") { pc.selectTrack(t, audio: true) } }
     }
 
     private func scheduleHide() {
@@ -314,7 +342,7 @@ struct InlinePlayer: View {
     var body: some View {
         ZStack {
             Color.black
-            VideoSurface(player: pc.player)
+            VideoSurface(active: !pc.fullscreen)
             PlayerOverlay(compact: true) { enterFullscreen() }
         }
         .aspectRatio(16 / 9, contentMode: .fit)
@@ -334,7 +362,7 @@ struct FullscreenPlayer: View {
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            VideoSurface(player: pc.player).ignoresSafeArea()
+            VideoSurface(active: true).ignoresSafeArea()
             PlayerOverlay(compact: false) { exit() }
         }
         .statusBarHidden()
