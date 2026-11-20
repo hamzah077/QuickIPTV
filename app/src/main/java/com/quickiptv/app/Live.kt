@@ -69,6 +69,8 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
         contentDescription = "إيقاف مؤقت"
         addView(pauseIcon)
     }
+    private val seekBack = a.seekButton(false, 40, 0x99000000.toInt()) { seek(false) }
+    private val seekFwd = a.seekButton(true, 40, 0x99000000.toInt()) { seek(true) }
     private val searchBox = a.field("ابحث في هذا التصنيف…").apply {
         layoutDirection = View.LAYOUT_DIRECTION_RTL; textDirection = View.TEXT_DIRECTION_FIRST_STRONG
         addTextChangedListener(object : android.text.TextWatcher {
@@ -125,7 +127,12 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
         screen.addView(liveBtn, FrameLayout.LayoutParams(WRAP, WRAP, Gravity.TOP or Gravity.START).apply { setMargins(a.dp(10), a.dp(10), 0, 0) })
         val full = a.iconButton(R.drawable.ic_fullscreen, "ملء الشاشة", 40) { current?.let { openFull(it) } }
         pauseBtn.setOnClickListener { togglePause() }
-        screen.addView(pauseBtn, FrameLayout.LayoutParams(a.dp(40), a.dp(40), Gravity.BOTTOM or Gravity.START).apply { setMargins(a.dp(6), 0, 0, a.dp(6)) })
+        // أزرار التحكم: تأخير 10 ثواني، تشغيل/إيقاف، تقديم 10 ثواني (نفس نظام مشغّل الأفلام)
+        val ctrls = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR }
+        ctrls.addView(seekBack, lp(a.dp(40), a.dp(40)).apply { marginEnd = a.dp(6) })
+        ctrls.addView(pauseBtn, lp(a.dp(40), a.dp(40)).apply { marginEnd = a.dp(6) })
+        ctrls.addView(seekFwd, lp(a.dp(40), a.dp(40)))
+        screen.addView(ctrls, FrameLayout.LayoutParams(WRAP, WRAP, Gravity.BOTTOM or Gravity.START).apply { setMargins(a.dp(6), 0, 0, a.dp(6)) })
         screen.addView(full, FrameLayout.LayoutParams(a.dp(40), a.dp(40), Gravity.BOTTOM or Gravity.END).apply { setMargins(0, 0, a.dp(6), a.dp(6)) })
         screen.addView(loading, FrameLayout.LayoutParams(a.dp(36), a.dp(36), Gravity.CENTER))
         screen.addView(status, FrameLayout.LayoutParams(MATCH, WRAP, Gravity.CENTER).apply { setMargins(a.dp(16), 0, a.dp(16), 0) })
@@ -290,6 +297,7 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
         override fun onPlaybackStateChanged(state: Int) {
             loading.visibility = if (state == Player.STATE_BUFFERING) View.VISIBLE else View.GONE
             if (state == Player.STATE_READY) status.visibility = View.GONE
+            syncPause()
         }
 
         override fun onIsPlayingChanged(isPlaying: Boolean) = syncPause()
@@ -337,10 +345,20 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
         syncPause()
     }
 
+    private fun seek(forward: Boolean) {
+        val p = player ?: return
+        if (!p.liveSeek(forward)) a.toast("هذا البث ما يدعم التقديم والتأخير")
+        p.playWhenReady = true
+        syncPause()
+    }
+
     private fun syncPause() {
         val playing = player?.playWhenReady == true
         pauseIcon.setImageResource(if (playing) R.drawable.ic_pause else R.drawable.ic_play)
         pauseBtn.contentDescription = if (playing) "إيقاف مؤقت" else "تشغيل"
+        // البث اللي ما يسمح بالرجوع: أزرار ±10 باهتة
+        val canSeek = player?.isCurrentMediaItemSeekable == true
+        seekBack.alpha = if (canSeek) 1f else 0.4f; seekFwd.alpha = seekBack.alpha
     }
 
     /** ملء الشاشة بدون انقطاع: نفس المشغّل ينتقل للشاشة الكبيرة (ما يعيد الاتصال). */
@@ -435,6 +453,12 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
             return true
         }
         if (keyCode == KeyEvent.KEYCODE_MENU) { current?.let { channelMenu(it) }; return true }
+        // أزرار الميديا بالريموت
+        when (keyCode) {
+            KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_MEDIA_PLAY, KeyEvent.KEYCODE_MEDIA_PAUSE -> { if (player != null) { togglePause(); return true } }
+            KeyEvent.KEYCODE_MEDIA_REWIND -> { if (player != null) { seek(false); return true } }
+            KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> { if (player != null) { seek(true); return true } }
+        }
         return false
     }
 

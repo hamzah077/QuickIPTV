@@ -243,6 +243,30 @@ fun Context.button(label: String, iconRes: Int = 0, primary: Boolean = false, on
         focusScale(1.04f)
     }
 
+/** زر تأخير/تقديم 10 ثواني (سهم دائري وفي وسطه 10) — نفس الشكل بالجوال والتلفزيون. */
+fun Context.seekButton(forward: Boolean, size: Int, normal: Int, onClick: () -> Unit): FrameLayout =
+    FrameLayout(this).apply {
+        background = focusBg(normal = normal, radius = size / 2)
+        isFocusable = true; isClickable = true
+        contentDescription = if (forward) "تقديم 10 ثواني" else "تأخير 10 ثواني"
+        val ic = (size * 0.62f).toInt()
+        addView(icon(if (forward) R.drawable.ic_seek_fwd else R.drawable.ic_seek_back, 0xFFFFFFFF.toInt(), ic).apply {
+            layoutParams = FrameLayout.LayoutParams(dp(ic), dp(ic), Gravity.CENTER)
+        })
+        addView(text("10", if (size >= 44) 9.5f else 8f, 0xFFFFFFFF.toInt(), bold = true).apply {
+            layoutParams = FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER).apply { topMargin = dp(2) }
+            includeFontPadding = false
+        })
+        setOnClickListener { onClick() }
+    }
+
+/** تقديم/تأخير 10 ثواني بالبث المباشر (لو البث يسمح بالرجوع). يرجع false لو ما يسمح. */
+fun androidx.media3.common.Player.liveSeek(forward: Boolean): Boolean {
+    if (!isCurrentMediaItemSeekable) return false
+    if (forward) seekForward() else seekBack()
+    return true
+}
+
 fun Context.iconButton(res: Int, desc: String, size: Int = 44, onClick: () -> Unit): FrameLayout =
     FrameLayout(this).apply {
         layoutParams = ViewGroup.LayoutParams(dp(size), dp(size))

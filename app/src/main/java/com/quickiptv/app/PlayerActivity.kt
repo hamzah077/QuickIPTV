@@ -11,6 +11,7 @@ import android.view.View
 import android.view.WindowManager
 import android.widget.FrameLayout
 import android.widget.LinearLayout
+import android.widget.Toast
 import android.widget.ProgressBar
 import androidx.annotation.OptIn
 import androidx.media3.common.MediaItem
@@ -48,6 +49,8 @@ class PlayerActivity : Activity() {
     private lateinit var topBar: LinearLayout
     private lateinit var pauseBtn: FrameLayout
     private val pauseIcon by lazy { icon(R.drawable.ic_pause, 0xFFFFFFFF.toInt(), 24) }
+    private val liveSeekBack by lazy { seekButton(false, 40, 0x33FFFFFF) { liveSeek(false) } }
+    private val liveSeekFwd by lazy { seekButton(true, 40, 0x33FFFFFF) { liveSeek(true) } }
     private var live = false
     private var returnsToPreview = false      // انفتح من الشاشة الصغيرة وبيرجع لها (لا نطفي المشغّل)
     private var handedOff = false             // المشغّل جاي من المصغّر وبيرجع له لما نرجع
@@ -134,8 +137,25 @@ class PlayerActivity : Activity() {
             addView(text("القنوات", 13.5f, 0xFFFFFFFF.toInt(), bold = true).apply { setPadding(dp(6), 0, 0, 0) })
             setOnClickListener { openPanel() }
         }, lp(WRAP, dp(40)).apply { marginEnd = dp(10) })
-        topBar.addView(pauseBtn, lp(dp(46), dp(40)).apply { marginEnd = dp(10) })
+        if (live) {
+            // نفس نظام أزرار الأفلام: تأخير 10 ثواني، تشغيل/إيقاف، تقديم 10 ثواني
+            val ctrls = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR }
+            ctrls.addView(liveSeekBack, lp(dp(44), dp(40)).apply { marginEnd = dp(6) })
+            ctrls.addView(pauseBtn, lp(dp(46), dp(40)).apply { marginEnd = dp(6) })
+            ctrls.addView(liveSeekFwd, lp(dp(44), dp(40)))
+            topBar.addView(ctrls, lp(WRAP, WRAP).apply { marginEnd = dp(10) })
+        } else topBar.addView(pauseBtn, lp(dp(46), dp(40)).apply { marginEnd = dp(10) })
         topBar.addView(liveBtn)
+        if (live && !isTv()) {
+            // زر التصغير: يرجع للشاشة الصغيرة (البث يكمل بدون انقطاع)
+            topBar.addView(FrameLayout(this).apply {
+                background = StateListFocus.make(this@PlayerActivity, 0x33FFFFFF)
+                isFocusable = true; isClickable = true
+                contentDescription = "تصغير"
+                addView(icon(R.drawable.ic_fullscreen, 0xFFFFFFFF.toInt(), 22), FrameLayout.LayoutParams(dp(22), dp(22), Gravity.CENTER))
+                setOnClickListener { finish() }
+            }, lp(dp(46), dp(40)).apply { marginStart = dp(10) })
+        }
         root.addView(topBar, FrameLayout.LayoutParams(MATCH, WRAP, Gravity.TOP))
 
         if (live) {
@@ -201,6 +221,7 @@ class PlayerActivity : Activity() {
                     loading.visibility = if (state == Player.STATE_BUFFERING) View.VISIBLE else View.GONE
                     if (state == Player.STATE_READY) status.visibility = View.GONE
                     if (state == Player.STATE_ENDED && !live) { saveProgress(); finish() }
+                    syncPause()
                 }
 
                 override fun onIsPlayingChanged(isPlaying: Boolean) { updateLiveBtn(); syncPause() }
@@ -326,6 +347,19 @@ class PlayerActivity : Activity() {
         liveBtn.background = StateListFocus.make(this, if (behind) 0xFF3A404A.toInt() else C.LIVE)
     }
 
+    private fun inTopBar(v: View?): Boolean {
+        var p = v?.parent
+        while (p != null) { if (p === topBar) return true; p = p.parent }
+        return false
+    }
+
+    private fun liveSeek(forward: Boolean) {
+        val p = player ?: return
+        if (!p.liveSeek(forward)) Toast.makeText(this, "هذا البث ما يدعم التقديم والتأخير", Toast.LENGTH_SHORT).show()
+        p.playWhenReady = true
+        syncPause(); updateLiveBtn(); showBar()
+    }
+
     private fun togglePause() {
         val p = player ?: return
         p.playWhenReady = !p.playWhenReady
@@ -335,6 +369,7 @@ class PlayerActivity : Activity() {
     private fun syncPause() {
         if (!::pauseBtn.isInitialized) return
         pauseIcon.setImageResource(if (player?.playWhenReady == true) R.drawable.ic_pause else R.drawable.ic_play)
+        if (live) { val a = if (player?.isCurrentMediaItemSeekable == true) 1f else 0.4f; liveSeekBack.alpha = a; liveSeekFwd.alpha = a }
     }
 
     private fun showBar() {
@@ -409,7 +444,7 @@ class PlayerActivity : Activity() {
                     when {
                         topBar.visibility == View.VISIBLE && liveBtn.isFocused -> { goLive(); showBar() }
                         topBar.visibility == View.VISIBLE && pauseBtn.isFocused -> { togglePause(); showBar() }
-                        topBar.visibility == View.VISIBLE && currentFocus?.parent === topBar -> return false
+                        topBar.visibility == View.VISIBLE && inTopBar(currentFocus) -> return false      // زر بالشريط (±10، القنوات، التصغير): ضغطته العادية
                         else -> openPanel()          // OK = قائمة القنوات (زي أجهزة الرسيفر)
                     }
                     return true
@@ -421,6 +456,8 @@ class PlayerActivity : Activity() {
                 KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_SPACE, KeyEvent.KEYCODE_MEDIA_PAUSE, KeyEvent.KEYCODE_MEDIA_PLAY -> {
                     togglePause(); showBar(); return true
                 }
+                KeyEvent.KEYCODE_MEDIA_REWIND -> { liveSeek(false); return true }
+                KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> { liveSeek(true); return true }
                 KeyEvent.KEYCODE_INFO, KeyEvent.KEYCODE_MENU -> { showBar(); return true }
             }
             if (k in KeyEvent.KEYCODE_0..KeyEvent.KEYCODE_9) { digit(k - KeyEvent.KEYCODE_0); return true }
