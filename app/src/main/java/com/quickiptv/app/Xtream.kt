@@ -419,7 +419,7 @@ class Xtream(val acc: Account, private val cacheDir: File) {
     private val up get() = "${enc(acc.username)}/${enc(acc.password)}"
     private fun enc(s: String) = URLEncoder.encode(s, "UTF-8").replace("+", "%20")
 
-    fun liveUrl(id: String, fmt: String = Store.liveFormat) = "$base/live/$up/$id.$fmt"
+    fun liveUrl(id: String, fmt: String = if (Session.preferTs) "ts" else Store.liveFormat) = "$base/live/$up/$id.$fmt"
     fun vodUrl(id: String, ext: String) = "$base/movie/$up/$id.$ext"
     fun episodeUrl(id: String, ext: String) = "$base/series/$up/$id.$ext"
 }

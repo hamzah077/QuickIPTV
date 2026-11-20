@@ -23,7 +23,11 @@ object Session {
     var playIndex: Int = 0
     var playCategory: String = ""
 
+    /** السيرفر ما يشغّل HLS (اشتغلت TS بعد فشل HLS): القنوات الجاية تبدأ TS على طول بدون انتظار الفشل. */
+    @Volatile var preferTs = false
+
     fun open(ctx: Context, acc: Account) {
+        preferTs = false
         api = Xtream(acc, ctx.cacheDir)
         Store.currentId = acc.id
     }
@@ -39,13 +43,13 @@ fun buildPlayer(ctx: Context, live: Boolean): ExoPlayer {
     val http = DefaultHttpDataSource.Factory()
         .setUserAgent(Xtream.UA)
         .setAllowCrossProtocolRedirects(true)
-        .setConnectTimeoutMs(12000)
-        .setReadTimeoutMs(20000)
+        .setConnectTimeoutMs(7000)          // سيرفر ما يرد = نعرف بسرعة (ونجرب الصيغة الثانية) بدل انتظار طويل
+        .setReadTimeoutMs(15000)
     val load = DefaultLoadControl.Builder()
         .setBufferDurationsMs(
             if (live) 4000 else 15000,      // أقل بفر
             if (live) 20000 else 50000,     // أقصى بفر (ذاكرة محدودة)
-            1000,                            // يبدأ التشغيل بعد ثانية
+            500,                             // يبدأ التشغيل بعد نص ثانية (بدل ثانية) = بداية أسرع
             if (live) 2000 else 3000,        // بعد التقطيع
         )
         .setPrioritizeTimeOverSizeThresholds(true)
@@ -54,11 +58,43 @@ fun buildPlayer(ctx: Context, live: Boolean): ExoPlayer {
         .setEnableDecoderFallback(true)
         .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF)
     return ExoPlayer.Builder(ctx, renderers)
-        .setMediaSourceFactory(DefaultMediaSourceFactory(DefaultDataSource.Factory(ctx, http)))   // http + ملفات محمّلة
+        .setMediaSourceFactory(FastSourceFactory(ctx, http))   // http + ملفات محمّلة، بداية سريعة لبث TS/HLS
         .setLoadControl(load)
         .setSeekBackIncrementMs(10_000)        // تأخير 10 ثواني
         .setSeekForwardIncrementMs(10_000)     // تقديم 10 ثواني
         .build()
+}
+
+/**
+ * مصدر الفيديو مع إعدادات بداية سريعة لبث IPTV:
+ * كثير من القنوات (TS/HLS) ما تعلّم الإطارات المفتاحية بالطريقة القياسية، فالمشغّل ينتظر ثواني لين
+ * يلقى إطار "كامل" قبل ما يعرض. نسمح بالبداية من أول إطار مفتاحي يلقاه = الصورة تطلع أسرع بكثير.
+ */
+@OptIn(UnstableApi::class)
+private class FastSourceFactory(ctx: Context, http: androidx.media3.datasource.DataSource.Factory) :
+    androidx.media3.exoplayer.source.MediaSource.Factory {
+    private val dsf = DefaultDataSource.Factory(ctx, http)
+    private val tsFlags = androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES or
+        androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory.FLAG_DETECT_ACCESS_UNITS
+    private val def = DefaultMediaSourceFactory(dsf, androidx.media3.extractor.DefaultExtractorsFactory().setTsExtractorFlags(tsFlags))
+    private val hls = androidx.media3.exoplayer.hls.HlsMediaSource.Factory(dsf)
+        .setExtractorFactory(androidx.media3.exoplayer.hls.DefaultHlsExtractorFactory(tsFlags, true))
+        .setAllowChunklessPreparation(true)
+
+    override fun setDrmSessionManagerProvider(p: androidx.media3.exoplayer.drm.DrmSessionManagerProvider): androidx.media3.exoplayer.source.MediaSource.Factory {
+        def.setDrmSessionManagerProvider(p); hls.setDrmSessionManagerProvider(p); return this
+    }
+
+    override fun setLoadErrorHandlingPolicy(p: androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy): androidx.media3.exoplayer.source.MediaSource.Factory {
+        def.setLoadErrorHandlingPolicy(p); hls.setLoadErrorHandlingPolicy(p); return this
+    }
+
+    override fun getSupportedTypes(): IntArray = def.supportedTypes
+
+    override fun createMediaSource(item: androidx.media3.common.MediaItem): androidx.media3.exoplayer.source.MediaSource {
+        val u = item.localConfiguration?.uri?.toString().orEmpty().substringBefore('?').lowercase()
+        return if (u.endsWith(".m3u8")) hls.createMediaSource(item) else def.createMediaSource(item)
+    }
 }
 
 /**

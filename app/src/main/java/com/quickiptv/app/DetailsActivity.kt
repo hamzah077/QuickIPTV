@@ -86,6 +86,11 @@ class DetailsActivity : Activity() {
 
         if (Session.api == null) Store.current?.let { Session.open(this, it) }
         val api = Session.api ?: return finish()
+        // "متابعة المشاهدة" من الرئيسية: يشتغل على طول من نفس المكان (عمودي = المشغّل الصغير)
+        val autoKey = intent.getStringExtra("autoKey")
+        intent.getStringExtra("autoUrl")?.let { u ->
+            if (autoKey != null) play(u, autoKey, name, intent.getStringExtra("autoSub") ?: "", Store.resumePoint(autoKey), intent.getStringExtra("autoType") ?: "movie")
+        }
         scope.launch {
             try {
                 if (series) {
@@ -94,6 +99,10 @@ class DetailsActivity : Activity() {
                     kicker = meta(info.optString("releaseDate").take(4), info.optString("genre"), info.optString("rating"))
                     seasons = s
                     season = seriesResume()?.first?.season ?: s.keys.firstOrNull() ?: 1
+                    // شغّال من "متابعة المشاهدة": نجهّز الحلقة السابقة/التالية وتعلّم المقدمة والتتر
+                    if (autoKey != null) s.values.flatten().firstOrNull { "ep:${it.id}" == autoKey }?.let { e ->
+                        SeriesQueue.set(id, name, s, e); season = e.season; updateMiniNav()
+                    }
                 } else {
                     val info = withContext(Dispatchers.IO) { api.vodInfo(id) }
                     plot = info.optString("plot").ifEmpty { info.optString("description") }

@@ -184,7 +184,10 @@ class PlayerActivity : Activity() {
             object : Player.Listener {
                 override fun onPlaybackStateChanged(state: Int) {
                     loading.visibility = if (state == Player.STATE_BUFFERING) View.VISIBLE else View.GONE
-                    if (state == Player.STATE_READY) status.visibility = View.GONE
+                    if (state == Player.STATE_READY) {
+                        status.visibility = View.GONE
+                        if (live && triedTs) Session.preferTs = true     // TS اشتغلت بعد فشل HLS
+                    }
                     if (state == Player.STATE_ENDED && !live) {
                         saveProgress()
                         // مسلسل: الحلقة التالية تشتغل لحالها
@@ -197,7 +200,7 @@ class PlayerActivity : Activity() {
                 override fun onIsPlayingChanged(isPlaying: Boolean) { syncPause() }
 
                 override fun onPlayerError(error: PlaybackException) {
-                    if (live && !triedTs && Store.liveFormat == "m3u8") {
+                    if (live && !triedTs && Store.liveFormat == "m3u8" && !Session.preferTs) {
                         triedTs = true
                         Session.playlist.getOrNull(Session.playIndex)?.let { c -> Session.api?.let { LivePlayer.play(this@PlayerActivity, it.liveUrl(c.id, "ts"), force = true) } }
                         return

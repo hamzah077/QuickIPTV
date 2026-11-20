@@ -274,7 +274,10 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
     private val listener = object : Player.Listener {
         override fun onPlaybackStateChanged(state: Int) {
             loading.visibility = if (state == Player.STATE_BUFFERING) View.VISIBLE else View.GONE
-            if (state == Player.STATE_READY) status.visibility = View.GONE
+            if (state == Player.STATE_READY) {
+                status.visibility = View.GONE
+                if (triedTs) Session.preferTs = true      // TS اشتغلت بعد فشل HLS: القنوات الجاية TS على طول
+            }
             syncPause()
         }
 
@@ -282,7 +285,7 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
 
         override fun onPlayerError(error: PlaybackException) {
             val ch = current ?: return
-            if (!triedTs && Store.liveFormat == "m3u8") {     // HLS ما اشتغل؟ نجرب TS مرة وحدة
+            if (!triedTs && Store.liveFormat == "m3u8" && !Session.preferTs) {     // HLS ما اشتغل؟ نجرب TS مرة وحدة
                 triedTs = true
                 Session.api?.let { playUrl(it.liveUrl(ch.id, "ts"), force = true) }
             } else showStatus("القناة ما اشتغلت (${error.errorCodeName}). جرّب مرة ثانية أو قناة ثانية.")

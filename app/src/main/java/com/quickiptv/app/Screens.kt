@@ -70,6 +70,17 @@ fun MainActivity.openDetails(v: Vod) {
 }
 
 fun MainActivity.playHistory(h: HistoryItem) {
+    // الجوال عمودي: يكمل في المشغّل الصغير عمودي (صفحة الفيلم/المسلسل). أفقي أو تلفزيون: ملء الشاشة أفقي.
+    val portrait = !tv && resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT
+    val detailsId = when (h.type) { "episode" -> h.seriesId; "movie" -> h.key.substringAfter("movie:", ""); else -> "" }
+    if (portrait && detailsId.isNotEmpty() && h.url.isNotEmpty()) {
+        startActivity(Intent(this, DetailsActivity::class.java)
+            .putExtra("id", detailsId).putExtra("series", h.type == "episode")
+            .putExtra("name", h.title).putExtra("icon", h.image)
+            .putExtra("ext", h.url.substringAfterLast('.', "mp4").substringBefore('?'))
+            .putExtra("autoUrl", h.url).putExtra("autoKey", h.key).putExtra("autoSub", h.sub).putExtra("autoType", h.type))
+        return
+    }
     startActivity(Intent(this, PlayerActivity::class.java)
         .putExtra("url", h.url).putExtra("key", h.key).putExtra("title", h.title).putExtra("sub", h.sub)
         .putExtra("image", h.image).putExtra("type", h.type).putExtra("seriesId", h.seriesId)
