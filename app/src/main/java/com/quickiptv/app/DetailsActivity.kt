@@ -156,6 +156,7 @@ class DetailsActivity : Activity() {
         if (keep == null) { topSlot = null; slotBack = null }
         dlBtn = null; epList = null
         if (wide) renderWide() else renderTall()
+        if (!wide) (miniBox ?: handedBox)?.let { b -> if (miniBox != null && b.rotation != 0f && !animating) b.post { animateBack(b) } }
         refreshDl()
         val target: View? = focusTag?.let { root.findViewWithTag<View?>(it) } ?: root.findViewWithTag<View?>("primary")
         target?.post { target.requestFocus() }
@@ -651,7 +652,7 @@ class DetailsActivity : Activity() {
         val bar = PlayerBar(this, live = false, autoHide = true).apply {
             player = p
             fullscreenMode = false
-            onFullscreen = { goFull() }                  // زر التكبير = أفقي ملء الشاشة
+            onFullscreen = { goFull(animate = true) }    // زر التكبير = يكبر ويلف لين يملى الشاشة أفقي
         }
         miniBox = FrameLayout(this).apply {
             setBackgroundColor(0xFF000000.toInt())
@@ -695,7 +696,70 @@ class DetailsActivity : Activity() {
     private var handedBar: PlayerBar? = null
 
     /** تكبير بدون انقطاع: نفس المشغّل (وهو شغّال) ينتقل لملء الشاشة — بدون إيقاف ولا إعادة تحميل. */
-    private fun goFull() {
+    // ---------- حركة التكبير/التصغير (أ): الفيديو يطلع من مكانه، يكبر ويلف ربع لفّة لين يملى الشاشة ----------
+    private var animating = false
+    private var dim: View? = null
+    private val rotationJumpcut get() = android.view.WindowManager.LayoutParams.ROTATION_ANIMATION_JUMPCUT
+
+    private fun setRotationAnim(v: Int) {
+        window.attributes = window.attributes.also { it.rotationAnimation = v }
+    }
+
+    private fun goFull(animate: Boolean = false) {
+        if (animating) return
+        val box = miniBox; val slot = topSlot
+        if (!animate || wide || box == null || slot == null || root.width == 0 || box.width == 0) { doGoFull(); return }
+        animating = true
+        val W = root.width.toFloat(); val H = root.height.toFloat()
+        val bw = box.width.toFloat(); val bh = box.height.toFloat()
+        val bl = IntArray(2); val rl = IntArray(2)
+        box.getLocationInWindow(bl); root.getLocationInWindow(rl)
+        val cy = bl[1] - rl[1] + bh / 2f
+        // بعد اللف: عرض الفيديو = عرض الشاشة الأفقي بالضبط (نفس شكله بملء الشاشة = بدون قفزة)
+        val scale = minOf(H / bw, W / bh)
+        root.clipChildren = false; slot.clipChildren = false
+        val d = View(this).apply { setBackgroundColor(0xFF000000.toInt()); alpha = 0f }
+        root.addView(d, FrameLayout.LayoutParams(MATCH, MATCH)); dim = d
+        slot.bringToFront()
+        miniBar?.visibility = View.INVISIBLE; slotBack?.visibility = View.INVISIBLE
+        d.animate().alpha(1f).setDuration(380).start()
+        box.animate().translationY(H / 2f - cy).rotation(90f).scaleX(scale).scaleY(scale)
+            .setDuration(480).setInterpolator(android.view.animation.PathInterpolator(0.2f, 0.8f, 0.2f, 1f))
+            .withEndAction { animating = false; doGoFull(); overridePendingTransition(0, 0) }
+            .start()
+        setRotationAnim(rotationJumpcut)       // لفّة أندرويد الافتراضية ما تطلع فوق حركتنا
+    }
+
+    /** رجعنا من ملء الشاشة: نفس الحركة بالعكس (يلف ويصغر لمكانه). */
+    private fun animateBack(box: View) {
+        if (animating) return
+        val slot = topSlot ?: run { resetBox(box); return }
+        animating = true
+        root.clipChildren = false; slot.clipChildren = false
+        val d = dim?.takeIf { it.parent === root } ?: View(this).apply { setBackgroundColor(0xFF000000.toInt()); alpha = 1f }.also {
+            root.addView(it, FrameLayout.LayoutParams(MATCH, MATCH)); dim = it
+        }
+        slot.bringToFront()
+        miniBar?.visibility = View.INVISIBLE; slotBack?.visibility = View.INVISIBLE
+        d.animate().alpha(0f).setDuration(380).start()
+        box.animate().translationY(0f).rotation(0f).scaleX(1f).scaleY(1f)
+            .setDuration(440).setInterpolator(android.view.animation.PathInterpolator(0.2f, 0.8f, 0.2f, 1f))
+            .withEndAction {
+                animating = false
+                resetBox(box)
+            }.start()
+    }
+
+    private fun resetBox(box: View) {
+        box.animate().cancel()
+        box.translationY = 0f; box.rotation = 0f; box.scaleX = 1f; box.scaleY = 1f
+        dim?.let { (it.parent as? ViewGroup)?.removeView(it) }; dim = null
+        miniBar?.visibility = View.VISIBLE; slotBack?.visibility = View.VISIBLE
+        root.clipChildren = true; topSlot?.clipChildren = true
+        setRotationAnim(android.view.WindowManager.LayoutParams.ROTATION_ANIMATION_ROTATE)
+    }
+
+    private fun doGoFull() {
         val r = miniReq ?: return
         val p = mini ?: return
         clearBackJob?.cancel()
@@ -744,6 +808,7 @@ class DetailsActivity : Activity() {
     }
 
     private fun stopMini() {
+        miniBox?.let { if (it.rotation != 0f || dim != null) resetBox(it) }
         miniJob?.cancel(); miniJob = null
         miniBar?.player = null
         miniPv?.detachPlayer()
@@ -786,7 +851,11 @@ class DetailsActivity : Activity() {
             }
         }
         // الشاشة الصغيرة اللي كانت تنتظر المشغّل (ما رجع: خلص أو انقفل): نشيلها
-        handedBox?.let { handedPv?.detachPlayer(); handedBar?.player = null; handedBox = null; handedPv = null; handedBar = null }
+        handedBox?.let {
+            handedPv?.detachPlayer(); handedBar?.player = null; handedBox = null; handedPv = null; handedBar = null
+            dim = null; root.clipChildren = true
+            setRotationAnim(android.view.WindowManager.LayoutParams.ROTATION_ANIMATION_ROTATE)
+        }
         if (wasPaused) {
             // رجعنا من المشغّل: نحدّث التقدّم والزر الأساسي
             hist = Store.history().associateBy { it.key }

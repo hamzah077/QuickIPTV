@@ -106,7 +106,11 @@ class PlayerActivity : Activity() {
                 onChannels = { openPanel() }
                 onTap = { if (panelOpen) { closePanel(); true } else false }
             }
-            onVisibility = { v -> topBar.visibility = if (v) View.VISIBLE else View.GONE }
+            if (isTv()) onVisibility = { v -> topBar.visibility = if (v) View.VISIBLE else View.GONE }
+            else titleProvider = {        // الجوال (نمط يوتيوب): العنوان جنب سهم التصغير فوق
+                listOf(title.text.toString(), sub.text.toString().lineSequence().firstOrNull().orEmpty())
+                    .filter { it.isNotBlank() }.joinToString(" · ")
+            }
         }
         root.addView(bar, FrameLayout.LayoutParams(MATCH, MATCH))
 
@@ -123,6 +127,7 @@ class PlayerActivity : Activity() {
         tcol.addView(title); tcol.addView(sub)
         topBar.addView(tcol, lp(0, WRAP, 1f))
         root.addView(topBar, FrameLayout.LayoutParams(MATCH, WRAP, Gravity.TOP))
+        if (!isTv()) topBar.visibility = View.GONE              // الجوال: العنوان داخل شريط الأزرار
 
         if (live) {
             // لوحة القنوات: تطلع من الجنب فوق البث (البث يكمل وراها)
@@ -166,6 +171,8 @@ class PlayerActivity : Activity() {
         // المباشر: نفس مشغّل الشاشة الصغيرة (ما ينقطع ولا يعيد التحميل). الأفلام: مشغّل خاص.
         // فيلم/حلقة جاية من المشغّل المصغّر: ناخذ نفس المشغّل (يكمل بدون توقف)
         handedOff = !live && intent.getBooleanExtra("handoff", false) && VodHandoff.player != null && VodHandoff.key == (intent.getStringExtra("key") ?: "")
+        // جاي من المشغّل الصغير بحركتنا (يكبر ويلف): لا نخلي أندرويد يضيف لفّة/حركة فوقها
+        if (handedOff) window.attributes = window.attributes.also { it.rotationAnimation = android.view.WindowManager.LayoutParams.ROTATION_ANIMATION_JUMPCUT }
         player = (if (live) LivePlayer.get(this) else if (handedOff) VodHandoff.take()!! else buildPlayer(this, false)).also { p ->
             pv.attachSmooth(p)        // الصورة تنتقل أول ما تجهز الشاشة الكبيرة (بدون ومضة سودا)
             p.addListener(listener)
@@ -451,6 +458,11 @@ class PlayerActivity : Activity() {
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         if (hasFocus) immersive()
+    }
+
+    override fun finish() {
+        super.finish()
+        if (handedOff) overridePendingTransition(0, 0)     // الرجوع للمصغّر بحركتنا (يلف ويصغر) بدل حركة أندرويد
     }
 
     override fun onPause() {

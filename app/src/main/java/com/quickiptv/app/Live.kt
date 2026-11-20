@@ -60,7 +60,7 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
     private val loading = ProgressBar(a).apply { indeterminateTintList = ColorStateList.valueOf(C.ACCENT) }
     private val catBtn = a.text("", 13f, C.TEXT2)
     // شريط الأزرار الموحّد تحت الشاشة الصغيرة: تأخير/إيقاف/تقديم يسار، ومباشر + تكبير يمين (ظاهر دايماً)
-    private val bar = PlayerBar(a, live = true, autoHide = false).apply {
+    private val bar = PlayerBar(a, live = true, autoHide = !a.tv).apply {
         onLive = { goLive() }
         onFullscreen = { current?.let { openFull(it) } }
     }

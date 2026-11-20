@@ -47,15 +47,15 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
 
     /** زر التكبير/التصغير (null = مخفي). */
     var onFullscreen: (() -> Unit)? = null
-        set(v) { field = v; btnFull.visibility = if (v != null) View.VISIBLE else View.GONE; fit() }
+        set(v) { field = v; btnFull.visibility = if (v != null) View.VISIBLE else View.GONE; fit(); relayoutYt() }
 
     /** true = الأيقونة "تصغير" (ملء الشاشة). */
     var fullscreenMode = false
-        set(v) { field = v; fullIcon.setImageResource(if (v) R.drawable.ic_minimize else R.drawable.ic_fullscreen); btnFull.contentDescription = if (v) "تصغير" else "تكبير" }
+        set(v) { field = v; fullIcon.setImageResource(if (v) R.drawable.ic_minimize else R.drawable.ic_fullscreen); btnFull.contentDescription = if (v) "تصغير" else "تكبير"; relayoutYt() }
 
     /** زر القنوات (المباشر بملء الشاشة). */
     var onChannels: (() -> Unit)? = null
-        set(v) { field = v; btnChannels.visibility = if (v != null) View.VISIBLE else View.GONE; fit() }
+        set(v) { field = v; btnChannels.visibility = if (v != null) View.VISIBLE else View.GONE; fit(); relayoutYt() }
 
     /** زر "مباشر": الرجوع للحظة الحالية. */
     var onLive: (() -> Unit)? = null
@@ -68,7 +68,13 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
 
     /** الحلقات (null = فيلم/مباشر: أزرار السابقة والتالية مخفية). */
     var nav: EpisodeNav? = null
-        set(v) { field = v; fit(); refresh() }
+        set(v) { val changed = (field == null) != (v == null); field = v; fit(); if (changed) relayoutYt(); refresh() }
+
+    /** العنوان فوق (نمط الجوال). */
+    var titleProvider: (() -> String)? = null
+
+    /** الجوال: نمط يوتيوب (أزرار بالوسط، خط أحمر، ضغطتين = ±10 بقوس). التلفزيون: التصميم (أ). */
+    private val yt = !act.isTv()
 
     private val btnSize = act.dp(40)
     private val playSize = act.dp(48)
@@ -376,7 +382,7 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
         addView(introFloat, LayoutParams(WRAP, act.dp(44), Gravity.BOTTOM or Gravity.END).apply { setMargins(0, 0, act.dp(12), act.dp(16)) })
         addView(bubble, LayoutParams(WRAP, WRAP, Gravity.TOP or Gravity.START))
         addView(tip, LayoutParams(WRAP, WRAP, Gravity.TOP or Gravity.START))
-        arrange(false)
+        if (!yt) arrange(false)
     }
 
     // ---------- الترتيب حسب حجم المشغّل ----------
@@ -385,10 +391,12 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
     override fun onSizeChanged(w: Int, h: Int, ow: Int, oh: Int) {
         super.onSizeChanged(w, h, ow, oh)
         val c = w < act.dp(600)
+        if (yt) for (a in listOf(arcL, arcR)) (a.layoutParams as? LayoutParams)?.let { it.width = (w * 0.4f).toInt(); a.layoutParams = it }
         if (c != compact) post { arrange(c) } else post { fit() }
     }
 
     private fun arrange(c: Boolean) {
+        if (yt) { arrangeYt(c); return }
         compact = c
         for (v in listOf<View>(leftGroup, rightGroup, spacer, progRow)) (v.parent as? android.view.ViewGroup)?.removeView(v)
         btnRow.removeAllViews()
@@ -404,6 +412,7 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
 
     /** لو المساحة ما تكفي: نخفي الأقل أهمية أول (ولا شي يطلع برا حدوده). */
     private fun fit() {
+        if (yt) return
         val w = width - panel.paddingLeft - panel.paddingRight
         if (w <= 0) return
         val hasNav = nav != null
@@ -476,8 +485,17 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
 
     // ---------- اللمس: ضغطة = إظهار/إخفاء، ضغطتين يمين/يسار = ±10 ثواني ----------
     private val gd = GestureDetector(act, object : GestureDetector.SimpleOnGestureListener() {
-        override fun onDown(e: MotionEvent) = true
+        override fun onDown(e: MotionEvent): Boolean {
+            // نمط يوتيوب: ضغطات ورا بعض على نفس الجهة بعد ضغطتين = +10 كل ضغطة
+            if (yt && !live) {
+                val fwd = e.x >= width / 2f
+                val now = System.currentTimeMillis()
+                if (now - lastSeekAt in 120..700 && fwd == lastSeekFwd) { tapSeek(fwd); tapConsumed = true }
+            }
+            return true
+        }
         override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
+            if (tapConsumed) { tapConsumed = false; return true }
             if (onTap?.invoke() == true) return true
             if (nextFloat.visibility == View.VISIBLE && countdownEnd > 0 && !autoCancelled) { autoCancelled = true; refresh() }   // تبي تكمل التتر
             if (autoHide) toggle() else show()
@@ -485,6 +503,7 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
         }
         override fun onDoubleTap(e: MotionEvent): Boolean {
             if (live) { if (onTap?.invoke() != true && autoHide) toggle(); return true }
+            if (yt) { if (System.currentTimeMillis() - lastSeekAt > 120) tapSeek(e.x >= width / 2f); return true }
             seek(e.x >= width / 2f)
             show()
             return true
@@ -524,6 +543,10 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
     override fun onDetachedFromWindow() { removeCallbacks(tick); removeCallbacks(hideRun); super.onDetachedFromWindow() }
 
     fun refresh() {
+        if (yt) {
+            titleProvider?.invoke()?.let { if (ytTitle.text.toString() != it) ytTitle.text = it }
+            edge.visibility = if (!live && !barVisible && duration() > 0) View.VISIBLE else View.GONE
+        }
         val p = player
         val playing = p != null && p.playWhenReady && p.playbackState != Player.STATE_ENDED
         playIcon.setImageResource(if (playing) R.drawable.ic_pause else R.drawable.ic_play)
@@ -542,7 +565,8 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
                     tPos.text = fmtTime(p.currentPosition / 1000)
                 }
                 seekLine.secondary = (p.bufferedPosition * 1000 / d).toInt()
-                tDur.text = fmtTime(d / 1000)
+                tDur.text = if (yt) " / " + fmtTime(d / 1000) else fmtTime(d / 1000)
+                edgeFill.scaleX = (p.currentPosition.toFloat() / d).coerceIn(0f, 1f)
             } else { tPos.text = "--:--"; tDur.text = "--:--" }
             nav?.let { btnPrev.alpha = if (it.hasPrev) 1f else 0.35f; btnNext.alpha = if (it.hasNext) 1f else 0.35f }
             updateIntro(p)
@@ -608,7 +632,8 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
 
     /** الزر المنفصل فوق شريط الأزرار (أو تحت لو الشريط مخفي). */
     private fun placeNext() {
-        val b = if (barVisible && panel.height > 0) panel.height + act.dp(10) else act.dp(16)
+        val b = if (yt) act.dp(if (barVisible) 78 else 16)
+            else if (barVisible && panel.height > 0) panel.height + act.dp(10) else act.dp(16)
         for (v in listOf<View>(nextFloat, introFloat)) {
             val lp = v.layoutParams as? LayoutParams ?: continue
             if (lp.bottomMargin != b) { lp.bottomMargin = b; v.layoutParams = lp }
@@ -671,6 +696,125 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
             }.show()
     }
 
+    // ---------- نمط يوتيوب (الجوال) ----------
+    private val ytTop = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+    private val ytCenter = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
+    private val ytMid = FrameLayout(act)
+    private val ytBottom = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+    private val ytSpacer = View(act)
+    private val ytChevron = roundBtn(R.drawable.ic_chev_down, "تصغير") { onFullscreen?.invoke() }.first
+    private val btnCC = roundBtn(R.drawable.ic_cc, "الترجمة") { tracksDialog(MC.TRACK_TYPE_TEXT) }.first
+    private val ytTitle = act.text("", 14f, 0xFFFFFFFF.toInt(), bold = true).apply {
+        maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
+        textDirection = View.TEXT_DIRECTION_FIRST_STRONG; setPadding(act.dp(6), 0, act.dp(6), 0)
+    }
+    private val timeRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+
+    // الخط الأحمر الرفيع على حافة الفيديو لما الأزرار مخفية
+    private val edgeFill = View(act).apply { setBackgroundColor(0xFFE5484D.toInt()); pivotX = 0f; scaleX = 0f }
+    private val edge = FrameLayout(act).apply {
+        setBackgroundColor(0x4DFFFFFF)
+        addView(edgeFill, LayoutParams(MATCH, MATCH))
+        visibility = View.GONE
+    }
+
+    // قوس الضغطتين (±10 ثواني) على الجهة
+    private fun arc(fwd: Boolean) = act.text("", 12.5f, 0xFFFFFFFF.toInt(), bold = true).apply {
+        gravity = Gravity.CENTER; maxLines = 2
+        background = android.graphics.drawable.GradientDrawable().apply {
+            setColor(0x2EFFFFFF)
+            val r = act.dpf(400f)
+            cornerRadii = if (fwd) floatArrayOf(r, r, 0f, 0f, 0f, 0f, r, r) else floatArrayOf(0f, 0f, r, r, r, r, 0f, 0f)
+        }
+        alpha = 0f; visibility = View.GONE
+    }
+    private val arcL = arc(false)
+    private val arcR = arc(true)
+    private var lastSeekAt = 0L
+    private var lastSeekFwd = true
+    private var seekAccum = 0
+    private var tapConsumed = false
+    private val arcHide = Runnable {
+        for (a in listOf(arcL, arcR)) a.animate().alpha(0f).setDuration(200).withEndAction { a.visibility = View.GONE }.start()
+        seekAccum = 0
+    }
+
+    /** ضغطة تقديم/تأخير (نمط يوتيوب): قوس على الجهة + مجموع الثواني. */
+    private fun tapSeek(fwd: Boolean) {
+        val p = player ?: return
+        if (fwd != lastSeekFwd) seekAccum = 0
+        lastSeekFwd = fwd; lastSeekAt = System.currentTimeMillis()
+        if (fwd) p.seekForward() else p.seekBack()
+        seekAccum += 10
+        val a = if (fwd) arcR else arcL
+        (if (fwd) arcL else arcR).visibility = View.GONE
+        a.text = (if (fwd) "▶▶\n" else "◀◀\n") + "$seekAccum ثانية"
+        a.visibility = View.VISIBLE; a.animate().cancel(); a.alpha = 1f
+        removeCallbacks(arcHide); postDelayed(arcHide, 700)
+        refresh()
+    }
+
+    private fun ytCircle(): android.graphics.drawable.StateListDrawable {
+        fun g(c: Int, stroke: Int) = android.graphics.drawable.GradientDrawable().apply {
+            shape = android.graphics.drawable.GradientDrawable.OVAL; setColor(c)
+            if (stroke != 0) setStroke(act.dp(1) + act.dp(1) / 2, stroke)
+        }
+        return android.graphics.drawable.StateListDrawable().apply {
+            addState(intArrayOf(android.R.attr.state_focused), g(0x80000000.toInt(), 0x8CD6DAE2.toInt()))
+            addState(intArrayOf(android.R.attr.state_pressed), g(0x99000000.toInt(), 0))
+            addState(intArrayOf(), g(0x59000000, 0))
+        }
+    }
+
+    private fun relayoutYt() { if (yt && compact != null) post { arrange(compact ?: true) } }
+
+    private fun arrangeYt(c: Boolean) {
+        compact = c
+        val parts = listOf<View>(btnBack, btnPlay, btnFwd, btnPrev, btnNext, btnSettings, btnFull, btnLive, btnChannels, btnCC,
+            ytChevron, ytTitle, ytSpacer, tPos, tDur, seekLine, progRow, ytTop, ytMid, ytCenter, ytBottom, timeRow, leftGroup, rightGroup, btnRow, spacer)
+        for (v in parts) (v.parent as? android.view.ViewGroup)?.removeView(v)
+        for (g in listOf(ytTop, ytCenter, ytBottom, timeRow, leftGroup, rightGroup, btnRow)) g.removeAllViews()
+        panel.removeAllViews()
+        panel.background = android.graphics.drawable.ColorDrawable(0x5C000000)        // يغمّق الفيديو شوي وقت الأزرار
+        val h = act.dp(if (c) 6 else 16)
+        panel.setPadding(h, act.dp(if (c) 2 else 8), h, 0)
+        (panel.layoutParams as? LayoutParams)?.let { it.height = MATCH; it.gravity = Gravity.FILL; panel.layoutParams = it }
+        val s = act.dp(40)
+        // فوق: سهم التصغير (ملء الشاشة) + العنوان … الترجمة + الإعدادات
+        if (fullscreenMode && onFullscreen != null) ytTop.addView(ytChevron, LinearLayout.LayoutParams(s, s))
+        ytTop.addView(ytTitle, LinearLayout.LayoutParams(0, WRAP, 1f))
+        if (!live) {
+            ytTop.addView(btnCC, LinearLayout.LayoutParams(s, s).apply { marginStart = act.dp(4) })
+            ytTop.addView(btnSettings, LinearLayout.LayoutParams(s, s).apply { marginStart = act.dp(4) })
+        }
+        // الوسط: السابقة · تشغيل كبير · التالية (فيلم/مباشر: تأخير · تشغيل · تقديم)
+        val (l, r) = if (!live && nav != null) btnPrev to btnNext else btnBack to btnFwd
+        val side = act.dp(if (c) 44 else 52); val big = act.dp(if (c) 60 else 72); val gp = act.dp(if (c) 30 else 52)
+        for (b in listOf(l, btnPlay, r)) { b.background = ytCircle(); b.visibility = View.VISIBLE; b.alpha = 1f }
+        ytCenter.addView(l, LinearLayout.LayoutParams(side, side).apply { marginEnd = gp })
+        ytCenter.addView(btnPlay, LinearLayout.LayoutParams(big, big).apply { marginEnd = gp })
+        ytCenter.addView(r, LinearLayout.LayoutParams(side, side))
+        ytMid.addView(ytCenter, LayoutParams(WRAP, WRAP, Gravity.CENTER))
+        // تحت: الوقت (أو مباشر) … القنوات + تكبير/تصغير
+        if (live) ytBottom.addView(btnLive, LinearLayout.LayoutParams(WRAP, s))
+        else {
+            timeRow.addView(tPos); timeRow.addView(tDur)
+            ytBottom.addView(timeRow, LinearLayout.LayoutParams(WRAP, WRAP).apply { marginStart = act.dp(6) })
+        }
+        ytBottom.addView(ytSpacer, LinearLayout.LayoutParams(0, 1, 1f))
+        if (onChannels != null) ytBottom.addView(btnChannels, LinearLayout.LayoutParams(WRAP, s).apply { marginEnd = act.dp(4) })
+        if (onFullscreen != null) ytBottom.addView(btnFull, LinearLayout.LayoutParams(s, s))
+        panel.addView(ytTop, LinearLayout.LayoutParams(MATCH, WRAP))
+        panel.addView(ytMid, LinearLayout.LayoutParams(MATCH, 0, 1f))
+        panel.addView(ytBottom, LinearLayout.LayoutParams(MATCH, WRAP))
+        // الخط الأحمر: على حافة الفيديو بالمشغّل الصغير، ومرفوع شوي بملء الشاشة
+        if (!live) panel.addView(seekLine, LinearLayout.LayoutParams(MATCH, act.dp(22)).apply {
+            bottomMargin = if (c) -act.dp(9) else act.dp(8)
+            if (c) { marginStart = -h - act.dp(8); marginEnd = -h - act.dp(8) }
+        })
+        placeNext()
+    }
+
     // ---------- الريموت على شريط التقدّم: يمين/يسار = ±10 ثواني (ضغط مطوّل أسرع) ----------
     private var pendingSeek = -1L
     private val commitSeek = Runnable {
@@ -681,6 +825,14 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
     }
 
     init {
+        if (yt) {
+            // (هنا لأن عناصر نمط يوتيوب تنعرّف بعد أول init)
+            addView(arcL, 0, LayoutParams(0, MATCH, Gravity.START))
+            addView(arcR, 0, LayoutParams(0, MATCH, Gravity.END))
+            addView(edge, LayoutParams(MATCH, act.dp(3), Gravity.BOTTOM))
+            panel.clipChildren = false
+            arrange(true)
+        }
         seekLine.setOnKeyListener { _, code, ev ->
             if (code != android.view.KeyEvent.KEYCODE_DPAD_LEFT && code != android.view.KeyEvent.KEYCODE_DPAD_RIGHT) return@setOnKeyListener false
             if (ev.action != android.view.KeyEvent.ACTION_DOWN) return@setOnKeyListener true
