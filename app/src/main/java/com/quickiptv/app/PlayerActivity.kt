@@ -11,7 +11,6 @@ import android.view.View
 import android.view.WindowManager
 import android.widget.FrameLayout
 import android.widget.LinearLayout
-import android.widget.Toast
 import android.widget.ProgressBar
 import androidx.annotation.OptIn
 import androidx.media3.common.MediaItem
@@ -42,15 +41,11 @@ class PlayerActivity : Activity() {
     private lateinit var pv: PlayerView
     private lateinit var title: android.widget.TextView
     private lateinit var sub: android.widget.TextView
-    private lateinit var liveBtn: android.widget.TextView
     private lateinit var status: android.widget.TextView
     private lateinit var loading: ProgressBar
     private lateinit var numBadge: android.widget.TextView
     private lateinit var topBar: LinearLayout
-    private lateinit var pauseBtn: FrameLayout
-    private val pauseIcon by lazy { icon(R.drawable.ic_pause, 0xFFFFFFFF.toInt(), 24) }
-    private val liveSeekBack by lazy { seekButton(false, 40, 0x33FFFFFF) { liveSeek(false) } }
-    private val liveSeekFwd by lazy { seekButton(true, 40, 0x33FFFFFF) { liveSeek(true) } }
+    private lateinit var bar: PlayerBar                 // شريط الأزرار الموحّد (تحت)
     private var live = false
     private var returnsToPreview = false      // انفتح من الشاشة الصغيرة وبيرجع لها (لا نطفي المشغّل)
     private var handedOff = false             // المشغّل جاي من المصغّر وبيرجع له لما نرجع
@@ -59,7 +54,8 @@ class PlayerActivity : Activity() {
     private var triedTs = false
     private var digits = ""
     private var digitJob: Job? = null
-    private var hideJob: Job? = null
+    private var curUrl = ""                    // رابط الفيلم/الحلقة الحالي
+    private var subBase = ""                   // سطر الموسم/الحلقة (بدون "من التحميلات")
 
     // قائمة القنوات الجانبية (المشغّل التفاعلي للمباشر)
     private lateinit var panel: LinearLayout
@@ -93,15 +89,28 @@ class PlayerActivity : Activity() {
         pv = PlayerView(this).apply {
             resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
             setShutterBackgroundColor(0xFF000000.toInt())
-            controllerShowTimeoutMs = 4000
-            setShowNextButton(false); setShowPreviousButton(false)
-            layoutDirection = View.LAYOUT_DIRECTION_LTR          // شريط التقدّم من اليسار لليمين
-            useController = !live                                  // المباشر: شريطنا الخاص
-            // الأفلام والمسلسلات: الأزرار كاملة (تشغيل/إيقاف، ±10 ثواني، الإعدادات) + زر التصغير بالجوال
-            if (!live) vodControls(if (isTv()) null else ({ VodHandoff.toPortrait = true; finish() }))   // زر التصغير = رجوع عمودي
+            useController = false                                  // أزرارنا الموحّدة (PlayerBar) بدل أزرار المكتبة
         }
         root.addView(pv, FrameLayout.LayoutParams(MATCH, MATCH))
 
+        // شريط الأزرار تحت: يمين/يسار مقسّم (نفس الشكل بالجوال والتلفزيون)
+        bar = PlayerBar(this, live = live, autoHide = true).apply {
+            fullscreenMode = true
+            if (!isTv()) onFullscreen = {
+                // زر التصغير: الأفلام ترجع للمشغّل الصغير عمودي، والمباشر للشاشة الصغيرة (بدون انقطاع)
+                if (!live) VodHandoff.toPortrait = true
+                finish()
+            }
+            if (live) {
+                onLive = { goLive() }
+                onChannels = { openPanel() }
+                onTap = { if (panelOpen) { closePanel(); true } else false }
+            }
+            onVisibility = { v -> topBar.visibility = if (v) View.VISIBLE else View.GONE }
+        }
+        root.addView(bar, FrameLayout.LayoutParams(MATCH, MATCH))
+
+        // فوق: الاسم والبرنامج/الحلقة بس (بدون أزرار)
         topBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -113,49 +122,6 @@ class PlayerActivity : Activity() {
         sub = text("", 13f, 0xFFC9CDD3.toInt(), lines = 2)
         tcol.addView(title); tcol.addView(sub)
         topBar.addView(tcol, lp(0, WRAP, 1f))
-        liveBtn = text("●  مباشر", 13f, 0xFFFFFFFF.toInt(), bold = true).apply {
-            setPadding(dp(14), dp(8), dp(14), dp(8))
-            isFocusable = true; isClickable = true
-            setOnClickListener { goLive() }
-            visibility = if (live) View.VISIBLE else View.GONE
-        }
-        pauseBtn = FrameLayout(this).apply {
-            background = StateListFocus.make(this@PlayerActivity, 0x33FFFFFF)
-            isFocusable = true; isClickable = true
-            contentDescription = "إيقاف مؤقت"
-            addView(pauseIcon, FrameLayout.LayoutParams(dp(24), dp(24), Gravity.CENTER))
-            setOnClickListener { togglePause() }
-            visibility = if (live) View.VISIBLE else View.GONE
-        }
-        if (live) topBar.addView(LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER
-            background = StateListFocus.make(this@PlayerActivity, 0x33FFFFFF)
-            isFocusable = true; isClickable = true
-            contentDescription = "القنوات"
-            setPadding(dp(12), 0, dp(14), 0)
-            addView(icon(R.drawable.ic_list, 0xFFFFFFFF.toInt(), 20))
-            addView(text("القنوات", 13.5f, 0xFFFFFFFF.toInt(), bold = true).apply { setPadding(dp(6), 0, 0, 0) })
-            setOnClickListener { openPanel() }
-        }, lp(WRAP, dp(40)).apply { marginEnd = dp(10) })
-        if (live) {
-            // نفس نظام أزرار الأفلام: تأخير 10 ثواني، تشغيل/إيقاف، تقديم 10 ثواني
-            val ctrls = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR }
-            ctrls.addView(liveSeekBack, lp(dp(44), dp(40)).apply { marginEnd = dp(6) })
-            ctrls.addView(pauseBtn, lp(dp(46), dp(40)).apply { marginEnd = dp(6) })
-            ctrls.addView(liveSeekFwd, lp(dp(44), dp(40)))
-            topBar.addView(ctrls, lp(WRAP, WRAP).apply { marginEnd = dp(10) })
-        } else topBar.addView(pauseBtn, lp(dp(46), dp(40)).apply { marginEnd = dp(10) })
-        topBar.addView(liveBtn)
-        if (live && !isTv()) {
-            // زر التصغير: يرجع للشاشة الصغيرة (البث يكمل بدون انقطاع)
-            topBar.addView(FrameLayout(this).apply {
-                background = StateListFocus.make(this@PlayerActivity, 0x33FFFFFF)
-                isFocusable = true; isClickable = true
-                contentDescription = "تصغير"
-                addView(icon(R.drawable.ic_fullscreen, 0xFFFFFFFF.toInt(), 22), FrameLayout.LayoutParams(dp(22), dp(22), Gravity.CENTER))
-                setOnClickListener { finish() }
-            }, lp(dp(46), dp(40)).apply { marginStart = dp(10) })
-        }
         root.addView(topBar, FrameLayout.LayoutParams(MATCH, WRAP, Gravity.TOP))
 
         if (live) {
@@ -195,7 +161,6 @@ class PlayerActivity : Activity() {
             background = rounded(C.ACCENT, dpf(12f)); setPadding(dp(20), dp(6), dp(20), dp(6)); visibility = View.GONE
         }
         root.addView(numBadge, FrameLayout.LayoutParams(WRAP, WRAP, Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply { topMargin = dp(80) })
-        root.setOnClickListener { if (panelOpen) closePanel() else showBar() }
         setContentView(root)
 
         // المباشر: نفس مشغّل الشاشة الصغيرة (ما ينقطع ولا يعيد التحميل). الأفلام: مشغّل خاص.
@@ -204,12 +169,12 @@ class PlayerActivity : Activity() {
         player = (if (live) LivePlayer.get(this) else if (handedOff) VodHandoff.take()!! else buildPlayer(this, false)).also { p ->
             pv.player = p
             p.addListener(listener)
+            bar.player = p
         }
         if (live) playChannel(Session.playIndex, reuse = true) else playVod()
-        scope.launch {           // حفظ المكان + حالة زر المباشر
+        scope.launch {           // حفظ المكان كل 10 ثواني
             while (isActive) {
                 delay(1000)
-                updateLiveBtn()
                 if (!live && (player?.currentPosition ?: 0) / 1000 % 10 == 0L) saveProgress()
             }
         }
@@ -220,11 +185,16 @@ class PlayerActivity : Activity() {
                 override fun onPlaybackStateChanged(state: Int) {
                     loading.visibility = if (state == Player.STATE_BUFFERING) View.VISIBLE else View.GONE
                     if (state == Player.STATE_READY) status.visibility = View.GONE
-                    if (state == Player.STATE_ENDED && !live) { saveProgress(); finish() }
+                    if (state == Player.STATE_ENDED && !live) {
+                        saveProgress()
+                        // مسلسل: الحلقة التالية تشتغل لحالها
+                        val i = SeriesQueue.indexOfKey(key)
+                        if (i >= 0 && i < SeriesQueue.list.size - 1) pv.post { switchEpisode(i + 1) } else finish()
+                    }
                     syncPause()
                 }
 
-                override fun onIsPlayingChanged(isPlaying: Boolean) { updateLiveBtn(); syncPause() }
+                override fun onIsPlayingChanged(isPlaying: Boolean) { syncPause() }
 
                 override fun onPlayerError(error: PlaybackException) {
                     if (live && !triedTs && Store.liveFormat == "m3u8") {
@@ -299,8 +269,7 @@ class PlayerActivity : Activity() {
         panel.animate().cancel()
         panel.translationX = panel.layoutParams.width.toFloat()          // تطلع من الجنب
         panel.animate().translationX(0f).setDuration(200).setInterpolator(android.view.animation.DecelerateInterpolator()).withLayer().start()
-        topBar.visibility = View.GONE
-        hideJob?.cancel()
+        bar.hide()
         val i = Session.playIndex
         (panelList.layoutManager as androidx.recyclerview.widget.LinearLayoutManager).scrollToPositionWithOffset(i, dp(120))
         panelList.post { (panelList.findViewHolderForAdapterPosition(i)?.itemView ?: panelList).requestFocus() }
@@ -327,37 +296,9 @@ class PlayerActivity : Activity() {
         val p = player ?: return
         if (p.isCurrentMediaItemLive && p.isCurrentMediaItemSeekable) p.seekToDefaultPosition()
         else playChannel(Session.playIndex)             // بث بدون إمكانية رجوع (TS): نعيد الاتصال على الحالي
+        p.playWhenReady = true
         syncPause()
-        p.playWhenReady = true
         showBar()
-    }
-
-    private fun behindLive(): Boolean {
-        val p = player ?: return false
-        if (!p.isPlaying) return true
-        if (!p.isCurrentMediaItemLive) return false
-        val off = p.currentLiveOffset
-        return off != androidx.media3.common.C.TIME_UNSET && off > 20_000
-    }
-
-    private fun updateLiveBtn() {
-        if (!live) return
-        val behind = behindLive()
-        liveBtn.text = if (behind) "↻  العودة للمباشر" else "●  مباشر"
-        liveBtn.background = StateListFocus.make(this, if (behind) 0xFF3A404A.toInt() else C.LIVE)
-    }
-
-    private fun inTopBar(v: View?): Boolean {
-        var p = v?.parent
-        while (p != null) { if (p === topBar) return true; p = p.parent }
-        return false
-    }
-
-    private fun liveSeek(forward: Boolean) {
-        val p = player ?: return
-        if (!p.liveSeek(forward)) Toast.makeText(this, "هذا البث ما يدعم التقديم والتأخير", Toast.LENGTH_SHORT).show()
-        p.playWhenReady = true
-        syncPause(); updateLiveBtn(); showBar()
     }
 
     private fun togglePause() {
@@ -366,25 +307,20 @@ class PlayerActivity : Activity() {
         syncPause()
     }
 
-    private fun syncPause() {
-        if (!::pauseBtn.isInitialized) return
-        pauseIcon.setImageResource(if (player?.playWhenReady == true) R.drawable.ic_pause else R.drawable.ic_play)
-        if (live) { val a = if (player?.isCurrentMediaItemSeekable == true) 1f else 0.4f; liveSeekBack.alpha = a; liveSeekFwd.alpha = a }
-    }
+    private fun syncPause() { if (::bar.isInitialized) bar.refresh() }
 
-    private fun showBar() {
-        topBar.visibility = View.VISIBLE
-        hideJob?.cancel()
-        hideJob = scope.launch { delay(5000); if (live && player?.playWhenReady != false && !panelOpen) topBar.visibility = View.GONE }
-    }
+    private fun showBar() { bar.show() }
 
     // ---------- الأفلام والحلقات ----------
     private fun playVod() {
         key = intent.getStringExtra("key") ?: ""
         type = intent.getStringExtra("type") ?: "movie"
         title.text = intent.getStringExtra("title") ?: ""
-        sub.text = intent.getStringExtra("sub") ?: ""
+        subBase = intent.getStringExtra("sub") ?: ""
+        sub.text = subBase
         val url = intent.getStringExtra("url") ?: return finish()
+        curUrl = url
+        bar.nav = SeriesQueue.nav(key) { i -> switchEpisode(i) }
         Store.addHistory(HistoryItem(key, type, title.text.toString(), sub.text.toString(),
             intent.getStringExtra("image") ?: "", url, intent.getStringExtra("seriesId") ?: ""))
         val local = Downloads.localFile(key)
@@ -404,7 +340,27 @@ class PlayerActivity : Activity() {
             if (Downloads.mustYieldFor()) { loading.visibility = View.VISIBLE; scope.launch { delay(1200); start(url, startAt) } }
             else start(url, startAt)
         }
-        pv.setControllerVisibilityListener(PlayerView.ControllerVisibilityListener { v -> topBar.visibility = v })
+    }
+
+    /** الحلقة السابقة/التالية بنفس المشغّل (بدون ما نطلع من ملء الشاشة). */
+    private fun switchEpisode(i: Int) {
+        val r = SeriesQueue.req(i) ?: return
+        val p = player ?: return
+        saveProgress()
+        SeriesQueue.index = i
+        key = r.key; type = r.type; curUrl = r.url; subBase = r.sub
+        title.text = r.title; sub.text = r.sub
+        Store.addHistory(HistoryItem(r.key, r.type, r.title, r.sub, intent.getStringExtra("image") ?: "", r.url, intent.getStringExtra("seriesId") ?: ""))
+        val local = Downloads.localFile(r.key)
+        if (local != null) sub.text = listOf(r.sub, "من التحميلات").joinToString(" · ")
+        else if (!watchingVod) { Downloads.setWatching("vod", true); watchingVod = true }
+        status.visibility = View.GONE
+        loading.visibility = View.VISIBLE
+        p.setMediaItem(MediaItem.fromUri(local?.let { android.net.Uri.fromFile(it).toString() } ?: r.url), Store.resumePoint(r.key) * 1000)
+        p.prepare()
+        p.playWhenReady = true
+        bar.nav = SeriesQueue.nav(key) { j -> switchEpisode(j) }
+        bar.show()
     }
 
     private var watchingVod = false
@@ -436,36 +392,35 @@ class PlayerActivity : Activity() {
             if (k == KeyEvent.KEYCODE_DPAD_LEFT || k == KeyEvent.KEYCODE_DPAD_RIGHT) { closePanel(); return true }
             return false
         }
+        when (k) {
+            KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
+                if (bar.hasFocusInside()) { bar.poke(); return false }      // زر بالشريط (أو "الحلقة التالية"): ضغطته العادية
+                if (live) openPanel() else bar.focusPlay()                   // المباشر: OK = قائمة القنوات (زي الرسيفر)
+                return true
+            }
+            KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                if (bar.barVisible && bar.hasFocusInside()) { bar.poke(); return false }   // تنقّل بين الأزرار
+                if (live) { bar.focusPlay(); return true }
+                // الأفلام والأزرار مخفية: يمين = تقديم 10 ثواني، يسار = تأخير 10 ثواني
+                bar.seek(k == KeyEvent.KEYCODE_DPAD_RIGHT)
+                bar.show()
+                return true
+            }
+            KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_SPACE, KeyEvent.KEYCODE_MEDIA_PAUSE, KeyEvent.KEYCODE_MEDIA_PLAY -> {
+                togglePause(); showBar(); return true
+            }
+            KeyEvent.KEYCODE_MEDIA_REWIND -> { bar.seek(false); showBar(); return true }
+            KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> { bar.seek(true); showBar(); return true }
+            KeyEvent.KEYCODE_INFO, KeyEvent.KEYCODE_MENU -> { showBar(); return true }
+        }
         if (live) {
             when (k) {
                 KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_CHANNEL_UP -> { playChannel(Session.playIndex - 1); return true }
                 KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_CHANNEL_DOWN -> { playChannel(Session.playIndex + 1); return true }
-                KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
-                    when {
-                        topBar.visibility == View.VISIBLE && liveBtn.isFocused -> { goLive(); showBar() }
-                        topBar.visibility == View.VISIBLE && pauseBtn.isFocused -> { togglePause(); showBar() }
-                        topBar.visibility == View.VISIBLE && inTopBar(currentFocus) -> return false      // زر بالشريط (±10، القنوات، التصغير): ضغطته العادية
-                        else -> openPanel()          // OK = قائمة القنوات (زي أجهزة الرسيفر)
-                    }
-                    return true
-                }
-                KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT -> {
-                    if (topBar.visibility != View.VISIBLE) { showBar(); pauseBtn.requestFocus(); return true }
-                    showBar()
-                }
-                KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_SPACE, KeyEvent.KEYCODE_MEDIA_PAUSE, KeyEvent.KEYCODE_MEDIA_PLAY -> {
-                    togglePause(); showBar(); return true
-                }
-                KeyEvent.KEYCODE_MEDIA_REWIND -> { liveSeek(false); return true }
-                KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> { liveSeek(true); return true }
-                KeyEvent.KEYCODE_INFO, KeyEvent.KEYCODE_MENU -> { showBar(); return true }
             }
             if (k in KeyEvent.KEYCODE_0..KeyEvent.KEYCODE_9) { digit(k - KeyEvent.KEYCODE_0); return true }
-        } else if ((k == KeyEvent.KEYCODE_DPAD_LEFT || k == KeyEvent.KEYCODE_DPAD_RIGHT) && !pv.isControllerFullyVisible) {
-            // الريموت والأزرار مخفية: يمين = تقديم 10 ثواني، يسار = تأخير 10 ثواني
-            player?.let { if (k == KeyEvent.KEYCODE_DPAD_LEFT) it.seekBack() else it.seekForward() }
-            pv.showController()
-            return true
+        } else if ((k == KeyEvent.KEYCODE_DPAD_UP || k == KeyEvent.KEYCODE_DPAD_DOWN) && !bar.barVisible) {
+            bar.focusPlay(); return true
         }
         return false
     }
@@ -494,6 +449,7 @@ class PlayerActivity : Activity() {
             val p = player!!
             p.removeListener(listener)
             VodHandoff.player = p; VodHandoff.key = key
+            VodHandoff.req = VodReq(curUrl, key, title.text.toString(), subBase, type)
             VodHandoff.watching = watchingVod; watchingVod = false
             player = null
             return

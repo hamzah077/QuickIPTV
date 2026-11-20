@@ -116,42 +116,13 @@ object LivePlayer {
 }
 
 /**
- * أزرار مشغّل الفيلم/المسلسل (عمودي وأفقي): تشغيل/إيقاف، تأخير وتقديم 10 ثواني، شريط التقدّم والوقت،
- * الإعدادات (سرعة التشغيل، الصوت، الترجمة) وزر التكبير/التصغير.
- * باللمس: ضغطتين يمين الشاشة = تقديم 10 ثواني، ضغطتين يسار = تأخير 10 ثواني، ضغطة وحدة = إظهار/إخفاء الأزرار.
- */
-@OptIn(UnstableApi::class)
-fun androidx.media3.ui.PlayerView.vodControls(onFullscreen: (() -> Unit)?) {
-    layoutDirection = android.view.View.LAYOUT_DIRECTION_LTR      // شريط التقدّم والأزرار من اليسار لليمين
-    useController = true
-    setShowRewindButton(true)
-    setShowFastForwardButton(true)
-    setShowSubtitleButton(true)
-    setShowNextButton(false); setShowPreviousButton(false)
-    setShowShuffleButton(false)
-    controllerShowTimeoutMs = 3500
-    if (onFullscreen != null) setFullscreenButtonClickListener { onFullscreen() }
-    val pv = this
-    val gd = android.view.GestureDetector(context, object : android.view.GestureDetector.SimpleOnGestureListener() {
-        override fun onDown(e: android.view.MotionEvent) = true
-        override fun onSingleTapConfirmed(e: android.view.MotionEvent): Boolean { pv.performClick(); return true }
-        override fun onDoubleTap(e: android.view.MotionEvent): Boolean {
-            val p = pv.player ?: return false
-            if (e.x < pv.width / 2f) p.seekBack() else p.seekForward()
-            pv.showController()
-            return true
-        }
-    })
-    setOnTouchListener { _, e -> gd.onTouchEvent(e) }
-}
-
-/**
  * تسليم مشغّل الفيلم/الحلقة بين المشغّل المصغّر (صفحة التفاصيل) وملء الشاشة:
  * نفس المشغّل ينتقل بدون ما يوقف أو يعيد التحميل.
  */
 object VodHandoff {
     var player: ExoPlayer? = null
     var key: String = ""
+    var req: VodReq? = null       // الحلقة/الفيلم الحالي (ممكن تغيّر بملء الشاشة: الحلقة التالية)
     var watching = false          // ماسك اتصال مشاهدة من حد الاشتراك
     var ownerAlive = false        // صفحة التفاصيل اللي بترجع لها لسا موجودة
     var toPortrait = false        // ضغط زر التصغير: نرجع عمودي ونكمل في المصغّر حتى لو الجوال بيده أفقي
@@ -161,7 +132,49 @@ object VodHandoff {
     fun drop() {
         player?.release(); player = null
         if (watching) { Downloads.setWatching("vod", false); watching = false }
-        key = ""
+        key = ""; req = null
+    }
+}
+
+/** طلب تشغيل فيلم/حلقة. */
+data class VodReq(val url: String, val key: String, val title: String, val sub: String, val type: String)
+
+/**
+ * حلقات المسلسل الحالي بالترتيب (كل المواسم ورا بعض) — للحلقة السابقة/التالية
+ * في المشغّل الصغير وملء الشاشة.
+ */
+object SeriesQueue {
+    var seriesId = ""
+    var name = ""
+    var list: List<Episode> = emptyList()
+    var index = -1
+
+    fun set(id: String, title: String, seasons: Map<Int, List<Episode>>, current: Episode) {
+        seriesId = id; name = title
+        list = seasons.toSortedMap().values.flatMap { eps -> eps.sortedBy { it.num } }
+        index = list.indexOfFirst { it.id == current.id }
+    }
+
+    fun indexOfKey(key: String) = list.indexOfFirst { "ep:${it.id}" == key }
+
+    fun req(i: Int): VodReq? {
+        val e = list.getOrNull(i) ?: return null
+        val api = Session.api ?: return null
+        return VodReq(api.episodeUrl(e.id, e.ext), "ep:${e.id}", name, "الموسم ${e.season} · الحلقة ${e.num}", "episode")
+    }
+
+    /** نفس المسلسل وهذي الحلقة منه؟ */
+    fun has(key: String) = key.startsWith("ep:") && indexOfKey(key) >= 0
+
+    fun nav(key: String, open: (Int) -> Unit): EpisodeNav? {
+        if (!has(key)) return null
+        return object : EpisodeNav {
+            private val i get() = indexOfKey(key)
+            override val hasPrev get() = i > 0
+            override val hasNext get() = i in 0 until list.size - 1
+            override fun prev() { if (hasPrev) open(i - 1) }
+            override fun next() { if (hasNext) open(i + 1) }
+        }
     }
 }
 

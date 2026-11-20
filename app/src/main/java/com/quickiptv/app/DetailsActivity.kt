@@ -139,7 +139,7 @@ class DetailsActivity : Activity() {
         val heroH = resources.displayMetrics.widthPixels * 9 / 16 + inT
         val head = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val hero = FrameLayout(this)
-        val mv = miniView
+        val mv = miniBox
         if (mv != null) {
             // المشغّل المصغّر مكان الصورة (تحت شريط الساعة)
             hero.setBackgroundColor(0xFF000000.toInt())
@@ -431,6 +431,7 @@ class DetailsActivity : Activity() {
     }
 
     private fun playEpisode(e: Episode) {
+        SeriesQueue.set(id, name, seasons, e)          // للحلقة السابقة/التالية
         val key = "ep:${e.id}"
         play(Session.api!!.episodeUrl(e.id, e.ext), key, name, "الموسم ${e.season} · الحلقة ${e.num}", Store.resumePoint(key), "episode")
     }
@@ -508,28 +509,29 @@ class DetailsActivity : Activity() {
 
     /** الجوال عمودي: يشتغل فوق مكان الصورة. أفقي/تلفزيون: ملء الشاشة مباشرة. */
     private fun play(url: String, key: String, title: String, sub: String, start: Long, type: String) {
-        val r = PlayReq(url, key, title, sub, type)
+        val r = VodReq(url, key, title, sub, type)
         clearBackJob?.cancel()
         if (wide) { stopMini(); backToMini = r; openFull(r, start) } else startMini(r, start)
     }
 
-    private fun openFull(r: PlayReq, start: Long) {
+    private fun openFull(r: VodReq, start: Long, handoff: Boolean = false) {
         startActivity(Intent(this, PlayerActivity::class.java)
             .putExtra("url", r.url).putExtra("key", r.key).putExtra("title", r.title).putExtra("sub", r.sub)
             .putExtra("image", icon).putExtra("type", r.type).putExtra("seriesId", if (series) id else "")
-            .putExtra("start", start))
+            .putExtra("start", start).putExtra("handoff", handoff))
     }
 
     // ---------- المشغّل المصغّر (الجوال عمودي) ----------
-    private data class PlayReq(val url: String, val key: String, val title: String, val sub: String, val type: String)
     private var mini: ExoPlayer? = null
-    private var miniView: PlayerView? = null
-    private var miniReq: PlayReq? = null
+    private var miniBox: FrameLayout? = null        // الصورة + شريط الأزرار
+    private var miniPv: PlayerView? = null
+    private var miniBar: PlayerBar? = null
+    private var miniReq: VodReq? = null
     private var miniJob: Job? = null
     private var miniWatching = false
-    private var backToMini: PlayReq? = null      // رجعنا من ملء الشاشة: نكمل في المصغّر
+    private var backToMini: VodReq? = null      // رجعنا من ملء الشاشة: نكمل في المصغّر
 
-    private fun startMini(r: PlayReq, start: Long) {
+    private fun startMini(r: VodReq, start: Long) {
         stopMini()
         Store.addHistory(HistoryItem(r.key, r.type, r.title, r.sub, icon, r.url, if (series) id else ""))
         val local = Downloads.localFile(r.key)
@@ -541,7 +543,7 @@ class DetailsActivity : Activity() {
         p.setMediaItem(MediaItem.fromUri(src), start * 1000)
         p.playWhenReady = true
         mini = p; miniReq = r
-        miniView = makeMiniView(p)
+        makeMini(p)
         miniJob = scope.launch {
             // المشاهدة تاخذ اتصال من حد الاشتراك؛ لو فيه تحميل ماسكه ننتظر لحظة لين يتنازل
             if (local == null && Downloads.mustYieldFor()) delay(1200)
@@ -554,20 +556,67 @@ class DetailsActivity : Activity() {
 
     private val miniListener = object : Player.Listener {
         override fun onPlaybackStateChanged(state: Int) {
-            if (state == Player.STATE_ENDED) root.post { saveMini(); stopMini(); unlockPortrait(); hist = Store.history().associateBy { it.key }; render() }
+            if (state != Player.STATE_ENDED) return
+            root.post {
+                saveMini()
+                // مسلسل: الحلقة التالية تشتغل لحالها
+                val i = miniReq?.let { SeriesQueue.indexOfKey(it.key) } ?: -1
+                if (i >= 0 && i < SeriesQueue.list.size - 1) { switchMini(i + 1); return@post }
+                stopMini(); unlockPortrait(); hist = Store.history().associateBy { it.key }; render()
+            }
         }
     }
 
     private suspend fun saveLoop() { while (true) { delay(10_000); saveMini() } }
 
-    private fun makeMiniView(p: ExoPlayer) = PlayerView(this).apply {
-        player = p
-        setShutterBackgroundColor(0xFF000000.toInt())
-        setBackgroundColor(0xFF000000.toInt())
-        vodControls { goFull() }                           // زر التكبير = أفقي ملء الشاشة
+    /** يبني الشاشة الصغيرة: الصورة + شريط الأزرار الموحّد. */
+    private fun makeMini(p: ExoPlayer) {
+        val pv = PlayerView(this).apply {
+            useController = false                         // أزرارنا (PlayerBar) بدل أزرار المكتبة
+            player = p
+            setShutterBackgroundColor(0xFF000000.toInt())
+            setBackgroundColor(0xFF000000.toInt())
+        }
+        val bar = PlayerBar(this, live = false, autoHide = true).apply {
+            player = p
+            fullscreenMode = false
+            onFullscreen = { goFull() }                  // زر التكبير = أفقي ملء الشاشة
+        }
+        miniBox = FrameLayout(this).apply {
+            setBackgroundColor(0xFF000000.toInt())
+            addView(pv, FrameLayout.LayoutParams(MATCH, MATCH))
+            addView(bar, FrameLayout.LayoutParams(MATCH, MATCH))
+        }
+        miniPv = pv; miniBar = bar
+        updateMiniNav()
     }
 
-    private var handedView: PlayerView? = null      // الشاشة الصغيرة وقت ما المشغّل بملء الشاشة
+    private fun updateMiniNav() {
+        miniBar?.nav = miniReq?.let { r -> SeriesQueue.nav(r.key) { i -> switchMini(i) } }
+    }
+
+    /** الحلقة السابقة/التالية بنفس المشغّل الصغير. */
+    private fun switchMini(i: Int) {
+        val r = SeriesQueue.req(i) ?: return
+        val p = mini ?: return
+        saveMini()
+        SeriesQueue.index = i
+        Store.addHistory(HistoryItem(r.key, r.type, r.title, r.sub, icon, r.url, if (series) id else ""))
+        val local = Downloads.localFile(r.key)
+        if (local == null && !miniWatching) { Downloads.setWatching("vod", true); miniWatching = true }
+        p.setMediaItem(MediaItem.fromUri(local?.let { android.net.Uri.fromFile(it).toString() } ?: r.url), Store.resumePoint(r.key) * 1000)
+        p.prepare()
+        p.playWhenReady = true
+        miniReq = r
+        updateMiniNav()
+        SeriesQueue.list.getOrNull(i)?.let { season = it.season }
+        hist = Store.history().associateBy { it.key }
+        render()
+    }
+
+    private var handedBox: FrameLayout? = null      // الشاشة الصغيرة وقت ما المشغّل بملء الشاشة
+    private var handedPv: PlayerView? = null
+    private var handedBar: PlayerBar? = null
 
     /** تكبير بدون انقطاع: نفس المشغّل (وهو شغّال) ينتقل لملء الشاشة — بدون إيقاف ولا إعادة تحميل. */
     private fun goFull() {
@@ -579,29 +628,33 @@ class DetailsActivity : Activity() {
         miniJob?.cancel(); miniJob = null
         p.removeListener(miniListener)
         VodHandoff.drop()                   // (أي بقايا قديمة)
-        VodHandoff.player = p; VodHandoff.key = r.key
+        VodHandoff.player = p; VodHandoff.key = r.key; VodHandoff.req = r
         VodHandoff.watching = miniWatching; miniWatching = false
         VodHandoff.ownerAlive = true
-        handedView = miniView                // الصورة تبقى هنا لين ملء الشاشة ياخذها (بدون فراغ)
-        mini = null; miniReq = null; miniView = null
+        // الصورة تبقى هنا لين ملء الشاشة ياخذها (بدون فراغ)
+        handedBox = miniBox; handedPv = miniPv; handedBar = miniBar
+        miniBar?.player = null
+        mini = null; miniReq = null; miniBox = null; miniPv = null; miniBar = null
         backToMini = r
-        startActivity(Intent(this, PlayerActivity::class.java)
-            .putExtra("url", r.url).putExtra("key", r.key).putExtra("title", r.title).putExtra("sub", r.sub)
-            .putExtra("image", icon).putExtra("type", r.type).putExtra("seriesId", if (series) id else "")
-            .putExtra("start", p.currentPosition / 1000).putExtra("handoff", true))
+        openFull(r, p.currentPosition / 1000, handoff = true)
     }
 
-    /** رجعنا من ملء الشاشة: ناخذ نفس المشغّل ونكمل في الصغير بدون أي توقف. */
-    private fun adoptBack(r: PlayReq): Boolean {
-        if (VodHandoff.key != r.key) return false
+    /** رجعنا من ملء الشاشة: ناخذ نفس المشغّل ونكمل في الصغير بدون أي توقف (حتى لو تغيّرت الحلقة هناك). */
+    private fun adoptBack(r: VodReq): Boolean {
+        val req = VodHandoff.req ?: r
         val p = VodHandoff.take() ?: return false
-        mini = p; miniReq = r
-        miniWatching = VodHandoff.watching; VodHandoff.watching = false; VodHandoff.key = ""
+        mini = p; miniReq = req
+        miniWatching = VodHandoff.watching; VodHandoff.watching = false; VodHandoff.key = ""; VodHandoff.req = null
         p.addListener(miniListener)
-        val v = handedView ?: makeMiniView(p)
-        handedView = null
-        v.player = null; v.player = p       // نرجّع الصورة للشاشة الصغيرة
-        miniView = v
+        val box = handedBox; val pv = handedPv; val bar = handedBar
+        handedBox = null; handedPv = null; handedBar = null
+        if (box != null && pv != null && bar != null) {
+            pv.player = null; pv.player = p       // نرجّع الصورة للشاشة الصغيرة
+            bar.player = p
+            miniBox = box; miniPv = pv; miniBar = bar
+            updateMiniNav()
+        } else makeMini(p)
+        SeriesQueue.indexOfKey(req.key).takeIf { it >= 0 }?.let { SeriesQueue.index = it; season = SeriesQueue.list[it].season }
         p.playWhenReady = true
         miniJob = scope.launch { saveLoop() }
         return true
@@ -616,8 +669,10 @@ class DetailsActivity : Activity() {
 
     private fun stopMini() {
         miniJob?.cancel(); miniJob = null
-        miniView?.let { v -> v.player = null; (v.parent as? ViewGroup)?.removeView(v) }
-        miniView = null
+        miniBar?.player = null
+        miniPv?.player = null
+        miniBox?.let { (it.parent as? ViewGroup)?.removeView(it) }
+        miniBox = null; miniPv = null; miniBar = null
         mini?.release(); mini = null; miniReq = null
         if (miniWatching) { Downloads.setWatching("vod", false); miniWatching = false }
     }
@@ -660,7 +715,7 @@ class DetailsActivity : Activity() {
         }
         if (!wide) resumeMini()
         // ما قدرنا ناخذ المشغّل (الصفحة ما تعرضه): لا نخليه شغّال بالخلفية
-        if (VodHandoff.player != null && mini == null && backToMini?.key != VodHandoff.key) VodHandoff.drop()
+        if (VodHandoff.player != null && mini == null && backToMini == null) VodHandoff.drop()
         // الرجوع ينتظر لفّ الشاشة 3 ثواني بس؛ بعدها ننساه (عشان ما يشتغل لحاله بعدين)
         clearBackJob?.cancel()
         if (backToMini != null) clearBackJob = scope.launch {
@@ -691,8 +746,9 @@ class DetailsActivity : Activity() {
     override fun onDestroy() {
         saveMini(); stopMini()
         VodHandoff.ownerAlive = false
-        if (VodHandoff.player != null && VodHandoff.key == backToMini?.key) VodHandoff.drop()
-        handedView?.player = null; handedView = null
+        if (VodHandoff.player != null && backToMini != null) VodHandoff.drop()
+        handedPv?.player = null; handedBar?.player = null
+        handedBox = null; handedPv = null; handedBar = null
         scope.cancel()
         super.onDestroy()
     }

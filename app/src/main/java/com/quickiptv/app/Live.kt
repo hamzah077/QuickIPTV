@@ -58,19 +58,12 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
     private val epgBox = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL }
     private val status = a.text("", 14f, C.MUTED, lines = 3).apply { gravity = Gravity.CENTER }
     private val loading = ProgressBar(a).apply { indeterminateTintList = ColorStateList.valueOf(C.ACCENT) }
-    private val liveBtn = a.text("●  مباشر", 12f, C.TEXT, bold = true)
     private val catBtn = a.text("", 13f, C.TEXT2)
-    private val pauseIcon = a.icon(R.drawable.ic_pause, 0xFFFFFFFF.toInt(), 22).apply {
-        layoutParams = FrameLayout.LayoutParams(a.dp(22), a.dp(22), Gravity.CENTER)
+    // شريط الأزرار الموحّد تحت الشاشة الصغيرة: تأخير/إيقاف/تقديم يسار، ومباشر + تكبير يمين (ظاهر دايماً)
+    private val bar = PlayerBar(a, live = true, autoHide = false).apply {
+        onLive = { goLive() }
+        onFullscreen = { current?.let { openFull(it) } }
     }
-    private val pauseBtn = FrameLayout(a).apply {
-        background = a.focusBg(normal = 0x99000000.toInt(), radius = 20)
-        isFocusable = true; isClickable = true
-        contentDescription = "إيقاف مؤقت"
-        addView(pauseIcon)
-    }
-    private val seekBack = a.seekButton(false, 40, 0x99000000.toInt()) { seek(false) }
-    private val seekFwd = a.seekButton(true, 40, 0x99000000.toInt()) { seek(true) }
     private val searchBox = a.field("ابحث في هذا التصنيف…").apply {
         layoutDirection = View.LAYOUT_DIRECTION_RTL; textDirection = View.TEXT_DIRECTION_FIRST_STRONG
         addTextChangedListener(object : android.text.TextWatcher {
@@ -118,22 +111,7 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
 
         val screen = FrameLayout(a).apply { background = rounded(0xFF000000.toInt(), a.dpf(12f)); clipToOutline = true }
         screen.addView(playerView, FrameLayout.LayoutParams(MATCH, MATCH))
-        liveBtn.apply {
-            background = a.focusBg(normal = C.LIVE, radius = 8, selected = C.LIVE)
-            setPadding(a.dp(10), a.dp(5), a.dp(10), a.dp(5))
-            isFocusable = true; isClickable = true
-            setOnClickListener { goLive() }
-        }
-        screen.addView(liveBtn, FrameLayout.LayoutParams(WRAP, WRAP, Gravity.TOP or Gravity.START).apply { setMargins(a.dp(10), a.dp(10), 0, 0) })
-        val full = a.iconButton(R.drawable.ic_fullscreen, "ملء الشاشة", 40) { current?.let { openFull(it) } }
-        pauseBtn.setOnClickListener { togglePause() }
-        // أزرار التحكم: تأخير 10 ثواني، تشغيل/إيقاف، تقديم 10 ثواني (نفس نظام مشغّل الأفلام)
-        val ctrls = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_LTR }
-        ctrls.addView(seekBack, lp(a.dp(40), a.dp(40)).apply { marginEnd = a.dp(6) })
-        ctrls.addView(pauseBtn, lp(a.dp(40), a.dp(40)).apply { marginEnd = a.dp(6) })
-        ctrls.addView(seekFwd, lp(a.dp(40), a.dp(40)))
-        screen.addView(ctrls, FrameLayout.LayoutParams(WRAP, WRAP, Gravity.BOTTOM or Gravity.START).apply { setMargins(a.dp(6), 0, 0, a.dp(6)) })
-        screen.addView(full, FrameLayout.LayoutParams(a.dp(40), a.dp(40), Gravity.BOTTOM or Gravity.END).apply { setMargins(0, 0, a.dp(6), a.dp(6)) })
+        screen.addView(bar, FrameLayout.LayoutParams(MATCH, MATCH))
         screen.addView(loading, FrameLayout.LayoutParams(a.dp(36), a.dp(36), Gravity.CENTER))
         screen.addView(status, FrameLayout.LayoutParams(MATCH, WRAP, Gravity.CENTER).apply { setMargins(a.dp(16), 0, a.dp(16), 0) })
 
@@ -319,6 +297,7 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
             player = p
             p.addListener(listener)
             playerView.player = p
+            bar.player = p
         }
         return p
     }
@@ -337,6 +316,7 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
         if (p.isCurrentMediaItemLive && p.isCurrentMediaItemSeekable) p.seekToDefaultPosition()
         else current?.let { c -> Session.api?.let { playUrl(it.liveUrl(c.id), force = true) } }
         p.playWhenReady = true
+        syncPause()
     }
 
     private fun togglePause() {
@@ -345,27 +325,16 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
         syncPause()
     }
 
-    private fun seek(forward: Boolean) {
-        val p = player ?: return
-        if (!p.liveSeek(forward)) a.toast("هذا البث ما يدعم التقديم والتأخير")
-        p.playWhenReady = true
-        syncPause()
-    }
+    private fun seek(forward: Boolean) { if (player != null) bar.seek(forward) }
 
-    private fun syncPause() {
-        val playing = player?.playWhenReady == true
-        pauseIcon.setImageResource(if (playing) R.drawable.ic_pause else R.drawable.ic_play)
-        pauseBtn.contentDescription = if (playing) "إيقاف مؤقت" else "تشغيل"
-        // البث اللي ما يسمح بالرجوع: أزرار ±10 باهتة
-        val canSeek = player?.isCurrentMediaItemSeekable == true
-        seekBack.alpha = if (canSeek) 1f else 0.4f; seekFwd.alpha = seekBack.alpha
-    }
+    private fun syncPause() = bar.refresh()
 
     /** ملء الشاشة بدون انقطاع: نفس المشغّل ينتقل للشاشة الكبيرة (ما يعيد الاتصال). */
     private fun openFull(ch: Channel) {
         LivePlayer.keepForPreview = true
         player?.removeListener(listener)      // الصورة تبقى هنا لين الشاشة الكبيرة تاخذها (بدون فراغ = بدون بافرينج)
         player = null
+        bar.player = null
         val i = visible.indexOfFirst { it.id == ch.id }.coerceAtLeast(0)
         PlayerActivity.playLive(a, visible.ifEmpty { listOf(ch) }, i, catAdapter.items.firstOrNull { it.id == catId }?.name ?: "")
     }
@@ -374,6 +343,7 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
         player?.removeListener(listener)
         player = null
         playerView.player = null
+        bar.player = null
     }
 
     private fun showStatus(t: String) {
@@ -383,7 +353,7 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
     }
 
     private fun stopPlayer() {
-        if (LivePlayer.keepForPreview) { player?.removeListener(listener); player = null; return }   // انتقل لملء الشاشة: لا نفك الصورة
+        if (LivePlayer.keepForPreview) { player?.removeListener(listener); player = null; bar.player = null; return }   // انتقل لملء الشاشة: لا نفك الصورة
         detach()
         LivePlayer.release()
     }
