@@ -57,13 +57,18 @@ struct Poster: View {
     var contentMode: ContentMode = .fill
 
     var body: some View {
-        AsyncImage(url: URL(string: url), transaction: Transaction(animation: .easeOut(duration: 0.2))) { phase in
-            switch phase {
-            case .success(let img): img.resizable().aspectRatio(contentMode: contentMode)
-            default: Rectangle().fill(Theme.surface)
+        // Color.clear ياخذ مقاس الإطار بالضبط، والصورة تتعبّى داخله وتنقص — ما تطلع برا حدودها
+        Color.clear
+            .overlay {
+                AsyncImage(url: URL(string: url), transaction: Transaction(animation: .easeOut(duration: 0.2))) { phase in
+                    switch phase {
+                    case .success(let img): img.resizable().aspectRatio(contentMode: contentMode)
+                    default: Rectangle().fill(Theme.surface)
+                    }
+                }
             }
-        }
-        .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
     }
 }
 
