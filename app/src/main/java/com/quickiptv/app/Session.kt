@@ -194,6 +194,32 @@ object LivePlayer {
 }
 
 /**
+ * يربط المشغّل بالشاشة أول ما يكون سطح العرض جاهز. لو ربطناه قبل، المشغّل يترك الشاشة القديمة
+ * ويعرض على "لا شي" لحظة = ومضة سودا. كذا الصورة تبقى على القديمة لين الجديدة تجهز.
+ */
+fun androidx.media3.ui.PlayerView.attachSmooth(p: androidx.media3.common.Player) {
+    val sv = videoSurfaceView as? android.view.SurfaceView
+    if (sv == null || sv.holder.surface?.isValid == true) { setTag(R.id.pending_player, null); player = p; return }
+    val pv = this
+    setTag(R.id.pending_player, p)
+    sv.holder.addCallback(object : android.view.SurfaceHolder.Callback {
+        override fun surfaceCreated(h: android.view.SurfaceHolder) {
+            h.removeCallback(this)
+            // لسا مطلوب (ما طلعنا من الشاشة قبل ما تجهز)؟
+            if (pv.getTag(R.id.pending_player) === p) { pv.setTag(R.id.pending_player, null); if (pv.player == null) pv.player = p }
+        }
+        override fun surfaceChanged(h: android.view.SurfaceHolder, f: Int, w: Int, ht: Int) {}
+        override fun surfaceDestroyed(h: android.view.SurfaceHolder) {}
+    })
+}
+
+/** يفك المشغّل عن الشاشة (ويلغي أي ربط ينتظر). */
+fun androidx.media3.ui.PlayerView.detachPlayer() {
+    setTag(R.id.pending_player, null)
+    player = null
+}
+
+/**
  * تسليم مشغّل الفيلم/الحلقة بين المشغّل المصغّر (صفحة التفاصيل) وملء الشاشة:
  * نفس المشغّل ينتقل بدون ما يوقف أو يعيد التحميل.
  */

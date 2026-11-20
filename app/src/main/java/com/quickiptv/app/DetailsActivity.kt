@@ -103,6 +103,8 @@ class DetailsActivity : Activity() {
                     if (autoKey != null) s.values.flatten().firstOrNull { "ep:${it.id}" == autoKey }?.let { e ->
                         SeriesQueue.set(id, name, s, e); season = e.season; updateMiniNav()
                     }
+                    // "متابعة المشاهدة" وخلّصت الحلقة: نشغّل التالية على طول
+                    if (intent.getBooleanExtra("autoResume", false) && mini == null) seriesResume()?.first?.let { e -> season = e.season; pendingPlay = e }
                 } else {
                     val info = withContext(Dispatchers.IO) { api.vodInfo(id) }
                     plot = info.optString("plot").ifEmpty { info.optString("description") }
@@ -113,7 +115,16 @@ class DetailsActivity : Activity() {
             }
             loaded = true
             render()
+            pendingPlay?.let { pendingPlay = null; playEpisode(it) }
         }
+    }
+
+    private var pendingPlay: Episode? = null
+
+    /** تبديل حلقة: نحدّث القائمة بس (التحديد والتقدّم) بدل ما نبني الصفحة كلها من جديد. */
+    private fun refreshEpisodes(oldSeason: Int) {
+        if (wide || epList == null || season != oldSeason) { render(); return }
+        episodes.refreshRows()
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
@@ -132,10 +143,17 @@ class DetailsActivity : Activity() {
     // البناء
     private val wide get() = isTv() || landscape
 
+    // عمودي ووقت التشغيل: مكان ثابت فوق للمشغّل. ما ينبني من جديد ولا ينتقل (= بدون ومضة سودا)،
+    // والقائمة تحته بس اللي تتحرك.
+    private var topSlot: FrameLayout? = null
+    private var slotBack: View? = null
+
     private fun render() {
         val focusTag = root.findFocus()?.tag as? String
         epList?.adapter = null          // القائمة القديمة تفك ارتباطها قبل ما نبني الجديدة
-        root.removeAllViews()
+        val keep = if (!wide && (miniBox ?: handedBox) != null) topSlot else null
+        for (i in root.childCount - 1 downTo 0) if (root.getChildAt(i) !== keep) root.removeViewAt(i)
+        if (keep == null) { topSlot = null; slotBack = null }
         dlBtn = null; epList = null
         if (wide) renderWide() else renderTall()
         refreshDl()
@@ -147,19 +165,33 @@ class DetailsActivity : Activity() {
     private fun renderTall() {
         val heroH = resources.displayMetrics.widthPixels * 9 / 16 + inT
         val head = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        val hero = FrameLayout(this)
-        val mv = miniBox
+        val mv = miniBox ?: handedBox
+        val fixed = mv != null
         if (mv != null) {
-            // المشغّل المصغّر مكان الصورة (تحت شريط الساعة)
-            hero.setBackgroundColor(0xFF000000.toInt())
-            (mv.parent as? ViewGroup)?.removeView(mv)
-            hero.addView(mv, FrameLayout.LayoutParams(MATCH, MATCH).apply { topMargin = inT })
-        } else hero.addView(ImageView(this).apply {
-            scaleType = ImageView.ScaleType.CENTER_CROP; alpha = 0.5f
-            load(icon.ifEmpty { null }) { size(900, 520) }
-        }, FrameLayout.LayoutParams(MATCH, MATCH))
-        hero.addView(backButton(), FrameLayout.LayoutParams(dp(44), dp(44), Gravity.TOP or Gravity.START).apply { topMargin = inT + dp(6); marginStart = dp(10) + maxOf(inL, inR) })
-        head.addView(hero, lp(MATCH, heroH))
+            // المشغّل ثابت فوق (خارج القائمة): نفس المكان، ما نفكّه ولا ننقله
+            val slot = topSlot ?: FrameLayout(this).also { s ->
+                s.setBackgroundColor(0xFF000000.toInt())
+                topSlot = s
+                root.addView(s, 0, FrameLayout.LayoutParams(MATCH, heroH))
+            }
+            (slot.layoutParams as FrameLayout.LayoutParams).let { if (it.height != heroH) { it.height = heroH; slot.layoutParams = it } }
+            if (mv.parent !== slot) {
+                (mv.parent as? ViewGroup)?.removeView(mv)
+                slot.addView(mv, 0, FrameLayout.LayoutParams(MATCH, MATCH).apply { topMargin = inT })
+            } else (mv.layoutParams as FrameLayout.LayoutParams).let { if (it.topMargin != inT) { it.topMargin = inT; mv.layoutParams = it } }
+            if (slotBack?.parent !== slot) {
+                slotBack = backButton()
+                slot.addView(slotBack, FrameLayout.LayoutParams(dp(44), dp(44), Gravity.TOP or Gravity.START).apply { topMargin = inT + dp(6); marginStart = dp(10) + maxOf(inL, inR) })
+            }
+        } else {
+            val hero = FrameLayout(this)
+            hero.addView(ImageView(this).apply {
+                scaleType = ImageView.ScaleType.CENTER_CROP; alpha = 0.5f
+                load(icon.ifEmpty { null }) { size(900, 520) }
+            }, FrameLayout.LayoutParams(MATCH, MATCH))
+            hero.addView(backButton(), FrameLayout.LayoutParams(dp(44), dp(44), Gravity.TOP or Gravity.START).apply { topMargin = inT + dp(6); marginStart = dp(10) + maxOf(inL, inR) })
+            head.addView(hero, lp(MATCH, heroH))
+        }
         val body = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(16) + inL, dp(14), dp(16) + inR, dp(6)) }
         info(body, big = true)
         head.addView(body)
@@ -170,12 +202,13 @@ class DetailsActivity : Activity() {
             if (chips != null) head.addView(chips, lp(MATCH, WRAP).apply { setMargins(dp(16), dp(10), dp(16), dp(4)) })
             if (!loaded) head.addView(loadingView())
             episodes.header = head
-            root.addView(episodeList().apply { setPadding(inL, 0, inR, inB + dp(20)) }, FrameLayout.LayoutParams(MATCH, MATCH))
+            root.addView(episodeList().apply { setPadding(inL, 0, inR, inB + dp(20)) },
+                FrameLayout.LayoutParams(MATCH, MATCH).apply { if (fixed) topMargin = heroH })
         } else {
             val sc = ScrollView(this).apply { isFillViewport = true; isVerticalScrollBarEnabled = false }
             head.setPadding(0, 0, 0, inB + dp(24))
             sc.addView(head)
-            root.addView(sc, FrameLayout.LayoutParams(MATCH, MATCH))
+            root.addView(sc, FrameLayout.LayoutParams(MATCH, MATCH).apply { if (fixed) topMargin = heroH })
         }
     }
 
@@ -389,14 +422,15 @@ class DetailsActivity : Activity() {
             val current = playing || (miniReq == null && key == lastEpKey)
             holder.row.tag = "ep:${e.id}"
             // الحلقة الحالية (شغّالة الحين أو آخر وحدة شفتها): خلفية مميّزة وإطار
+            // الحلقة الحالية: رمادي خفيف بنفس ستايل التطبيق (والتحديد بالريموت يبقى تحديد التطبيق العادي)
             holder.row.background = if (current) android.graphics.drawable.LayerDrawable(arrayOf(
-                focusBg(radius = 10, normal = 0x2E7AA2FF),
-                rounded(0x00000000, dpf(10f), 0xB37AA2FF.toInt(), dp(2))))
+                focusBg(radius = 10, normal = 0x1FFFFFFF),
+                rounded(0x00000000, dpf(10f), 0x38FFFFFF, dp(1))))
             else focusBg(radius = 10, normal = if (partial) C.ACCENT_SOFT else 0)
             holder.row.setOnClickListener { playEpisode(e) }
             holder.thumb.load((e.image.ifEmpty { icon }).ifEmpty { null }) { size(320, 180) }
             holder.title.text = "${e.num}. ${e.title.ifEmpty { "الحلقة ${e.num}" }}"
-            holder.title.setTextColor(if (current) 0xFFB9CCFF.toInt() else C.TEXT)
+            holder.title.setTextColor(C.TEXT)
             holder.sub.text = when {
                 playing -> "▶ تعرض الآن"
                 current && partial -> "آخر حلقة شاهدتها · متبقي ${fmtTime(h!!.dur - h.pos)}"
@@ -406,7 +440,7 @@ class DetailsActivity : Activity() {
                 else -> e.duration
             }
             holder.sub.visibility = if (holder.sub.text.isEmpty()) View.GONE else View.VISIBLE
-            holder.sub.setTextColor(if (current) 0xFFB9CCFF.toInt() else if (watched) 0xFF6FCF97.toInt() else C.MUTED)
+            holder.sub.setTextColor(if (current) 0xFFC9CDD3.toInt() else if (watched) 0xFF6FCF97.toInt() else C.MUTED)
             holder.bar.visibility = if (partial) View.VISIBLE else View.GONE
             if (partial) holder.bar.progress = (h!!.pos * 1000 / h.dur).toInt()
             holder.dl.tag = "epdl:${e.id}"
@@ -415,6 +449,7 @@ class DetailsActivity : Activity() {
         }
 
         fun refreshDl() { if (items.isNotEmpty()) notifyItemRangeChanged(off, items.size, "dl") }
+        fun refreshRows() { if (items.isNotEmpty()) notifyItemRangeChanged(off, items.size) }
     }
 
     private fun bindDl(box: FrameLayout, e: Episode) {
@@ -441,7 +476,8 @@ class DetailsActivity : Activity() {
     private fun seriesResume(): Pair<Episode, String>? {
         if (seasons.isEmpty()) return null
         val all = seasons.values.flatten()
-        val last = Store.history().firstOrNull { it.type == "episode" && it.seriesId == id } ?: return all.firstOrNull()?.let { it to "تشغيل · م${it.season} ح${it.num}" }
+        // وين وصلت (أبعد حلقة شاهدتها فعلاً) — مو آخر حلقة فتحتها بالغلط
+        val last = Store.seriesFrontier(id) ?: return all.firstOrNull()?.let { it to "تشغيل · م${it.season} ح${it.num}" }
         val i = all.indexOfFirst { "ep:${it.id}" == last.key }
         if (i < 0) return all.firstOrNull()?.let { it to "تشغيل · م${it.season} ح${it.num}" }
         val done = last.dur > 0 && last.pos >= last.dur - 60
@@ -562,7 +598,9 @@ class DetailsActivity : Activity() {
             miniReq = r
             updateMiniNav()
             hist = Store.history().associateBy { it.key }
-            render()
+            val old = season
+            SeriesQueue.list.getOrNull(SeriesQueue.indexOfKey(r.key))?.let { season = it.season }
+            if (series) refreshEpisodes(old)
             return
         }
         stopMini()
@@ -642,14 +680,15 @@ class DetailsActivity : Activity() {
         p.playWhenReady = true
         miniReq = r
         updateMiniNav()
+        val old = season
         SeriesQueue.list.getOrNull(i)?.let { season = it.season }
         hist = Store.history().associateBy { it.key }
-        render()
+        refreshEpisodes(old)
     }
 
     /** آخر حلقة شفتها من هالمسلسل (للتحديد لما ما فيه شي شغّال). */
     private val lastEpKey: String?
-        get() = Store.history().firstOrNull { it.type == "episode" && it.seriesId == id }?.key
+        get() = Store.seriesFrontier(id)?.key
 
     private var handedBox: FrameLayout? = null      // الشاشة الصغيرة وقت ما المشغّل بملء الشاشة
     private var handedPv: PlayerView? = null
@@ -686,7 +725,7 @@ class DetailsActivity : Activity() {
         val box = handedBox; val pv = handedPv; val bar = handedBar
         handedBox = null; handedPv = null; handedBar = null
         if (box != null && pv != null && bar != null) {
-            pv.player = null; pv.player = p       // نرجّع الصورة للشاشة الصغيرة
+            pv.detachPlayer(); pv.attachSmooth(p)  // نرجّع الصورة للشاشة الصغيرة (أول ما تجهز = بدون ومضة)
             bar.player = p
             miniBox = box; miniPv = pv; miniBar = bar
             updateMiniNav()
@@ -707,7 +746,7 @@ class DetailsActivity : Activity() {
     private fun stopMini() {
         miniJob?.cancel(); miniJob = null
         miniBar?.player = null
-        miniPv?.player = null
+        miniPv?.detachPlayer()
         miniBox?.let { (it.parent as? ViewGroup)?.removeView(it) }
         miniBox = null; miniPv = null; miniBar = null
         mini?.release(); mini = null; miniReq = null
@@ -726,12 +765,8 @@ class DetailsActivity : Activity() {
     override fun onResume() {
         super.onResume()
         Downloads.addListener(dlListener)
-        if (paused) {
-            // رجعنا من المشغّل: نحدّث التقدّم والزر الأساسي
-            paused = false
-            hist = Store.history().associateBy { it.key }
-            render()
-        }
+        val wasPaused = paused
+        paused = false
         // رجعنا من ملء الشاشة والجوال عمودي: نكمل من نفس المكان في المصغّر
         // (لو الشاشة لسا أفقي لحظة الرجوع، نكمل أول ما ترجع عمودي)
         resumedAt = System.currentTimeMillis()
@@ -749,6 +784,13 @@ class DetailsActivity : Activity() {
                 if (wide && !portraitLocked) scope.launch { delay(1500); if (wide && mini != null) { saveMini(); stopMini(); render() } }
                 return
             }
+        }
+        // الشاشة الصغيرة اللي كانت تنتظر المشغّل (ما رجع: خلص أو انقفل): نشيلها
+        handedBox?.let { handedPv?.detachPlayer(); handedBar?.player = null; handedBox = null; handedPv = null; handedBar = null }
+        if (wasPaused) {
+            // رجعنا من المشغّل: نحدّث التقدّم والزر الأساسي
+            hist = Store.history().associateBy { it.key }
+            render()
         }
         if (!wide) resumeMini()
         // ما قدرنا ناخذ المشغّل (الصفحة ما تعرضه): لا نخليه شغّال بالخلفية
@@ -784,7 +826,7 @@ class DetailsActivity : Activity() {
         saveMini(); stopMini()
         VodHandoff.ownerAlive = false
         if (VodHandoff.player != null && backToMini != null) VodHandoff.drop()
-        handedPv?.player = null; handedBar?.player = null
+        handedPv?.detachPlayer(); handedBar?.player = null
         handedBox = null; handedPv = null; handedBar = null
         scope.cancel()
         super.onDestroy()

@@ -299,7 +299,7 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
             player?.removeListener(listener)
             player = p
             p.addListener(listener)
-            playerView.player = p
+            playerView.attachSmooth(p)       // أول ما تجهز الشاشة الصغيرة (بدون ومضة سودا)
             bar.player = p
         }
         return p
@@ -345,7 +345,7 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
     private fun detach() {
         player?.removeListener(listener)
         player = null
-        playerView.player = null
+        playerView.detachPlayer()
         bar.player = null
     }
 
@@ -443,7 +443,7 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
                 current = ch; chAdapter.playingId = ch.id; title.text = ch.name; showEpg(ch)
             }
             player?.removeListener(listener); player = null
-            playerView.player = null          // (ما يمسح شي: الصورة حالياً على الشاشة الكبيرة)
+            playerView.detachPlayer()          // (ما يمسح شي: الصورة حالياً على الشاشة الكبيرة)
             ensurePlayer()                    // نرجع الصورة للشاشة الصغيرة بنفس المشغّل
             player?.playWhenReady = true
             loading.visibility = if (player?.playbackState == Player.STATE_BUFFERING) View.VISIBLE else View.GONE

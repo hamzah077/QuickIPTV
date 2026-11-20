@@ -70,6 +70,13 @@ fun MainActivity.openDetails(v: Vod) {
 }
 
 fun MainActivity.playHistory(h: HistoryItem) {
+    // خلّصت الحلقة اللي وصلت لها: نفتح المسلسل ونشغّل الحلقة التالية (عمودي = المشغّل الصغير، أفقي = ملء الشاشة)
+    if (h.type == "episode" && h.finished && h.seriesId.isNotEmpty()) {
+        startActivity(Intent(this, DetailsActivity::class.java)
+            .putExtra("id", h.seriesId).putExtra("series", true)
+            .putExtra("name", h.title).putExtra("icon", h.image).putExtra("autoResume", true))
+        return
+    }
     // الجوال عمودي: يكمل في المشغّل الصغير عمودي (صفحة الفيلم/المسلسل). أفقي أو تلفزيون: ملء الشاشة أفقي.
     val portrait = !tv && resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT
     val detailsId = when (h.type) { "episode" -> h.seriesId; "movie" -> h.key.substringAfter("movie:", ""); else -> "" }
@@ -200,7 +207,7 @@ class HomeScreen(private val a: MainActivity) : Screen, EpgAware {
     private fun refresh() {
         if (!shell) buildShell()
         val hist = Store.history()
-        val cont = Store.continueWatching().ifEmpty { hist.filter { it.type != "live" } }.take(15)
+        val cont = Store.continueWatching().ifEmpty { Store.displayHistory().filter { it.type != "live" } }.take(15)   // مسلسل = مدخل واحد
         slot("cont", cont.joinToString { "${it.key}:${it.pos / 30}" }, contSlot) { v ->
             if (cont.isNotEmpty()) {
                 v.addView(header("متابعة المشاهدة", more = "السجل") { a.openExtra("history") })
@@ -371,7 +378,7 @@ class HomeScreen(private val a: MainActivity) : Screen, EpgAware {
         card.addView(a.text(h.title, 13.5f, C.TEXT, bold = true).apply { setPadding(a.dp(2), a.dp(7), a.dp(2), 0); textDirection = View.TEXT_DIRECTION_FIRST_STRONG })
         val sub = listOfNotNull(
             h.sub.replace("الموسم ", "م").replace(" · الحلقة ", " ح").takeIf { it.isNotEmpty() },
-            if (h.dur > 0 && h.pos < h.dur - 60) "متبقي ${fmtTime(h.dur - h.pos)}" else null,
+            if (h.dur > 0 && h.pos < h.dur - 60) "متبقي ${fmtTime(h.dur - h.pos)}" else if (h.type == "episode" && h.finished) "الحلقة التالية" else null,
         ).joinToString(" · ")
         if (sub.isNotEmpty()) card.addView(a.text(sub, 11.5f, C.MUTED).apply { setPadding(a.dp(2), a.dp(2), a.dp(2), 0) })
         return card
@@ -676,7 +683,7 @@ class HistoryScreen(private val a: MainActivity) : Screen {
     override fun onShow() {
         col.removeAllViews(); first = null
         col.addView(a.text("سجل المشاهدة", 22f, C.TEXT, bold = true).apply { setPadding(a.dp(16), a.dp(10), a.dp(16), a.dp(8)) })
-        val hist = Store.history()
+        val hist = Store.displayHistory()          // مسلسل = مدخل واحد (الحلقة اللي وصلت لها)
         if (hist.isEmpty()) {
             col.addView(a.text("ما شاهدت شي للحين.", 14f, C.MUTED).apply { setPadding(a.dp(16), a.dp(20), a.dp(16), 0) })
             return

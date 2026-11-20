@@ -167,7 +167,7 @@ class PlayerActivity : Activity() {
         // فيلم/حلقة جاية من المشغّل المصغّر: ناخذ نفس المشغّل (يكمل بدون توقف)
         handedOff = !live && intent.getBooleanExtra("handoff", false) && VodHandoff.player != null && VodHandoff.key == (intent.getStringExtra("key") ?: "")
         player = (if (live) LivePlayer.get(this) else if (handedOff) VodHandoff.take()!! else buildPlayer(this, false)).also { p ->
-            pv.player = p
+            pv.attachSmooth(p)        // الصورة تنتقل أول ما تجهز الشاشة الكبيرة (بدون ومضة سودا)
             p.addListener(listener)
             bar.player = p
         }
@@ -481,7 +481,7 @@ class PlayerActivity : Activity() {
         if (watchingVod) Downloads.setWatching("vod", false)
         scope.cancel()
         player?.removeListener(listener)
-        pv.player = null
+        pv.detachPlayer()
         if (live) { if (!returnsToPreview) LivePlayer.release() } else player?.release()
         player = null
         super.onDestroy()

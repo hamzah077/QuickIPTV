@@ -35,16 +35,36 @@ data class HistoryItem(
     val pos: Long = 0,      // ثواني
     val dur: Long = 0,
     val ts: Long = System.currentTimeMillis(),
+    val season: Int = seasonOf(sub),          // رقم الموسم والحلقة (للحلقات): لترتيب "وين وصلت" بالمسلسل
+    val epNum: Int = epOf(sub),
 ) {
     fun toJson(): JSONObject = JSONObject().put("key", key).put("type", type).put("title", title).put("sub", sub)
         .put("image", image).put("url", url).put("seriesId", seriesId).put("pos", pos).put("dur", dur).put("ts", ts)
+        .put("season", season).put("ep", epNum)
+
+    /** خلّصها (أو قريب من النهاية). */
+    val finished get() = dur > 0 && pos >= dur - 60
+
+    /** مشاهدة فعلية (مو تشغيل بالغلط): أكثر من دقيقتين أو خلّصها. */
+    val meaningful get() = pos >= 120 || finished
 
     companion object {
-        fun from(o: JSONObject) = HistoryItem(
-            o.optString("key"), o.optString("type"), o.optString("title"), o.optString("sub"),
-            o.optString("image"), o.optString("url"), o.optString("seriesId"),
-            o.optLong("pos"), o.optLong("dur"), o.optLong("ts"),
-        )
+        fun from(o: JSONObject): HistoryItem {
+            val sub = o.optString("sub")
+            return HistoryItem(
+                o.optString("key"), o.optString("type"), o.optString("title"), sub,
+                o.optString("image"), o.optString("url"), o.optString("seriesId"),
+                o.optLong("pos"), o.optLong("dur"), o.optLong("ts"),
+                // السجل القديم ما فيه الأرقام: ناخذها من النص "الموسم 1 · الحلقة 10"
+                o.optInt("season", 0).takeIf { it > 0 } ?: seasonOf(sub),
+                o.optInt("ep", 0).takeIf { it > 0 } ?: epOf(sub),
+            )
+        }
+
+        private val reSeason = Regex("(?:الموسم|م)\\s*(\\d+)")
+        private val reEp = Regex("(?:الحلقة|ح)\\s*(\\d+)")
+        fun seasonOf(sub: String) = reSeason.find(sub)?.groupValues?.get(1)?.toIntOrNull() ?: 0
+        fun epOf(sub: String) = reEp.find(sub)?.groupValues?.get(1)?.toIntOrNull() ?: 0
     }
 }
 
@@ -57,8 +77,13 @@ object Store {
     }
 
     // ---------- المقدمة والتتر: يتعلّمها لكل مسلسل من طريقة مشاهدتك (آخر 3 مرات، ناخذ الوسط) ----------
-    private fun skipList(k: String): List<Long> = (p.getString(k, "") ?: "").split(',').mapNotNull { it.toLongOrNull() }
-    private fun pushSkip(k: String, v: Long) = p.edit().putString(k, (skipList(k) + v).takeLast(3).joinToString(",")).apply()
+    private val skipCache = java.util.concurrent.ConcurrentHashMap<String, List<Long>>()
+    private fun skipList(k: String): List<Long> = skipCache.getOrPut(k) { (p.getString(k, "") ?: "").split(',').mapNotNull { it.toLongOrNull() } }
+    private fun pushSkip(k: String, v: Long) {
+        val l = (skipList(k) + v).takeLast(3)
+        skipCache[k] = l
+        p.edit().putString(k, l.joinToString(",")).apply()
+    }
     private fun median(l: List<Long>): Long? = if (l.isEmpty()) null else l.sorted()[l.size / 2]
 
     /** تخطّيت المقدمة: من [start] إلى [end] (ملّي ثانية من بداية الحلقة). */
@@ -153,23 +178,68 @@ object Store {
     }
 
     // ---------- السجل والاستئناف ----------
+    // السجل في الذاكرة (ما نقرا ونحلّل JSON كل مرة) + قفل واحد لكل التعديلات (ما تتضارب)
+    private val histLock = Any()
+    @Volatile private var histCache: Pair<String, List<HistoryItem>>? = null
+
     fun history(): List<HistoryItem> {
-        val a = JSONArray(p.getString(accKey("history"), "[]"))
-        return (0 until a.length()).map { HistoryItem.from(a.getJSONObject(it)) }
+        val k = accKey("history")
+        histCache?.let { (ck, l) -> if (ck == k) return l }
+        synchronized(histLock) {
+            histCache?.let { (ck, l) -> if (ck == k) return l }
+            val a = JSONArray(p.getString(k, "[]"))
+            val l = (0 until a.length()).map { HistoryItem.from(a.getJSONObject(it)) }
+            histCache = k to l
+            return l
+        }
     }
 
-    fun addHistory(h: HistoryItem) {
-        val list = listOf(h) + history().filter { it.key != h.key }
+    private fun writeHistory(list: List<HistoryItem>) {
+        val k = accKey("history")
         val a = JSONArray()
-        list.take(80).forEach { a.put(it.toJson()) }
-        p.edit().putString(accKey("history"), a.toString()).apply()
+        list.forEach { a.put(it.toJson()) }
+        histCache = k to list
+        p.edit().putString(k, a.toString()).apply()
     }
 
-    fun saveProgress(key: String, pos: Long, dur: Long) {
+    fun addHistory(h: HistoryItem) = synchronized(histLock) {
+        // نحافظ على التقدّم المحفوظ للحلقة/الفيلم (التشغيل من جديد ما يصفّره)
+        val old = history().firstOrNull { it.key == h.key }
+        val item = if (old != null && h.pos == 0L) h.copy(pos = old.pos, dur = old.dur) else h
+        writeHistory((listOf(item) + history().filter { it.key != h.key }).take(200))
+    }
+
+    fun saveProgress(key: String, pos: Long, dur: Long) = synchronized(histLock) {
         val list = history().map { if (it.key == key) it.copy(pos = pos, dur = dur, ts = System.currentTimeMillis()) else it }
-        val a = JSONArray()
-        list.sortedByDescending { it.ts }.forEach { a.put(it.toJson()) }
-        p.edit().putString(accKey("history"), a.toString()).apply()
+        writeHistory(list.sortedByDescending { it.ts })
+    }
+
+    /**
+     * وين وصلت في المسلسل: أبعد حلقة (بالموسم والحلقة) شاهدتها فعلاً. تشغيل حلقة قديمة بالغلط ما يغيّره.
+     * لو ما فيه مشاهدة فعلية: آخر حلقة شغّلتها.
+     */
+    fun seriesFrontier(seriesId: String, list: List<HistoryItem> = history()): HistoryItem? {
+        val eps = list.filter { it.type == "episode" && it.seriesId == seriesId }
+        if (eps.isEmpty()) return null
+        val real = eps.filter { it.meaningful }
+        if (real.isEmpty()) return eps.maxByOrNull { it.ts }
+        return real.maxWithOrNull(compareBy<HistoryItem>({ it.season }, { it.epNum }, { it.ts }))
+    }
+
+    /**
+     * السجل للعرض: مسلسل واحد = مدخل واحد (الحلقة اللي وصلت لها)، بمكان آخر مرة تفاعلت فيها مع المسلسل.
+     * الأفلام والقنوات زي ما هي.
+     */
+    fun displayHistory(): List<HistoryItem> {
+        val all = history()
+        val out = ArrayList<HistoryItem>()
+        val seen = HashSet<String>()
+        for (h in all) {             // مرتّبة من الأحدث
+            if (h.type != "episode" || h.seriesId.isEmpty()) { out.add(h); continue }
+            if (!seen.add(h.seriesId)) continue
+            out.add(seriesFrontier(h.seriesId, all) ?: h)
+        }
+        return out
     }
 
     /** نقطة الاستئناف بالثواني (0 = من البداية أو خلص تقريباً). */
@@ -178,8 +248,9 @@ object Store {
         return if (h.dur > 0 && h.pos > 30 && h.pos < h.dur - 60) h.pos else 0
     }
 
+    /** متابعة المشاهدة: الأفلام اللي ما خلّصتها + مدخل واحد لكل مسلسل (لو خلّصت الحلقة: الحلقة التالية). */
     fun continueWatching(): List<HistoryItem> =
-        history().filter { it.type != "live" && it.dur > 0 && it.pos > 30 && it.pos < it.dur - 60 }
+        displayHistory().filter { it.type != "live" && it.dur > 0 && it.pos > 30 && (it.type == "episode" || it.pos < it.dur - 60) }
 
     // ---------- دليل البرامج ----------
     var epgUrls: List<String>
