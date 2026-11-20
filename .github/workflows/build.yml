@@ -31,7 +31,7 @@ jobs:
       - name: Upload APKs
         uses: actions/upload-artifact@v4
         with:
-          name: QuickIPTV-apk
+          name: QuickTv-apk
           path: app/build/outputs/apk/release/*.apk
 
       # رابط تنزيل مباشر: github.com/<user>/QuickIPTV/releases/latest
@@ -39,7 +39,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v1.0.${{ github.run_number }}
-          name: QuickIPTV 1.0.${{ github.run_number }}
+          name: QuickTv 1.0.${{ github.run_number }}
           make_latest: true
           body: |
             - app-universal-release.apk: يشتغل على كل الأجهزة (إذا مو متأكد نزّل هذا)

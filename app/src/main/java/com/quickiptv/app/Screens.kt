@@ -114,7 +114,7 @@ class LoginScreen(private val a: MainActivity, edit: Account?) : Screen {
             setPadding(a.dp(28), a.dp(28), a.dp(28), a.dp(28))
             layoutDirection = View.LAYOUT_DIRECTION_RTL
         }
-        col.addView(a.text("QuickIPTV", 26f, C.TEXT, bold = true))
+        col.addView(a.text("QuickTv", 26f, C.TEXT, bold = true))
         col.addView(a.text("أضف حساب Xtream Codes للبدء", 14f, C.MUTED).apply { setPadding(0, a.dp(6), 0, a.dp(20)) })
         for ((label, f) in listOf("الاسم" to name, "اسم المستخدم" to user, "كلمة المرور" to pass, "عنوان السيرفر" to server)) {
             col.addView(a.text(label, 13f, C.MUTED).apply { setPadding(a.dp(4), 0, a.dp(4), a.dp(4)) })
@@ -576,7 +576,7 @@ class SettingsScreen(private val a: MainActivity) : Screen {
         add(a.listRow(R.drawable.ic_user, "تعديل الحساب / حساب آخر") { a.showLogin(acc) })
 
         col.addView(a.sectionHeader("عن التطبيق"))
-        add(a.listRow(R.drawable.ic_info, "QuickIPTV", "1.0", chevron = false))
+        add(a.listRow(R.drawable.ic_info, "QuickTv", "1.0", chevron = false))
         add(a.listRow(R.drawable.ic_logout, "تسجيل خروج", chevron = false, danger = true) {
             AlertDialog.Builder(a, android.R.style.Theme_Material_Dialog_Alert)
                 .setMessage("حذف الحساب من الجهاز؟")

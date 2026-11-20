@@ -1,0 +1,26 @@
+# يتأكد إن نسخة الآيفون/الآيباد تنبني (على ماك في السحابة، بدون توقيع)
+name: iOS build check
+on:
+  push:
+    branches: [main]
+    paths: ["ios/**", ".github/workflows/ios.yml"]
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Xcode (26 if available for Liquid Glass)
+        run: |
+          X=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
+          if [ -n "$X" ]; then sudo xcode-select -s "$X"; fi
+          xcodebuild -version
+      - name: Generate project
+        run: brew install xcodegen && cd ios && xcodegen
+      - name: Build (simulator, unsigned)
+        run: |
+          cd ios
+          xcodebuild -project QuickTv.xcodeproj -scheme QuickTv -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' -configuration Debug \
+            CODE_SIGNING_ALLOWED=NO build | tail -80
+          exit ${PIPESTATUS[0]}
