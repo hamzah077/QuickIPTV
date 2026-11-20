@@ -50,6 +50,7 @@ x = dump(); print("INLINE_OK" if "exo_" in x or "PlayerView" in x else "INLINE_M
 sh("shell", "input", "tap", "540", "350"); time.sleep(1); shot("08c_inline_controls")
 sh("shell", "input", "tap", "1008", "590")    # زر التكبير (يمين شريط التحكم)
 time.sleep(5); shot("08d_fullscreen")
+tap_text("حسنًا", tries=2); time.sleep(1)   # تنبيه أندرويد لأول مرة بملء الشاشة
 sh("shell", "input", "keyevent", "4"); time.sleep(5); shot("08e_back_inline")
 sh("shell", "input", "keyevent", "4"); time.sleep(2)
 tap_text("المزيد"); time.sleep(2); shot("10_more")

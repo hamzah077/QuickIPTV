@@ -110,6 +110,7 @@ class DetailsActivity : Activity() {
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
         if (mini != null && wide) goFull()      // لفّيت الجوال أفقي وهو يشتغل = ملء الشاشة
+        else if (!wide && backToMini != null && System.currentTimeMillis() - resumedAt < 3000) { render(); resumeMini() }
         else render()
     }
 
@@ -604,11 +605,18 @@ class DetailsActivity : Activity() {
             render()
         }
         // رجعنا من ملء الشاشة والجوال عمودي: نكمل من نفس المكان في المصغّر
-        backToMini?.let { r ->
-            backToMini = null
-            val h = hist[r.key]
-            if (!wide && mini == null && h != null && !(h.dur > 0 && h.pos >= h.dur - 10)) startMini(r, h.pos)
-        }
+        // (لو الشاشة لسا أفقي لحظة الرجوع، نكمل أول ما ترجع عمودي)
+        resumedAt = System.currentTimeMillis()
+        if (!wide) resumeMini()
+    }
+
+    private var resumedAt = 0L
+
+    private fun resumeMini() {
+        val r = backToMini ?: return
+        backToMini = null
+        val h = Store.history().firstOrNull { it.key == r.key }
+        if (mini == null && h != null && !(h.dur > 0 && h.pos >= h.dur - 10)) startMini(r, h.pos)
     }
 
     override fun onDestroy() {
