@@ -54,18 +54,21 @@ class H(BaseHTTPRequestHandler):
         import os, time
         f = os.path.join(os.path.dirname(os.path.abspath(__file__)), "test.mp4")
         data = open(f, "rb").read()
-        start = 0
+        start, end = 0, len(data) - 1
         rng = self.headers.get("Range")
+        print("RANGE", rng, flush=True)
         if rng and rng.startswith("bytes="):
-            start = int(rng[6:].split("-")[0] or 0)
-            self.send_response(206); self.send_header("Content-Range", f"bytes {start}-{len(data)-1}/{len(data)}")
+            a, _, b = rng[6:].partition("-")
+            start = int(a or 0)
+            if b: end = min(int(b), len(data) - 1)
+            self.send_response(206); self.send_header("Content-Range", f"bytes {start}-{end}/{len(data)}")
         else:
             self.send_response(200)
         self.send_header("Content-Type", "video/mp4"); self.send_header("Accept-Ranges", "bytes")
-        self.send_header("Content-Length", str(len(data) - start)); self.end_headers()
+        self.send_header("Content-Length", str(end - start + 1)); self.end_headers()
         try:
-            for i in range(start, len(data), 32768):       # ~250KB/ث عشان يبين التقدّم
-                self.wfile.write(data[i:i + 32768]); time.sleep(0.35)
+            for i in range(start, end + 1, 32768):       # ~94KB/ث (أبطأ شوي من سيرفر عادي)
+                self.wfile.write(data[i:min(i + 32768, end + 1)]); time.sleep(0.35)
         except (BrokenPipeError, ConnectionResetError):
             pass
 
