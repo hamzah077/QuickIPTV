@@ -43,6 +43,10 @@ final class PlayerController {
     var hasNext: Bool { guard let q = queue, let r = req, let i = q.index(of: r.key) else { return false }; return i < q.list.count - 1 }
 
     private var timeObs: Any?
+    @ObservationIgnored private var waitTask: Task<Void, Never>?
+    // VLC: نعرف إنه شغّال فعلاً من تقدّم الوقت (حالة VLC تقول "buffering" حتى وهو شغّال)
+    @ObservationIgnored private var lastVlcT: Double = -1
+    @ObservationIgnored private var vlcStallTicks = 0
     private var endObs: NSObjectProtocol?
     private var statusObs: NSKeyValueObservation?
     private var waitObs: NSKeyValueObservation?
@@ -68,10 +72,22 @@ final class PlayerController {
         }
         waitObs = player.observe(\.timeControlStatus, options: [.new]) { [weak self] p, _ in
             let st = p.timeControlStatus
+            let noItem = p.reasonForWaitingToPlay == .noItemToPlay
             Task { @MainActor in
-                guard self?.engine == .av else { return }
-                self?.isPlaying = st == .playing
-                self?.buffering = st == .waitingToPlayAtSpecifiedRate
+                guard let self, self.engine == .av else { return }
+                self.isPlaying = st == .playing
+                self.waitTask?.cancel()
+                if st == .waitingToPlayAtSpecifiedRate && !noItem {
+                    // علامة التحميل تطلع بس إذا الانتظار طوّل (نص ثانية) — ما ترمش مع كل لحظة تعبئة
+                    self.waitTask = Task { @MainActor [weak self] in
+                        try? await Task.sleep(for: .milliseconds(500))
+                        guard let self, !Task.isCancelled, self.engine == .av,
+                              self.player.timeControlStatus == .waitingToPlayAtSpecifiedRate else { return }
+                        self.buffering = true
+                    }
+                } else {
+                    self.buffering = false
+                }
             }
         }
     }
@@ -94,6 +110,9 @@ final class PlayerController {
         AppModel.shared.addHistory(r)
         resetSkip()
         position = r.start; duration = 0
+        isPlaying = false; buffering = true               // تحميل البداية: علامة التحميل لين يبدأ فعلاً
+        waitTask?.cancel()
+        lastVlcT = -1; vlcStallTicks = 0
         if Self.engineFor(r.url) == .vlc { playVLC(r); return }
         stopVLC()
         engine = .av
@@ -107,7 +126,14 @@ final class PlayerController {
             Task { @MainActor in
                 guard let self, self.engine == .av, self.player.currentItem === it else { return }
                 // مشغّل آبل ما قدر عليه؟ نحوّل لـ VLC تلقائياً
-                if st == .failed, let r = self.req { self.playVLC(r) }
+                if st == .failed, var r = self.req {
+                    // مشغّل آبل ما قدر على البث؟ نجرّب نفس القناة بصيغة TS على VLC (بعض السيرفرات HLS عندها خربان)
+                    if r.type == "live", r.url.pathExtension.lowercased() == "m3u8" {
+                        r.url = r.url.deletingPathExtension().appendingPathExtension("ts")
+                        self.req = r
+                    }
+                    self.playVLC(r)
+                }
                 if st == .readyToPlay {
                     // جاهز؟ يبدأ على طول (بدون ما ينتظر يعبّي بفر كبير). وإذا خلص البفر بعدين، ينتظر ويكمل لحاله
                     let d = it.duration.seconds
@@ -174,7 +200,17 @@ final class PlayerController {
         isPlaying = vlc.isPlaying
         if isPlaying && !vlcTracksLoaded { vlcTracksLoaded = true; loadVLCTracks() }
         let st = vlc.state
-        buffering = st == .buffering || st == .opening
+        if st == .paused || st == .ended || st == .error || (st == .stopped && t > 0) {
+            buffering = false; vlcStallTicks = 0
+        } else if lastVlcT < 0 {
+            buffering = t <= 0                               // أول قراءة (بداية أو بعد تقديم): لسه ما بدأ؟ تحميل
+        } else if t > lastVlcT + 0.05 {
+            buffering = false; vlcStallTicks = 0             // الوقت يتقدّم = شغّال (حتى لو VLC يقول buffering)
+        } else {
+            vlcStallTicks += 1                               // وقف التقدّم ثانية كاملة = فعلاً يحمّل
+            if vlcStallTicks >= 2 { buffering = true }
+        }
+        if t > 0 { lastVlcT = t }
         if st == .error { failed = "ما اشتغل. جرّب مرة ثانية أو محتوى ثاني." }
         if st == .ended || st == .stopped && duration > 0 && position >= duration - 2 {
             if !vlcEndHandled { vlcEndHandled = true; ended() }
@@ -190,6 +226,8 @@ final class PlayerController {
         player.replaceCurrentItem(with: nil)
         req = nil
         fullscreen = false
+        waitTask?.cancel()
+        isPlaying = false; buffering = false
     }
 
     func togglePlay() {
@@ -213,6 +251,7 @@ final class PlayerController {
         seekTarget = t
         if engine == .vlc {
             vlc.time = VLCTime(int: Int32(t * 1000))
+            lastVlcT = -1; vlcStallTicks = 0
             Task { try? await Task.sleep(for: .milliseconds(700)); if seekTarget == t { seekTarget = nil } }
             return
         }
@@ -235,8 +274,9 @@ final class PlayerController {
     /// المباشر: يرجع للحظة الحالية
     func goLive() {
         if engine == .vlc { if let r = req { playVLC(r) }; return }
-        guard let it = player.currentItem, let r = it.seekableTimeRanges.last?.timeRangeValue else { player.play(); return }
-        player.seek(to: r.end); player.play()
+        userPaused = false
+        guard let it = player.currentItem, let r = it.seekableTimeRanges.last?.timeRangeValue else { player.playImmediately(atRate: 1); return }
+        player.seek(to: r.end) { [weak self] _ in Task { @MainActor in self?.player.playImmediately(atRate: 1) } }
     }
 
     func next() {
@@ -267,6 +307,7 @@ final class PlayerController {
         guard engine == .av else { return }
         let p = t.seconds
         if p.isFinite, seekTarget == nil { position = p }     // أثناء التقديم: نخلي الشريط على الهدف (ما يرجع ويقفز)
+        if player.timeControlStatus == .playing { if buffering { buffering = false }; if !isPlaying { isPlaying = true } }
         if let d = player.currentItem?.duration.seconds, d.isFinite, d > 0 { duration = d }
         if Date().timeIntervalSince(lastSave) > 10 { saveNow() }
         checkSkips()
