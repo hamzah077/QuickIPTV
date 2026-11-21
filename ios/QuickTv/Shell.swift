@@ -46,6 +46,9 @@ struct PhoneShell: View {
     @State private var tab: AppSection = .home
     /// أثناء سحب صفحة التشغيل: وين وصلت (0 صفحة كاملة … 1 مشغّل صغير)
     @State private var dragT: CGFloat?
+    /// مكان النافذة العائمة (زاوية) ومخبّية على الحافة؟
+    @State private var miniCorner = 3
+    @State private var miniHidden = 0
 
     /// صفحة التشغيل/المشغّل الصغير ظاهر؟ (فيلم/مسلسل بصفحته، أو أي شي صغّرته)
     private var panelOn: Bool { pc.req != nil && (pc.watchVod != nil || pc.mini) }
@@ -61,9 +64,10 @@ struct PhoneShell: View {
                     let t = dragT ?? (pc.mini ? 1 : 0)
                     ZStack(alignment: .topLeading) {
                         // الصفحة اللي تحت تغمق شوي وهي مغطاة، وتوضح كل ما نزلت الصفحة
-                        Color.black.opacity(Double((1 - t) * 0.55)).allowsHitTesting(false)
+                        Color.black.opacity(Double((1 - t) * 0.7)).allowsHitTesting(false)
                         WatchPanel(W: W, H: H, top: ins.top, bottom: ins.bottom, t: t,
-                                   onDrag: { dy, ended in drag(dy, ended, range: WatchPanel.range(H: H, bottom: ins.bottom)) },
+                                   corner: $miniCorner, hiddenSide: $miniHidden,
+                                   onDrag: { dy, ended in drag(dy, ended, range: WatchPanel.range(W: W, H: H, top: ins.top, bottom: ins.bottom)) },
                                    onExpand: { expand() })
                     }
                     .frame(width: W, height: H, alignment: .topLeading)
@@ -86,18 +90,12 @@ struct PhoneShell: View {
     @Environment(\.verticalSizeClass) private var vsize
 
     /// سحب صفحة التشغيل: تتبع الإصبع، ولما تترك: تكمل لأقرب طرف (ثلث المسافة يكفي)
+    /// سحب الصفحة الكاملة لتحت: تتبع الإصبع، ولما تترك: ثلث المسافة (أو سحبة سريعة) = نافذة عائمة
     private func drag(_ dy: CGFloat, _ ended: Bool, range: CGFloat) {
-        let start: CGFloat = pc.mini ? 1 : 0
-        // المباشر أو بدون صفحة (مثل التحميلات): المربع الصغير ما يكبر لصفحة — يتحرك شوي بس
-        let canPage = pc.watchVod != nil
-        var v = start + dy / range
-        if !canPage { v = max(0.9, v) }
-        v = min(1, max(0, v))
+        let v = min(1, max(0, dy / range))
         guard ended else { dragT = v; return }
-        let toMini = pc.mini ? v > 0.7 : v > 0.3
-        if !canPage && pc.mini && dy < -30 { dragT = nil; expand(); return }
-        withAnimation(.spring(duration: 0.36, bounce: 0.04)) {
-            pc.mini = canPage ? toMini : true
+        withAnimation(.spring(duration: 0.38, bounce: 0.05)) {
+            if v > 0.3 { pc.mini = true; miniHidden = 0 }
             dragT = nil
         }
     }

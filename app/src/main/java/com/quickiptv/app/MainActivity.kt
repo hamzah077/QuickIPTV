@@ -166,12 +166,11 @@ class MainActivity : Activity() {
             layoutDirection = View.LAYOUT_DIRECTION_RTL
         }
         root.addView(content, lp(MATCH, 0, 1f))
-        root.addView(buildDock(), lp(MATCH, WRAP))           // المشغّل الصغير (مخفي لين تسحب مشغّل لتحت)
         root.addView(nav, lp(MATCH, WRAP))
-        // مكان الشريط السفلي: صفحة التشغيل تنزل لين فوقه بالضبط (مكان المشغّل الصغير)
+        // مكان الشريط السفلي: النافذة العائمة تكون فوقه
         nav.addOnLayoutChangeListener { v, _, _, _, _, _, _, _, _ ->
             val loc = IntArray(2); v.getLocationOnScreen(loc); MiniDock.navTop = loc[1]
-            measureDock()
+            placeDock(false)
         }
         // الشريط السفلي يمتد خلف أزرار الجوال (بنفس لونه) والأزرار نفسها فوقها
         nav.onSystemInsets { _, _, _, b -> nav.setPadding(0, 0, 0, b) }
@@ -182,143 +181,191 @@ class MainActivity : Activity() {
             navButtons[key] = b
             nav.addView(b)
         }
-        setContentView(root)
+        // النافذة العائمة (زي يوتيوب) فوق كل شي
+        val shell = FrameLayout(this)
+        shell.addView(root, FrameLayout.LayoutParams(MATCH, MATCH))
+        buildDock(shell)
+        setContentView(shell)
     }
 
-    // ---------- المشغّل الصغير تحت (الجوال — زي يوتيوب) ----------
+    // ---------- المشغّل العائم (الجوال — زي يوتيوب الجديد) ----------
+    // نافذة فيديو صغيرة بزوايا مدوّرة: ضغطة = زر إيقاف وإغلاق فوقها، ضغطة ثانية = تكبير للصفحة.
+    // تسحبها لأي مكان وتلتصق بأقرب زاوية، وترميها على الحافة = تنخبى بلسان ويوقف الفيديو.
     private var dockBox: FrameLayout? = null
     private var dockPv: androidx.media3.ui.PlayerView? = null
-    private var dockTitle: android.widget.TextView? = null
-    private var dockSub: android.widget.TextView? = null
+    private var dockBtns: View? = null
     private var dockPlay: android.widget.ImageView? = null
     private var dockProg: View? = null
+    private var dockHandle: FrameLayout? = null
     private var dockJob: kotlinx.coroutines.Job? = null
+    private var btnsJob: kotlinx.coroutines.Job? = null
+    private var dockCorner = 3            // 0 فوق يسار، 1 فوق يمين، 2 تحت يسار، 3 تحت يمين
+    private var dockHidden = 0            // -1 يسار، 1 يمين
+    private var pausedByHide = false
 
-    private fun buildDock(): View {
+    private fun floatW(): Int = ((dockBox?.parent as? View)?.width ?: resources.displayMetrics.widthPixels) / 2
+    private fun floatH(): Int = floatW() * 9 / 16
+
+    /** مكان زاوية النافذة بالشاشة */
+    private fun cornerXY(c: Int): Pair<Float, Float> {
+        val w = (dockBox?.parent as? View)?.width ?: resources.displayMetrics.widthPixels
+        val x = if (c % 2 == 0) dp(10).toFloat() else (w - floatW() - dp(10)).toFloat()
+        val navTop = if (MiniDock.navTop > 0) MiniDock.navTop else resources.displayMetrics.heightPixels - dp(70)
+        val top = if (android.os.Build.VERSION.SDK_INT >= 23) window.decorView.rootWindowInsets?.systemWindowInsetTop ?: dp(24) else dp(24)
+        val y = if (c < 2) (top + dp(8)).toFloat() else (navTop - dp(10) - floatH()).toFloat()
+        return x to y
+    }
+
+    /** نضع النافذة بزاويتها (أو على الحافة لو مخبّية) — ونخبّر صفحة التشغيل وين تنزل بالضبط */
+    private fun placeDock(animate: Boolean) {
+        val box = dockBox ?: return
+        val fw = floatW(); val fh = floatH()
+        (box.layoutParams as FrameLayout.LayoutParams).let { lp -> if (lp.width != fw || lp.height != fh) { lp.width = fw; lp.height = fh; box.layoutParams = lp } }
+        val (cx, cy) = cornerXY(dockCorner)
+        MiniDock.floatX = cx; MiniDock.floatY = cy; MiniDock.floatW = fw.toFloat()
+        val w = (box.parent as? View)?.width ?: resources.displayMetrics.widthPixels
+        val x = when (dockHidden) { -1 -> -fw - dp(6).toFloat(); 1 -> w + dp(6).toFloat(); else -> cx }
+        if (animate) box.animate().translationX(x).translationY(cy).setDuration(260)
+            .setInterpolator(android.view.animation.OvershootInterpolator(0.6f)).start()
+        else { box.translationX = x; box.translationY = cy }
+        dockHandle?.let { hnd ->
+            hnd.visibility = if (dockHidden != 0 && box.visibility == View.VISIBLE) View.VISIBLE else View.GONE
+            hnd.translationX = if (dockHidden < 0) 0f else (w - dp(24)).toFloat()
+            hnd.translationY = cy + fh / 2f - dp(30)
+            hnd.background = rounded(0xFF2A2D33.toInt(), 0f).also { d ->
+                val r = dpf(12f)
+                d.cornerRadii = if (dockHidden < 0) floatArrayOf(0f, 0f, r, r, r, r, 0f, 0f) else floatArrayOf(r, r, 0f, 0f, 0f, 0f, r, r)
+            }
+            (hnd.getChildAt(0) as? android.widget.ImageView)?.setImageResource(if (dockHidden < 0) R.drawable.ic_chev_left else R.drawable.ic_chev_right)
+        }
+    }
+
+    private fun buildDock(shell: FrameLayout) {
         val pv = (layoutInflater.inflate(R.layout.mini_player, null) as androidx.media3.ui.PlayerView).apply {
             useController = false; isClickable = false; isFocusable = false
             setShutterBackgroundColor(0xFF000000.toInt())
         }
-        val vidBox = FrameLayout(this).apply {
-            background = rounded(0xFF000000.toInt(), dpf(8f)); clipToOutline = true
-            addView(pv, FrameLayout.LayoutParams(MATCH, MATCH))
-        }
-        val t = text("", 13.5f, C.TEXT, bold = true).apply { maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END; textDirection = View.TEXT_DIRECTION_FIRST_STRONG }
-        val st = text("", 11.5f, C.MUTED).apply { maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END; textDirection = View.TEXT_DIRECTION_FIRST_STRONG }
-        val col = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(10), 0, dp(4), 0)
-            addView(t); addView(st)
-        }
-        val playBtn = iconButton(R.drawable.ic_pause, "إيقاف مؤقت", 44) {
+        val playBtn = iconButton(R.drawable.ic_pause, "إيقاف مؤقت", 32) {
             val p = MiniDock.player ?: (if (MiniDock.live) LivePlayer.player else null)
-            p?.let { it.playWhenReady = !it.playWhenReady; syncDock() }
-        }
-        val closeBtn = iconButton(R.drawable.ic_close, "إغلاق", 44) { MiniDock.stop() }
-        val row = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
-            clipChildren = false; clipToPadding = false        // الفيديو يكبر برا حدوده وأنت تسحب لفوق
-            setPadding(dp(8), dp(6), dp(4), dp(6))
-            addView(vidBox, LinearLayout.LayoutParams(dp(100), dp(56)))
-            addView(col, LinearLayout.LayoutParams(0, WRAP, 1f))
-            addView(playBtn); addView(closeBtn)
+            p?.let { it.playWhenReady = !it.playWhenReady; syncDock(); flashBtns() }
+        }.apply { background = rounded(0x80000000.toInt(), dpf(16f)) }
+        val closeBtn = iconButton(R.drawable.ic_close, "إغلاق", 32) { MiniDock.stop() }
+            .apply { background = rounded(0x80000000.toInt(), dpf(16f)) }
+        val btns = FrameLayout(this).apply {
+            setBackgroundColor(0x59000000); visibility = View.GONE
+            layoutDirection = View.LAYOUT_DIRECTION_LTR
+            addView(playBtn, FrameLayout.LayoutParams(dp(32), dp(32), Gravity.TOP or Gravity.LEFT).apply { setMargins(dp(5), dp(5), 0, 0) })
+            addView(closeBtn, FrameLayout.LayoutParams(dp(32), dp(32), Gravity.TOP or Gravity.RIGHT).apply { setMargins(0, dp(5), dp(5), 0) })
         }
         val prog = View(this).apply { setBackgroundColor(C.LIVE) }
         val box = FrameLayout(this).apply {
-            setBackgroundColor(C.PANEL)
+            background = rounded(0xFF000000.toInt(), dpf(12f)); clipToOutline = true
+            elevation = dp(10).toFloat()
             visibility = View.GONE
-            clipChildren = false; clipToPadding = false
-            addView(row, FrameLayout.LayoutParams(MATCH, WRAP))
-            addView(View(this@MainActivity).apply { setBackgroundColor(C.BORDER) }, FrameLayout.LayoutParams(MATCH, dp(1), Gravity.TOP))
-            addView(prog, FrameLayout.LayoutParams(0, dp(2), Gravity.BOTTOM or Gravity.START))
-            isClickable = true
-            // ضغطة = يكبر. سحب لفوق = صفحة الفيلم الحقيقية تطلع مع إصبعك من مكان المربع (زي يوتيوب)
-            var downY = 0f; var dragging = false; var lastY = 0f; var lastAt = 0L; var vel = 0f; var t = 1f
+            addView(pv, FrameLayout.LayoutParams(MATCH, MATCH))
+            addView(btns, FrameLayout.LayoutParams(MATCH, MATCH))
+            addView(prog, FrameLayout.LayoutParams(0, dp(2), Gravity.BOTTOM or Gravity.LEFT))
+            // ضغطة = الأزرار (والثانية = تكبير). سحب = تحرّكها، وتلتصق بأقرب زاوية أو تنخبى على الحافة
+            var downX = 0f; var downY = 0f; var startX = 0f; var startY = 0f; var moved = false
+            var lastX = 0f; var lastAt = 0L; var velX = 0f
             setOnTouchListener { v, e ->
-                val dy = e.rawY - downY
                 when (e.actionMasked) {
-                    android.view.MotionEvent.ACTION_DOWN -> { downY = e.rawY; dragging = false; v.isPressed = true; lastY = e.rawY; lastAt = e.eventTime; vel = 0f; t = 1f }
+                    android.view.MotionEvent.ACTION_DOWN -> {
+                        downX = e.rawX; downY = e.rawY; startX = v.translationX; startY = v.translationY; moved = false
+                        lastX = e.rawX; lastAt = e.eventTime; velX = 0f; v.animate().cancel()
+                    }
                     android.view.MotionEvent.ACTION_MOVE -> {
-                        if (!dragging && dy < -dp(8)) {
-                            dragging = true; v.isPressed = false
-                            if (!MiniDock.live) {
-                                MiniDock.dragT = 1f; MiniDock.pendingEnd = null
-                                expandDock(1f, dragging = true)
-                            }
-                        }
-                        if (dragging) {
+                        val dx = e.rawX - downX; val dy = e.rawY - downY
+                        if (!moved && kotlin.math.hypot(dx, dy) > dp(6)) { moved = true; btns.visibility = View.GONE }
+                        if (moved) {
                             val dt = (e.eventTime - lastAt).coerceAtLeast(1L)
-                            vel = (e.rawY - lastY) / dt * 1000f; lastY = e.rawY; lastAt = e.eventTime
-                            if (MiniDock.live) v.translationY = minOf(0f, dy) * 0.4f
-                            else {
-                                t = (1f + dy / dockRange()).coerceIn(0f, 1f)
-                                MiniDock.dragT = t
-                                MiniDock.onDragMove?.invoke(t)
-                            }
+                            velX = (e.rawX - lastX) / dt * 1000f; lastX = e.rawX; lastAt = e.eventTime
+                            v.translationX = startX + dx; v.translationY = startY + dy
                         }
                     }
                     android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
-                        v.isPressed = false
-                        val up = e.actionMasked == android.view.MotionEvent.ACTION_UP
-                        if (!dragging) { if (up && kotlin.math.abs(dy) < dp(8)) expandDock() }
-                        else if (MiniDock.live) { v.animate().translationY(0f).setDuration(150).start(); if (up && dy < -dp(30)) expandDock() }
-                        else {
-                            val velN = if (up) vel else 0f
-                            val tt = if (up) t else 1f
-                            val f = MiniDock.onDragEnd
-                            if (f != null) f(tt, velN) else MiniDock.pendingEnd = tt to velN
-                        }
-                        dragging = false
+                        if (!moved) { if (e.actionMasked == android.view.MotionEvent.ACTION_UP) { if (btns.visibility == View.VISIBLE) expandDock() else flashBtns() } }
+                        else dropDock(v.translationX, v.translationY, velX)
                     }
                 }
                 true
             }
         }
-        dockBox = box; dockPv = pv; dockTitle = t; dockSub = st; dockPlay = playBtn.getChildAt(0) as? android.widget.ImageView; dockProg = prog
+        val handle = FrameLayout(this).apply {
+            visibility = View.GONE; elevation = dp(10).toFloat(); isClickable = true
+            addView(icon(R.drawable.ic_chev_left, C.TEXT, 18), FrameLayout.LayoutParams(dp(18), dp(18), Gravity.CENTER))
+            setOnClickListener { unhideDock() }
+        }
+        shell.addView(box, FrameLayout.LayoutParams(dp(180), dp(101), Gravity.TOP or Gravity.LEFT))
+        shell.addView(handle, FrameLayout.LayoutParams(dp(24), dp(60), Gravity.TOP or Gravity.LEFT))
+        box.layoutDirection = View.LAYOUT_DIRECTION_LTR
+        dockBox = box; dockPv = pv; dockBtns = btns; dockPlay = playBtn.getChildAt(0) as? android.widget.ImageView; dockProg = prog; dockHandle = handle
         MiniDock.onChange = { refreshDock() }
-        return box
     }
 
-    /** ارتفاع المشغّل الصغير الحقيقي (حتى لو مخفي) */
-    private fun measureDock() {
-        val box = dockBox ?: return
-        val w = (box.parent as? View)?.width ?: return
-        if (w <= 0) return
-        box.measure(View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
-        if (box.measuredHeight > 0) MiniDock.dockH = box.measuredHeight
+    private fun flashBtns() {
+        dockBtns?.visibility = View.VISIBLE
+        btnsJob?.cancel()
+        btnsJob = scope.launch { delay(3000); dockBtns?.visibility = View.GONE }
     }
 
-    private fun dockRange(): Float =
-        (MiniDock.navTop - (if (MiniDock.dockH > 0) MiniDock.dockH else dp(68))).toFloat().coerceAtLeast(dp(200).toFloat())
+    /** تركت النافذة: رمية على الحافة = تنخبى، وإلا تلتصق بأقرب زاوية */
+    private fun dropDock(x: Float, y: Float, velX: Float) {
+        val fw = floatW()
+        val w = (dockBox?.parent as? View)?.width ?: resources.displayMetrics.widthPixels
+        when {
+            x < -fw * 0.35f || velX < -dp(1200) -> hideDock(-1, y)
+            x > w - fw * 0.65f || velX > dp(1200) -> hideDock(1, y)
+            else -> {
+                if (dockHidden != 0) unhideDock(false)
+                dockCorner = (0..3).minByOrNull { c -> val (cx, cy) = cornerXY(c); kotlin.math.hypot(cx - x, cy - y) } ?: dockCorner
+                placeDock(true)
+            }
+        }
+    }
 
-    private var snapshotFresh = false
+    private fun hideDock(side: Int, y: Float) {
+        val top = y < (cornerXY(0).second + cornerXY(2).second) / 2
+        dockCorner = if (side < 0) (if (top) 0 else 2) else (if (top) 1 else 3)
+        dockHidden = side
+        val p = MiniDock.player ?: (if (MiniDock.live) LivePlayer.player else null)
+        if (p?.playWhenReady == true) { p.playWhenReady = false; pausedByHide = true }   // انخبت = يوقف (زي يوتيوب)
+        placeDock(true)
+    }
 
-    /** يطلع/يخفي المشغّل الصغير حسب اللي شغّال فيه. */
+    private fun unhideDock(place: Boolean = true) {
+        if (dockHidden == 0) return
+        dockHidden = 0
+        if (pausedByHide) { pausedByHide = false; (MiniDock.player ?: (if (MiniDock.live) LivePlayer.player else null))?.playWhenReady = true }
+        if (place) placeDock(true)
+    }
+
+    /** يطلع/يخفي المشغّل العائم حسب اللي شغّال فيه. */
     private fun refreshDock() {
         val box = dockBox ?: return
         val p = if (tv) null else (MiniDock.player ?: (if (MiniDock.live) LivePlayer.player else null))
         if (p == null) {
             dockJob?.cancel(); dockJob = null
             dockPv?.player = null
+            dockHandle?.visibility = View.GONE
+            dockHidden = 0; pausedByHide = false
             if (box.visibility == View.VISIBLE) {
-                box.animate().translationY(box.height.toFloat()).alpha(0f).setDuration(180)
-                    .withEndAction { box.visibility = View.GONE; box.translationY = 0f; box.alpha = 1f }.start()
+                box.animate().scaleX(0.85f).scaleY(0.85f).alpha(0f).setDuration(160)
+                    .withEndAction { box.visibility = View.GONE; box.scaleX = 1f; box.scaleY = 1f; box.alpha = 1f }.start()
             }
             return
         }
-        dockTitle?.text = MiniDock.title
-        dockSub?.text = MiniDock.sub
-        dockSub?.visibility = if (MiniDock.sub.isBlank()) View.GONE else View.VISIBLE
         if (dockPv?.player !== p) { dockPv?.player = null; dockPv?.attachSmooth(p) }
         if (MiniDock.instant) {
-            // الصفحة نزلت لين صارت هي المربع: يظهر بمكانه على طول (بدون حركة ثانية)
+            // صفحة التشغيل صغرت لين صارت النافذة نفسها: تظهر بمكانها على طول (بدون حركة ثانية)
             MiniDock.instant = false
-            box.animate().cancel(); box.alpha = 1f; box.translationY = 0f; box.visibility = View.VISIBLE
+            box.animate().cancel(); box.alpha = 1f; box.scaleX = 1f; box.scaleY = 1f
+            box.visibility = View.VISIBLE; placeDock(false)
         } else if (box.visibility != View.VISIBLE) {
-            box.visibility = View.VISIBLE
-            box.alpha = 0f; box.translationY = dp(40).toFloat()
-            box.animate().alpha(1f).translationY(0f).setDuration(220).setInterpolator(android.view.animation.DecelerateInterpolator()).start()
-        }
+            box.visibility = View.VISIBLE; placeDock(false)
+            box.alpha = 0f; box.scaleX = 0.85f; box.scaleY = 0.85f
+            box.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(220).setInterpolator(android.view.animation.DecelerateInterpolator()).start()
+        } else placeDock(false)
         syncDock()
         dockJob?.cancel()
         dockJob = scope.launch {
@@ -336,15 +383,16 @@ class MainActivity : Activity() {
         dockProg?.let { v -> (v.layoutParams as FrameLayout.LayoutParams).let { lp -> val w = (box.width * frac).toInt(); if (lp.width != w) { lp.width = w; v.layoutParams = lp } } }
     }
 
-    /** تكبير المشغّل الصغير: القناة ترجع لصفحة المباشر، والفيلم/الحلقة ترجع لصفحته بنفس المشغّل. */
-    private fun expandDock(fromT: Float = 1f, dragging: Boolean = false) {
+    private var snapshotFresh = false
+
+    /** تكبير النافذة: القناة ترجع لصفحة المباشر، والفيلم/الحلقة ترجع لصفحته بنفس المشغّل (تكبر من مكان النافذة). */
+    private fun expandDock() {
         if (MiniDock.live) {
             if (current == "live") { MiniDock.undockLive(); screens["live"]?.onShow() } else show("live")
             return
         }
         val i = MiniDock.reopen ?: return
-        // صفحة التشغيل تكمل من نفس النقطة (فوق المربع وهو مكبّر)؛ المربع نرجّعه لما نرجع هنا
-        startActivity(Intent(i).putExtra("fromDock", true).putExtra("fromT", fromT).putExtra("dragging", dragging))
+        startActivity(Intent(i).putExtra("fromDock", true).putExtra("fromT", 1f))
         @Suppress("DEPRECATION")
         overridePendingTransition(0, 0)
     }

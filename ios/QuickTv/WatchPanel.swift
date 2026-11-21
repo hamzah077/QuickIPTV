@@ -1,61 +1,71 @@
 import SwiftUI
 
-// MARK: - صفحة التشغيل (الجوال) — زي يوتيوب
-// الصفحة كلها (المشغّل + التفاصيل والحلقات) طبقة فوق الأقسام. تسحبها من المشغّل لتحت:
-// الصفحة كلها تنزل وتصغر وهي نفس المربع لين تصير المشغّل الصغير فوق الشريط السفلي (بدون تلاشي)،
-// والصفحة اللي تحتها تبان. وتسحب المربع الصغير لفوق = نفس الحركة بالعكس.
-// t = 0 صفحة كاملة، t = 1 مشغّل صغير.
+// MARK: - صفحة التشغيل والمشغّل العائم (الجوال) — نفس يوتيوب الجديد (2025)
+// تسحب الفيديو لتحت: الصفحة تنزل وتتلاشى، والفيديو يصغر لين يصير نافذة عائمة بزوايا مدوّرة فوق الشريط السفلي.
+// النافذة: ضغطة = يطلع زر الإيقاف والإغلاق فوق الفيديو، ضغطة ثانية = تكبير للصفحة.
+// تسحبها لأي مكان وتلتصق بأقرب زاوية، وترميها على حافة الشاشة = تنخبى بلسان صغير ويوقف الفيديو
+// (تضغط اللسان = ترجع وتكمل).
+// t = 0 صفحة كاملة، t = 1 نافذة عائمة.
 
 struct WatchPanel: View {
     @Environment(PlayerController.self) private var pc
     let W: CGFloat, H: CGFloat, top: CGFloat, bottom: CGFloat
     /// t الحالي (أثناء السحب يتبع الإصبع)
     let t: CGFloat
-    /// سحب: المسافة (موجب = لتحت) وهل خلص
+    /// الزاوية: 0 فوق يسار، 1 فوق يمين، 2 تحت يسار، 3 تحت يمين
+    @Binding var corner: Int
+    /// مخبّية على الحافة: -1 يسار، 1 يمين، 0 ظاهرة
+    @Binding var hiddenSide: Int
+    /// سحب الصفحة الكاملة لتحت: المسافة، وهل خلص
     let onDrag: (CGFloat, Bool) -> Void
     let onExpand: () -> Void
 
-    @State private var fromMini: Bool?
+    @State private var move: CGSize = .zero
+    @State private var showBtns = false
+    @State private var btnTask: Task<Void, Never>?
+    @State private var pausedByHide = false
 
     private func L(_ a: CGFloat, _ b: CGFloat) -> CGFloat { a + (b - a) * t }
 
-    // المشغّل الصغير (نفس الأندرويد): بعرض الشاشة كامل فوق الشريط السفلي مباشرة، ارتفاعه 68
-    static let miniH: CGFloat = 68
-    static func miniY(H: CGFloat, bottom: CGFloat) -> CGFloat { H - bottom - 62 - miniH }
-    private var miniRect: CGRect { CGRect(x: 0, y: Self.miniY(H: H, bottom: bottom), width: W, height: Self.miniH) }
-    private var box: CGRect {
-        let m = miniRect
-        return CGRect(x: L(0, m.minX), y: L(0, m.minY), width: L(W, m.width), height: L(H, m.height))
+    // النافذة العائمة: نص عرض الشاشة، 16:9
+    private var fw: CGFloat { (W * 0.5).rounded() }
+    private var fh: CGFloat { fw * 9 / 16 }
+    static func floorY(H: CGFloat, bottom: CGFloat) -> CGFloat { H - bottom - 62 - 10 }
+    private func cornerOrigin(_ c: Int) -> CGPoint {
+        let x = c % 2 == 0 ? 10 : W - fw - 10
+        let y = c < 2 ? top + 8 : Self.floorY(H: H, bottom: bottom) - fh
+        return CGPoint(x: x, y: y)
     }
-    /// الفيديو داخل المربع (طريقة "ب"): ينزل مع الصفحة بعرضها كامل، وفي آخر ثلث الحركة يصغر ويدخل زاويته —
-    /// ومقاسه 16:9 طول الوقت (ما يتمطّط)
+    /// مسافة السحب (من الصفحة الكاملة لمكان النافذة)
+    static func range(W: CGFloat, H: CGFloat, top: CGFloat, bottom: CGFloat) -> CGFloat {
+        max(200, floorY(H: H, bottom: bottom) - (W * 0.5) * 9 / 16 - top)
+    }
+
+    /// مكان الفيديو: من فوق الصفحة بعرضها، لمكان النافذة العائمة
     private var video: CGRect {
-        let bw = box.width
-        let x0 = (t - 0.62) / 0.38
-        let k = x0 <= 0 ? 0 : x0 >= 1 ? 1 : (x0 < 0.5 ? 2 * x0 * x0 : 1 - pow(-2 * x0 + 2, 2) / 2)
-        // مقاس الفيديو بالمشغّل الصغير: 100×56 على اليمين (4 من الحافة، 6 من فوق) — نفس الأندرويد
-        let w = bw + (100 - bw) * k
-        let baseY = top + (6 - top) * t                     // ينزل مع الصفحة
-        let y = baseY + (6 - baseY) * k
-        let x = (bw - 4 - 100) * k
-        return CGRect(x: x, y: y, width: w, height: w * 9 / 16)
+        var o = cornerOrigin(corner)
+        if t >= 1 {
+            if hiddenSide != 0 { o.x = hiddenSide < 0 ? -fw - 6 : W + 6 }
+            o.x += move.width; o.y += move.height
+        }
+        return CGRect(x: L(0, o.x), y: L(top, o.y), width: L(W, fw), height: L(W * 9 / 16, fh))
     }
-    /// مسافة السحب الكاملة (من صفحة لمربع صغير)
-    static func range(H: CGFloat, bottom: CGFloat) -> CGFloat { max(200, miniY(H: H, bottom: bottom)) }
 
     var body: some View {
-        let b = box, v = video
+        let v = video
         ZStack(alignment: .topLeading) {
-            // التفاصيل والحلقات تحت الفيديو (تنقص مع المربع — ما تختفي بتلاشي)
-            if let vod = pc.watchVod {
+            // الصفحة تحت الفيديو: تنزل وتتلاشى (زي يوتيوب)
+            if t < 1, let vod = pc.watchVod {
                 DetailsView(vod: vod, inPanel: true)
                     .environment(\.layoutDirection, .rightToLeft)
                     .frame(width: W, height: max(0, H - top - W * 9 / 16))
-                    .offset(y: v.maxY)
+                    .background(Theme.bg)
+                    .offset(y: top + W * 9 / 16 + t * 220)
+                    .opacity(Double(max(0, 1 - t * 1.4)))
                     .allowsHitTesting(t < 0.05)
             }
 
-            // الفيديو + أزراره (الأزرار بس بالصفحة الكاملة)
+            // الفيديو
             ZStack {
                 Color.black
                 VideoSurface(active: !pc.fullscreen)
@@ -66,75 +76,127 @@ struct WatchPanel: View {
                     .opacity(Double(1 - t * 4))
                     .environment(\.layoutDirection, .rightToLeft)
                 }
+                if t >= 1 { floatingOverlay }
             }
             .frame(width: v.width, height: v.height)
-            .clipShape(RoundedRectangle(cornerRadius: min(8, 8 * t * 3), style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: L(0, 12), style: .continuous))
+            .shadow(color: .black.opacity(t > 0.1 ? 0.55 : 0), radius: 12, y: 5)
             .offset(x: v.minX, y: v.minY)
+            .gesture(floatDrag, including: t >= 1 ? .all : .subviews)
 
-            // معلومات المشغّل الصغير جنب الفيديو (تطلع آخر الحركة)
-            if t > 0.6 {
-                miniInfo
-                    .frame(width: max(0, b.width - 100 - 14), height: b.height)
-                    .offset(x: 4)
-                    .opacity(Double((t - 0.7) / 0.3))
-                    .allowsHitTesting(t > 0.95)
-            }
-            // خط علوي رفيع + خط التقدّم الأحمر تحت بعرض المشغّل كامل (نفس الأندرويد)
-            if t > 0.95 {
-                Rectangle().fill(Color.white.opacity(0.08)).frame(width: b.width, height: 1)
-                if !pc.isLive, pc.duration > 0 {
-                    let pw = b.width * CGFloat(min(1, max(0, pc.position / pc.duration)))
-                    Rectangle().fill(Theme.red)
-                        .frame(width: pw, height: 2)
-                        .offset(x: b.width - pw, y: b.height - 2)          // يبدأ من اليمين (عربي)
-                }
+            // اللسان على الحافة لما تنخبى
+            if t >= 1 && hiddenSide != 0 {
+                handle.offset(x: hiddenSide < 0 ? 0 : W - 24, y: cornerOrigin(corner).y + fh / 2 - 30)
+                    .transition(.opacity)
             }
         }
-        .frame(width: b.width, height: b.height, alignment: .topLeading)
-        .background(t > 0.35 ? Color(red: 0.082, green: 0.094, blue: 0.114) : Theme.bg)     // لون المشغّل الصغير (#15181D)
-        .clipped()
-        .contentShape(Rectangle())
-        // المربع الصغير: ضغطة = يكبر، سحب لفوق = يكبر مع إصبعك (الصفحة الكاملة: الأزرار تشتغل عادي)
-        .gesture(TapGesture().onEnded { if t > 0.95 { onExpand() } }, including: t > 0.95 ? .all : .subviews)
-        .simultaneousGesture(DragGesture(minimumDistance: 8)
-            .onChanged { d in
-                if fromMini == nil { fromMini = t > 0.95 }            // السحب بدأ من المربع الصغير؟
-                if fromMini == true { onDrag(d.translation.height, false) }
-            }
-            .onEnded { d in
-                // سحبة سريعة لفوق تكفي (نفس الأندرويد)
-                if fromMini == true { onDrag(d.predictedEndTranslation.height < -260 ? min(d.translation.height, -10_000) : d.translation.height, true) }
-                fromMini = nil
-            })
-        .offset(x: b.minX, y: b.minY)
+        .frame(width: W, height: H, alignment: .topLeading)
         .onAppear { reportFrame() }
-        .onChange(of: t) { _, _ in reportFrame() }
+        .onChange(of: t) { _, nt in reportFrame(); if nt < 1 { showBtns = false; move = .zero } }
+    }
+
+    // MARK: النافذة العائمة
+
+    /// زر الإيقاف (يسار) والإغلاق (يمين) فوق الفيديو + خط التقدّم
+    private var floatingOverlay: some View {
+        ZStack(alignment: .top) {
+            Color.black.opacity(showBtns ? 0.35 : 0.001)        // (شبه شفاف عشان يستقبل اللمس)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    if showBtns { onExpand() } else { flashButtons() }
+                }
+            if showBtns {
+                HStack {
+                    smallButton(pc.isPlaying ? "pause.fill" : "play.fill", pc.isPlaying ? "إيقاف مؤقت" : "تشغيل") { pc.togglePlay(); flashButtons() }
+                    Spacer()
+                    smallButton("xmark", "إغلاق") { withAnimation(.easeOut(duration: 0.2)) { pc.stop() } }
+                }
+                .padding(5)
+                .environment(\.layoutDirection, .leftToRight)
+                .transition(.opacity)
+            }
+            if !pc.isLive, pc.duration > 0 {
+                VStack { Spacer(); ProgressLine(value: pc.position / pc.duration, height: 2) }
+                    .allowsHitTesting(false)
+            }
+        }
+        .animation(.easeOut(duration: 0.18), value: showBtns)
+    }
+
+    private func smallButton(_ sym: String, _ label: String, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: sym).font(.system(size: 13, weight: .bold)).foregroundStyle(.white)
+                .frame(width: 28, height: 28)
+                .background(.black.opacity(0.5), in: Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
+    }
+
+    private func flashButtons() {
+        showBtns = true
+        btnTask?.cancel()
+        btnTask = Task { try? await Task.sleep(for: .seconds(3)); if !Task.isCancelled { showBtns = false } }
+    }
+
+    /// تسحب النافذة لأي مكان: تلتصق بأقرب زاوية، أو ترميها على الحافة تنخبى
+    private var floatDrag: some Gesture {
+        DragGesture(minimumDistance: 6)
+            .onChanged { d in guard t >= 1 else { return }; showBtns = false; move = d.translation }
+            .onEnded { d in
+                guard t >= 1 else { return }
+                let base = cornerOrigin(corner)
+                let startX = hiddenSide == 0 ? base.x : (hiddenSide < 0 ? -fw - 6 : W + 6)
+                let x = startX + d.translation.width, y = base.y + d.translation.height
+                let px = startX + d.predictedEndTranslation.width
+                withAnimation(.spring(duration: 0.34, bounce: 0.08)) {
+                    move = .zero
+                    if x < -fw * 0.35 || px < -fw * 0.6 { hide(-1) }
+                    else if x > W - fw * 0.65 || px > W - fw * 0.4 { hide(1) }
+                    else {
+                        unhide()
+                        // أقرب زاوية
+                        var best = corner, bd = CGFloat.greatestFiniteMagnitude
+                        for c in 0..<4 {
+                            let o = cornerOrigin(c)
+                            let dd = hypot(o.x - x, o.y - y)
+                            if dd < bd { bd = dd; best = c }
+                        }
+                        corner = best
+                    }
+                }
+            }
+    }
+
+    private var handle: some View {
+        Button { withAnimation(.spring(duration: 0.34, bounce: 0.08)) { unhide() } } label: {
+            Image(systemName: hiddenSide < 0 ? "chevron.right" : "chevron.left")
+                .font(.system(size: 15, weight: .bold)).foregroundStyle(.white)
+                .frame(width: 24, height: 60)
+                .background(Color(white: 0.17), in: UnevenRoundedRectangle(
+                    topLeadingRadius: hiddenSide < 0 ? 0 : 12, bottomLeadingRadius: hiddenSide < 0 ? 0 : 12,
+                    bottomTrailingRadius: hiddenSide < 0 ? 12 : 0, topTrailingRadius: hiddenSide < 0 ? 12 : 0))
+                .shadow(color: .black.opacity(0.5), radius: 8)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("إظهار المشغّل")
+    }
+
+    /// تنخبى على الحافة ويوقف الفيديو (يكمل لما ترجّعها)
+    private func hide(_ side: Int) {
+        hiddenSide = side
+        corner = side < 0 ? (corner < 2 ? 0 : 2) : (corner < 2 ? 1 : 3)
+        if pc.isPlaying { pc.togglePlay(); pausedByHide = true }
+    }
+
+    private func unhide() {
+        guard hiddenSide != 0 else { return }
+        hiddenSide = 0
+        if pausedByHide { pausedByHide = false; if !pc.isPlaying { pc.togglePlay() } }
     }
 
     /// مكان الفيديو بالصفحة الكاملة (منه تبدأ حركة ملء الشاشة)
     private func reportFrame() {
         if t == 0 { pc.inlineFrame = CGRect(x: 0, y: top, width: W, height: W * 9 / 16) }
-    }
-
-    private var miniInfo: some View {
-        HStack(spacing: 2) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(pc.req?.title ?? "").font(.subheadline.weight(.semibold)).lineLimit(1)
-                if let s = pc.req?.sub, !s.isEmpty { Text(s).font(.caption).foregroundStyle(Theme.muted).lineLimit(1) }
-            }
-            Spacer(minLength: 2)
-            Button { pc.togglePlay() } label: {
-                Image(systemName: pc.isPlaying ? "pause.fill" : "play.fill").font(.title3).frame(width: 40, height: 44)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(pc.isPlaying ? "إيقاف مؤقت" : "تشغيل")
-            Button { withAnimation(.easeOut(duration: 0.2)) { pc.stop() } } label: {
-                Image(systemName: "xmark").font(.headline).frame(width: 40, height: 44)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("إغلاق")
-        }
-        .foregroundStyle(.white)
-        .environment(\.layoutDirection, .rightToLeft)
     }
 }

@@ -1013,44 +1013,55 @@ class DetailsActivity : Activity() {
         return navTop - boxH()
     }
 
-    /** t = 0 صفحة كاملة … 1 المربع الصغير. الصفحة كلها نفس المربع: تنزل وتنقص، والفيديو يصغر لمكانه — بدون تلاشي. */
+    /** مكان النافذة العائمة بإحداثيات الصفحة: (x, y, العرض) */
+    private fun floatTarget(): Triple<Float, Float, Float> {
+        val w = root.width.toFloat()
+        val loc = IntArray(2); stage?.getLocationOnScreen(loc)
+        val fw = if (MiniDock.floatW > 0f) MiniDock.floatW else w / 2f
+        val fh = fw * 9f / 16f
+        val x = if (MiniDock.floatX >= 0f) MiniDock.floatX - loc[0] else w - fw - dp(10)
+        val navTop = if (MiniDock.navTop > 0) MiniDock.navTop.toFloat() - loc[1] else root.height - dp(58f.toInt()) - inB.toFloat()
+        val y = if (MiniDock.floatY >= 0f) MiniDock.floatY - loc[1] else navTop - dp(10) - fh
+        return Triple(x, y, fw)
+    }
+
+    /** t = 0 صفحة كاملة … 1 النافذة العائمة (زي يوتيوب): الفيديو يصغر لمكان النافذة، والصفحة تنزل وتتلاشى. */
     private fun setMorph(t0: Float) {
         val t = t0.coerceIn(0f, 1f)
         morphT = t
-        val w = root.width.toFloat(); val h = root.height.toFloat()
-        if (w <= 0f || h <= 0f) return
-        val bh = lerp(h, boxH(), t)
-        root.translationY = lerp(0f, miniTop(), t)
-        // الصفحة تنقص من تحت لين تصير بارتفاع المشغّل الصغير (قصّ حقيقي — يشتغل على كل الأجهزة)
-        root.clipBounds = if (t > 0f) android.graphics.Rect(0, 0, w.toInt(), bh.toInt().coerceAtLeast(1)) else null
+        val w = root.width.toFloat()
+        if (w <= 0f) return
+        val (tx, ty, fw) = floatTarget()
         miniBox?.let { b ->
             val vw = b.width.toFloat()
             if (vw > 0f) {
-                // طريقة "ب": الفيديو ينزل مع الصفحة بعرضها كامل، وفي آخر ثلث الحركة يصغر ويدخل زاويته (16:9 دايماً)
-                val k = dockEase((t - 0.62f) / 0.38f)
-                val s = lerp(1f, dp(100) / vw, k)
+                val s = lerp(1f, fw / vw, t)
                 b.pivotX = 0f; b.pivotY = 0f; b.scaleX = s; b.scaleY = s
-                b.translationX = lerp(0f, w - dp(4) - dp(100), k)          // يروح يمين المربع (نفس مكانه بالمشغّل الصغير)
-                val base = lerp(0f, (dp(6) - inT).toFloat(), t)
-                b.translationY = lerp(base, (dp(6) - inT).toFloat(), k)
+                b.translationX = lerp(0f, tx, t)
+                b.translationY = lerp(0f, ty - inT, t)
+                b.elevation = if (t > 0.05f) dp(10).toFloat() else 0f
             }
         }
         miniBar?.alpha = (1f - t * 4f).coerceAtLeast(0f)
         slotBack?.alpha = (1f - t * 4f).coerceAtLeast(0f)
-        topSlot?.setBackgroundColor(if (t > 0.35f) C.PANEL else 0xFF000000.toInt())
+        topSlot?.setBackgroundColor(if (t > 0f) 0 else 0xFF000000.toInt())
+        topSlot?.clipChildren = t == 0f
+        root.clipChildren = t == 0f
+        // باقي الصفحة (التفاصيل والحلقات): تنزل وتتلاشى
+        val fade = (1f - t * 1.4f).coerceIn(0f, 1f)
+        for (i in 0 until root.childCount) {
+            val c = root.getChildAt(i)
+            if (c === topSlot) continue
+            c.alpha = fade; c.translationY = t * dp(220)
+        }
+        root.background = if (t > 0f) android.graphics.drawable.ColorDrawable(C.BG).apply { alpha = (fade * 255).toInt() } else android.graphics.drawable.ColorDrawable(C.BG)
         val on = t > 0f
         if (!seeThrough) snapView?.let { sv ->
             if (on && sv.visibility != View.VISIBLE) { sv.setImageBitmap(PageSnapshot.bitmap); sv.visibility = View.VISIBLE }
             if (!on) sv.visibility = View.GONE
         }
-        shade?.let { it.visibility = if (on) View.VISIBLE else View.GONE; it.alpha = (1f - t) * 0.55f }
-        morphInfo?.let { mi ->
-            mi.visibility = if (t > 0.6f) View.VISIBLE else View.GONE
-            mi.alpha = ((t - 0.7f) / 0.3f).coerceIn(0f, 1f)
-            mi.translationY = root.translationY
-            (mi.layoutParams as FrameLayout.LayoutParams).let { lp -> val hh = boxH().toInt(); if (lp.height != hh) { lp.height = hh; mi.layoutParams = lp } }
-            mi.setPadding(dp(14), 0, dp(4) + dp(100) + dp(10), 0)
-        }
+        shade?.let { it.visibility = if (on) View.VISIBLE else View.GONE; it.alpha = (1f - t) * 0.7f }
+        morphInfo?.visibility = View.GONE
     }
 
     private fun animateMorph(to: Float, end: (() -> Unit)? = null) {
@@ -1075,7 +1086,7 @@ class DetailsActivity : Activity() {
 
     /** سحب من المشغّل: الصفحة تتبع إصبعك، ولما تترك: ثلث المسافة يكفي عشان تصير مشغّل صغير. */
     private fun onPageDrag(dy: Float, ended: Boolean) {
-        val range = miniTop().coerceAtLeast(dp(200).toFloat())
+        val range = (floatTarget().second - inT).coerceAtLeast(dp(200).toFloat())
         val t = (dy / range).coerceIn(0f, 1f)
         if (!ended) { morphAnim?.cancel(); morphInfoText(); setMorph(t); return }
         if (t > 0.3f) collapseToDock() else animateMorph(0f)
