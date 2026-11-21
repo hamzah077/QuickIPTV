@@ -230,7 +230,7 @@ fun Context.listRow(
     if (onClick != null) {
         isFocusable = true
         isClickable = true
-        background = focusBg(radius = 0)
+        background = focusBg(radius = if (isTv()) 12 else 0)        // التلفزيون: صف مدوّر بنفس تحديد القائمة الجانبية
         setOnClickListener { onClick() }
         pressScale(0.985f)
     }
@@ -252,7 +252,11 @@ fun Context.button(label: String, iconRes: Int = 0, primary: Boolean = false, on
         setPadding(pad, dp(10), pad, dp(10))
         isFocusable = true
         isClickable = true
-        background = if (primary) {
+        val tv = isTv()
+        // التلفزيون: كبسولة بنفس نظام القائمة الجانبية — عادي رمادي شفاف خفيف (الأساسي أوضح شوي)،
+        // والتحديد رمادي فاتح والكتابة والأيقونة داكنة
+        background = if (tv) focusBg(normal = if (primary) 0x29FFFFFF else 0x14FFFFFF, radius = 24)
+        else if (primary) {
             StateListDrawable().apply {
                 val r = dpf(10f)
                 addState(intArrayOf(android.R.attr.state_focused), rounded(C.PRIMARY, r, C.ACCENT, dp(3)))
@@ -260,7 +264,7 @@ fun Context.button(label: String, iconRes: Int = 0, primary: Boolean = false, on
                 addState(intArrayOf(), rounded(C.PRIMARY, r))
             }
         } else focusBg(normal = C.SURFACE2)
-        val fg = if (primary) C.PRIMARY_TEXT else C.TEXT
+        val fg = if (primary && !tv) C.PRIMARY_TEXT else C.TEXT
         if (iconRes != 0) {
             addView(icon(iconRes, fg, 18))
             addView(View(context), LinearLayout.LayoutParams(dp(8), 1))
@@ -298,7 +302,8 @@ fun androidx.media3.common.Player.liveSeek(forward: Boolean): Boolean {
 fun Context.iconButton(res: Int, desc: String, size: Int = 44, onClick: () -> Unit): FrameLayout =
     FrameLayout(this).apply {
         layoutParams = ViewGroup.LayoutParams(dp(size), dp(size))
-        background = focusBg()
+        // التلفزيون: دائرة بنفس نظام القائمة الجانبية
+        background = if (isTv()) focusBg(normal = 0x14FFFFFF, radius = size / 2) else focusBg()
         isFocusable = true
         isClickable = true
         contentDescription = desc

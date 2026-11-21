@@ -517,10 +517,13 @@ class DetailsActivity : Activity() {
         val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, dp(6), 0, dp(6)) }
         seasons.keys.forEach { s ->
             val on = s == season
-            row.addView(text("الموسم $s", 13f, if (on) C.PRIMARY_TEXT else C.TEXT2, lines = 0).apply {
+            val tv = isTv()
+            row.addView(text("الموسم $s", 13f, if (on) (if (tv) C.TEXT else C.PRIMARY_TEXT) else C.TEXT2, lines = 0, bold = on && tv).apply {
                 gravity = Gravity.CENTER
                 setPadding(dp(14), dp(7), dp(14), dp(7))
-                background = focusBg(normal = if (on) C.PRIMARY else C.SURFACE2, radius = 16, selected = if (on) C.PRIMARY else C.ACCENT_SOFT)
+                // التلفزيون: كبسولات بنفس نظام القائمة الجانبية (المختار رمادي أوضح، التحديد رمادي فاتح بكتابة داكنة)
+                background = if (tv) focusBg(normal = if (on) 0x29FFFFFF else 0x0FFFFFFF, radius = 18)
+                else focusBg(normal = if (on) C.PRIMARY else C.SURFACE2, radius = 16, selected = if (on) C.PRIMARY else C.ACCENT_SOFT)
                 isFocusable = true; isClickable = true; tag = "season:$s"
                 setOnClickListener { if (season != s) { season = s; render() } }
             }, lp(WRAP, WRAP).apply { marginEnd = dp(8) })
@@ -609,7 +612,8 @@ class DetailsActivity : Activity() {
             holder.row.tag = "ep:${e.id}"
             // الحلقة الحالية (شغّالة الحين أو آخر وحدة شفتها): خلفية مميّزة وإطار
             // الحلقة الحالية: رمادي خفيف بنفس ستايل التطبيق (والتحديد بالريموت يبقى تحديد التطبيق العادي)
-            holder.row.background = if (current) android.graphics.drawable.LayerDrawable(arrayOf(
+            holder.row.background = if (isTv()) focusBg(radius = 12, normal = if (current) 0x1FFFFFFF else 0)      // التلفزيون: نفس تحديد القائمة الجانبية
+            else if (current) android.graphics.drawable.LayerDrawable(arrayOf(
                 focusBg(radius = 10, normal = 0x1FFFFFFF),
                 rounded(0x00000000, dpf(10f), 0x38FFFFFF, dp(1))))
             else focusBg(radius = 10, normal = if (partial) C.ACCENT_SOFT else 0)
