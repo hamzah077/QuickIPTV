@@ -48,7 +48,8 @@ final class PlayerController {
 
     private init() {
         vlc.drawable = vlcView
-        player.automaticallyWaitsToMinimizeStalling = false        // يبدأ أسرع (ما ينتظر بفر كبير)
+        // لازم true: لو false، الـ AVPlayer إذا خلص البفر يوقف ويطلع تقطيع وما يكمّل لحاله
+        player.automaticallyWaitsToMinimizeStalling = true
         timeObs = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.5, preferredTimescale: 600), queue: .main) { [weak self] t in
             MainActor.assumeIsolated { self?.tick(t) }
         }
@@ -84,7 +85,8 @@ final class PlayerController {
         stopVLC()
         engine = .av
         let item = AVPlayerItem(url: r.url)
-        item.preferredForwardBufferDuration = r.type == "live" ? 4 : 10
+        // المباشر: النظام يحدد البفر حسب السيرفر (أثبت). الأفلام: بفر أكبر عشان ما يقطع على النت البطيء
+        item.preferredForwardBufferDuration = r.type == "live" ? 0 : 30
         statusObs = item.observe(\.status, options: [.new]) { [weak self] it, _ in
             let failed = it.status == .failed
             Task { @MainActor in
@@ -107,7 +109,9 @@ final class PlayerController {
         engine = .vlc
         player.pause(); player.replaceCurrentItem(with: nil)
         let m = VLCMedia(url: r.url)
-        m.addOption(r.type == "live" ? ":network-caching=1500" : ":network-caching=2000")
+        m.addOption(":network-caching=3000")                                               // بفر ٣ ثواني يمنع التقطيع
+        m.addOption(":live-caching=3000")
+        m.addOption(":http-reconnect")                                                    // ينقطع السيرفر؟ يرجع يتصل
         m.addOption(":http-user-agent=QuickTv/1.0")
         if r.start > 0 { m.addOption(":start-time=\(Int(r.start))") }
         vlc.media = m

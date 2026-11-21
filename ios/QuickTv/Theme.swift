@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 enum Theme {
     static let bg = Color(red: 0.043, green: 0.047, blue: 0.063)          // #0B0C10
@@ -60,11 +61,8 @@ struct Poster: View {
         // Color.clear ياخذ مقاس الإطار بالضبط، والصورة تتعبّى داخله وتنقص — ما تطلع برا حدودها
         Color.clear
             .overlay {
-                AsyncImage(url: URL(string: url), transaction: Transaction(animation: .easeOut(duration: 0.2))) { phase in
-                    switch phase {
-                    case .success(let img): img.resizable().aspectRatio(contentMode: contentMode)
-                    default: Rectangle().fill(Theme.surface)
-                    }
+                GeometryReader { g in
+                    CachedImage(url: url, size: g.size, contentMode: contentMode)
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
@@ -106,4 +104,81 @@ struct ProgressLine: View {
 struct IsWide: EnvironmentKey { static let defaultValue = false }
 extension EnvironmentValues {
     var isWide: Bool { get { self[IsWide.self] } set { self[IsWide.self] = newValue } }
+}
+
+
+// MARK: - صور مع ذاكرة (بدال AsyncImage اللي يعيد التنزيل مع كل تمرير)
+
+/// يحمّل الصورة مرة وحدة، يصغّرها لمقاس الخانة (أخف على الذاكرة والتمرير)، ويحفظها بالذاكرة وبالجهاز
+final class ImageStore: @unchecked Sendable {
+    static let shared = ImageStore()
+    private let mem = NSCache<NSString, UIImage>()
+    private let session: URLSession
+    private var inflight: [String: Task<UIImage?, Never>] = [:]
+    private let lock = NSLock()
+
+    private init() {
+        mem.totalCostLimit = 120 * 1024 * 1024
+        let cfg = URLSessionConfiguration.default
+        cfg.urlCache = URLCache(memoryCapacity: 20 * 1024 * 1024, diskCapacity: 400 * 1024 * 1024)
+        cfg.requestCachePolicy = .returnCacheDataElseLoad          // مرة وحدة من النت، بعدها من الجهاز
+        cfg.timeoutIntervalForRequest = 15
+        cfg.httpMaximumConnectionsPerHost = 6
+        session = URLSession(configuration: cfg)
+    }
+
+    func cached(_ key: String) -> UIImage? { mem.object(forKey: key as NSString) }
+
+    func load(_ url: URL, px: CGFloat) async -> UIImage? {
+        let key = "\(url.absoluteString)#\(Int(px))"
+        if let i = cached(key) { return i }
+        let t: Task<UIImage?, Never> = lock.withLock {
+            if let t = inflight[key] { return t }
+            let t = Task<UIImage?, Never>.detached(priority: .utility) { [session] in
+            guard let (data, _) = try? await session.data(from: url), let img = UIImage(data: data) else { return nil }
+            // نصغّرها لمقاس الخانة بس (صور البوسترات أحياناً ٢٠٠٠ بكسل)
+            let scale = px / max(img.size.width, img.size.height)
+            let out = scale < 1 ? (await img.byPreparingThumbnail(ofSize: CGSize(width: img.size.width * scale, height: img.size.height * scale)) ?? img)
+                                : (await img.byPreparingForDisplay() ?? img)
+            return out
+        }
+            inflight[key] = t
+            return t
+        }
+        let img = await t.value
+        lock.withLock { inflight[key] = nil }
+        if let img { mem.setObject(img, forKey: key as NSString, cost: Int(img.size.width * img.size.height * img.scale * img.scale * 4)) }
+        return img
+    }
+}
+
+struct CachedImage: View {
+    let url: String
+    let size: CGSize
+    var contentMode: ContentMode = .fill
+    @Environment(\.displayScale) private var scale
+    @State private var img: UIImage?
+    @State private var imgKey = ""                      // الخلايا تنعاد تُستخدم: لازم نعرف الصورة لأي رابط
+
+    private var px: CGFloat { max(size.width, size.height) * scale * (contentMode == .fill ? 1.6 : 1) }
+    private var key: String { "\(url)#\(Int(px))" }
+
+    var body: some View {
+        ZStack {
+            if let img = (imgKey == key ? img : nil) ?? ImageStore.shared.cached(key) {
+                Image(uiImage: img).resizable().aspectRatio(contentMode: contentMode)
+                    .frame(width: size.width, height: size.height)
+            } else {
+                Theme.surface
+            }
+        }
+        .frame(width: size.width, height: size.height)
+        .task(id: key) {
+            if imgKey != key { img = nil; imgKey = key }
+            guard size.width > 1, ImageStore.shared.cached(key) == nil, let u = URL(string: url), u.scheme != nil else { return }
+            let k = key
+            let loaded = await ImageStore.shared.load(u, px: px)
+            if !Task.isCancelled, k == imgKey { withAnimation(.easeOut(duration: 0.15)) { img = loaded } }
+        }
+    }
 }
