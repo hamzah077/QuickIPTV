@@ -38,7 +38,7 @@ enum AppSection: String, CaseIterable, Identifiable {
     }
 }
 
-// MARK: - آيفون: تبويبات زجاج عائمة + البحث دائرة لحالها (iOS 26)
+// MARK: - آيفون: تبويبات زجاج عائمة (البحث والإعدادات فوق في كل صفحة)
 
 struct PhoneShell: View {
     @Environment(PlayerController.self) private var pc
@@ -65,7 +65,6 @@ struct PhoneShell: View {
                 Tab(AppSection.live.title, systemImage: AppSection.live.icon) { NavigationStack { LiveView() } }
                 Tab(AppSection.movies.title, systemImage: AppSection.movies.icon) { NavigationStack { VodGridView(series: false) } }
                 Tab(AppSection.series.title, systemImage: AppSection.series.icon) { NavigationStack { VodGridView(series: true) } }
-                Tab("بحث", systemImage: "magnifyingglass", role: .search) { NavigationStack { SearchView() } }
             }
         } else {
             TabView(selection: $tab) {
@@ -174,8 +173,16 @@ struct LoginView: View {
 struct HomeView: View {
     @Environment(AppModel.self) private var model
     @Environment(PlayerController.self) private var pc
+    @State private var q = ""
 
     var body: some View {
+        Group {
+            if SearchNorm.tokens(q).isEmpty { home } else { SearchResults(q: q) }     // البحث في الرئيسية شامل
+        }
+        .modifier(TopBar(query: $q, prompt: "ابحث في كل شي: قنوات، أفلام، مسلسلات", home: true))
+    }
+
+    private var home: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 Text(model.greeting).font(.largeTitle.weight(.bold)).padding(.horizontal, 16).padding(.top, 8)
@@ -213,14 +220,6 @@ struct HomeView: View {
         }
         .refreshable { await model.loadAll(force: true) }
         .scrollContentBackground(.hidden)
-        .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                NavigationLink { SettingsView() } label: { Image(systemName: "gearshape") }
-            }
-            ToolbarItem(placement: .topBarLeading) {
-                NavigationLink { DownloadsView() } label: { Image(systemName: "arrow.down.circle") }
-            }
-        }
     }
 
     @ViewBuilder private func posterRow(_ title: String, _ items: [Vod]) -> some View {

@@ -53,7 +53,7 @@ struct LiveView: View {
         }
         .navigationTitle("المباشر")
         .navigationBarTitleDisplayMode(.inline)
-        .searchable(text: $q, prompt: "ابحث في هذا التصنيف…")
+        .modifier(TopBar(query: $q, prompt: "ابحث في القنوات"))
         .onAppear { if let s = start, current == nil { play(s) } }
     }
 
@@ -137,10 +137,13 @@ struct VodGridView: View {
     @Environment(\.horizontalSizeClass) private var hsize
     let series: Bool
     @State private var cat = ""
+    @State private var q = ""
 
     private var items: [Vod] {
         let all = series ? model.seriesList : model.movies
-        return cat.isEmpty ? all : all.filter { $0.categoryId == cat }
+        let inCat = cat.isEmpty ? all : all.filter { $0.categoryId == cat }
+        let t = SearchNorm.tokens(q)                                    // البحث هنا خاص بالقسم (وبالتصنيف المختار)
+        return t.isEmpty ? inCat : inCat.filter { SearchNorm.matches($0.name, t) }
     }
 
     var body: some View {
@@ -164,7 +167,11 @@ struct VodGridView: View {
             .padding(16)
             .padding(.bottom, 80)
         }
+        .overlay {
+            if items.isEmpty && !q.isEmpty { Text("ما فيه نتايج في هذا القسم").foregroundStyle(Theme.muted) }
+        }
         .navigationTitle(series ? "المسلسلات" : "الأفلام")
+        .modifier(TopBar(query: $q, prompt: series ? "ابحث في المسلسلات" : "ابحث في الأفلام"))
     }
 
     private func chip(_ t: String, _ id: String) -> some View {
@@ -368,8 +375,19 @@ struct DetailsView: View {
 // MARK: - البحث
 
 struct SearchView: View {
-    @Environment(AppModel.self) private var model
     @State private var q = ""
+
+    var body: some View {
+        SearchResults(q: q)
+            .searchable(text: $q, prompt: "بحث")
+            .navigationTitle("بحث")
+    }
+}
+
+/// نتايج البحث الشامل: قنوات · أفلام · مسلسلات
+struct SearchResults: View {
+    @Environment(AppModel.self) private var model
+    let q: String
 
     var body: some View {
         let t = SearchNorm.tokens(q)
@@ -378,26 +396,120 @@ struct SearchView: View {
                 Text("اكتب أي جزء من اسم الفيلم أو المسلسل أو القناة").foregroundStyle(Theme.muted)
             } else {
                 let ch = model.channels.filter { SearchNorm.matches($0.name, t) }.prefix(50)
-                let vs = (model.movies + model.seriesList).filter { SearchNorm.matches($0.name, t) }.prefix(80)
+                let mv = model.movies.filter { SearchNorm.matches($0.name, t) }.prefix(60)
+                let sr = model.seriesList.filter { SearchNorm.matches($0.name, t) }.prefix(60)
+                if ch.isEmpty && mv.isEmpty && sr.isEmpty {
+                    Text("ما فيه نتايج").foregroundStyle(Theme.muted)
+                }
                 if !ch.isEmpty {
                     SwiftUI.Section("القنوات") {
-                        ForEach(Array(ch)) { c in NavigationLink(c.name) { LiveView(start: c) } }
-                    }
-                }
-                if !vs.isEmpty {
-                    SwiftUI.Section("الأفلام والمسلسلات") {
-                        ForEach(Array(vs)) { v in
-                            NavigationLink { DetailsView(vod: v) } label: {
-                                HStack { Poster(url: v.icon, radius: 6).frame(width: 40, height: 58); Text(v.name); Spacer(); Text(v.isSeries ? "مسلسل" : "فيلم").font(.caption).foregroundStyle(Theme.muted) }
+                        ForEach(Array(ch)) { c in
+                            NavigationLink { LiveView(start: c) } label: {
+                                HStack(spacing: 10) {
+                                    Poster(url: c.icon, radius: 8, contentMode: .fit).frame(width: 40, height: 40)
+                                    Text(c.name)
+                                }
                             }
                         }
                     }
                 }
+                if !mv.isEmpty { SwiftUI.Section("الأفلام") { ForEach(Array(mv)) { v in vodRow(v) } } }
+                if !sr.isEmpty { SwiftUI.Section("المسلسلات") { ForEach(Array(sr)) { v in vodRow(v) } } }
             }
         }
         .scrollContentBackground(.hidden)
-        .searchable(text: $q, prompt: "بحث")
-        .navigationTitle("بحث")
+        .scrollDismissesKeyboard(.immediately)
+    }
+
+    private func vodRow(_ v: Vod) -> some View {
+        NavigationLink { DetailsView(vod: v) } label: {
+            HStack(spacing: 10) { Poster(url: v.icon, radius: 6).frame(width: 40, height: 58); Text(v.name).lineLimit(2) }
+        }
+    }
+}
+
+// MARK: - الشريط اللي فوق (آيفون): بحث خاص بالصفحة + إعدادات في كل صفحة + تحميلات في الرئيسية
+
+struct TopBar: ViewModifier {
+    @Environment(\.horizontalSizeClass) private var hsize
+    @Binding var query: String
+    var prompt: String
+    var home = false
+    @State private var open = false
+    @State private var showSettings = false
+    @FocusState private var focused: Bool
+
+    @ViewBuilder func body(content: Content) -> some View {
+        if hsize == .regular {
+            // آيباد: نفس اللي قبل (البحث الشامل والإعدادات في القائمة الجانبية)
+            if home {
+                content.toolbar {
+                    ToolbarItemGroup(placement: .topBarTrailing) {
+                        NavigationLink { DownloadsView() } label: { Image(systemName: "arrow.down.circle") }
+                        NavigationLink { SettingsView() } label: { Image(systemName: "gearshape") }
+                    }
+                }
+            } else {
+                content.searchable(text: $query, prompt: prompt)
+            }
+        } else {
+            content
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    if open { bar.transition(.move(edge: .top).combined(with: .opacity)) }
+                }
+                .toolbar {
+                    ToolbarItemGroup(placement: .topBarTrailing) {
+                        Button { toggle() } label: { Image(systemName: open ? "xmark" : "magnifyingglass") }
+                            .accessibilityLabel("بحث")
+                        if home {
+                            NavigationLink { DownloadsView() } label: { Image(systemName: "arrow.down.circle") }
+                                .accessibilityLabel("التحميلات")
+                        }
+                        Button { showSettings = true } label: { Image(systemName: "gearshape") }
+                            .accessibilityLabel("الإعدادات")
+                    }
+                }
+                .sheet(isPresented: $showSettings) {
+                    NavigationStack {
+                        SettingsView().toolbar {
+                            ToolbarItem(placement: .confirmationAction) { Button("تم") { showSettings = false } }
+                        }
+                    }
+                    .presentationDetents([.medium, .large])
+                    .presentationDragIndicator(.visible)
+                }
+        }
+    }
+
+    private var bar: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass").foregroundStyle(Theme.muted)
+            TextField(prompt, text: $query)
+                .focused($focused)
+                .submitLabel(.search)
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.never)
+                .onSubmit { focused = false }
+            if !query.isEmpty {
+                Button { query = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(Theme.muted) }
+                    .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 12)
+        .frame(height: 40)
+        .glass(14)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 6)
+        .background(Theme.bg)
+    }
+
+    private func toggle() {
+        withAnimation(.snappy(duration: 0.25)) { open.toggle() }
+        if open {
+            Task { try? await Task.sleep(for: .milliseconds(80)); focused = true }
+        } else {
+            query = ""; focused = false
+        }
     }
 }
 
