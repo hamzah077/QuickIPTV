@@ -182,30 +182,51 @@ struct LoginView: View {
     @State private var server = ""
     @State private var busy = false
     @State private var err: String?
+    /// الخانة اللي تكتب فيها: الصفحة تتمرّر لها فوق الكيبورد، و"التالي" ينقلك للي بعدها
+    enum Field: Hashable { case name, user, pass, server }
+    @FocusState private var focus: Field?
 
     var body: some View {
+        ScrollViewReader { proxy in
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                Text("QuickTv").font(.largeTitle.weight(.bold)).padding(.top, 40)
-                Text("أضف حساب Xtream Codes للبدء").foregroundStyle(Theme.muted)
+                Text("QuickTv").font(focus == nil ? .largeTitle.weight(.bold) : .title2.weight(.bold)).padding(.top, focus == nil ? 40 : 12)
+                if focus == nil { Text("أضف حساب Xtream Codes للبدء").foregroundStyle(Theme.muted) }     // وقت الكتابة: مساحة أكثر
                 field("الاسم", "أي اسم تبيه (يطلع في الترحيب)", $name)
+                    .focused($focus, equals: .name).submitLabel(.next).onSubmit { focus = .user }.id(Field.name)
                 field("اسم المستخدم", "اسم المستخدم", $user, ltr: true)
+                    .focused($focus, equals: .user).submitLabel(.next).onSubmit { focus = .pass }.id(Field.user)
                 field("كلمة المرور", "كلمة المرور", $pass, secure: true)
+                    .focused($focus, equals: .pass).submitLabel(.next).onSubmit { focus = .server }.id(Field.pass)
                 field("عنوان السيرفر", "http://example.com:8080 أو الصق رابط الاشتراك", $server, ltr: true)
+                    .focused($focus, equals: .server)
                     .submitLabel(.go)
-                    .onSubmit { Task { await submit() } }        // زر "انتقال" في الكيبورد يدخل مباشرة
+                    .onSubmit { focus = nil; Task { await submit() } }        // زر "انتقال" في الكيبورد يدخل مباشرة
+                    .id(Field.server)
                 if let err { Text(err).font(.footnote).foregroundStyle(Theme.red) }
-                Button { Task { await submit() } } label: {
+                Button { focus = nil; Task { await submit() } } label: {
                     HStack { if busy { ProgressView() }; Text("دخول").font(.headline) }
                         .frame(maxWidth: .infinity).frame(height: 52)
                         .background(.white, in: Capsule()).foregroundStyle(.black)
                 }
                 .disabled(busy)
                 .padding(.top, 6)
+                .id("go")
             }
             .padding(24)
             .frame(maxWidth: 520)
             .frame(maxWidth: .infinity)
+        }
+        .scrollDismissesKeyboard(.interactively)
+        .onChange(of: focus) { _, f in
+            guard let f else { return }
+            // آخر خانة: نبيّن زر الدخول تحتها بعد
+            Task { try? await Task.sleep(for: .milliseconds(250))
+                withAnimation(.easeOut(duration: 0.25)) {
+                    if f == .server { proxy.scrollTo("go", anchor: .bottom) } else { proxy.scrollTo(f, anchor: .bottom) }
+                } }
+        }
+        .animation(.easeOut(duration: 0.2), value: focus == nil)
         }
         .onAppear { if let e = edit { name = e.name; user = e.username; pass = e.password; server = e.server } }
     }

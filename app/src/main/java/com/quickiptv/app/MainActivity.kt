@@ -100,7 +100,7 @@ class MainActivity : Activity() {
     fun showLogin(edit: Account? = null) {
         screens.values.forEach { it.onHide() }
         screens.clear(); navButtons.clear(); current = ""
-        setContentView(LoginScreen(this, edit).view.apply { padForSystemBars() })
+        setContentView(LoginScreen(this, edit).view)        // الحواف والكيبورد تنحسب داخل الشاشة نفسها
     }
 
     /** يفتح الحساب فوراً من الكاش، ويتحقق من الاشتراك بالخلفية. */

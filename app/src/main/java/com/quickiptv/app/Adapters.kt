@@ -202,6 +202,8 @@ class CategoryAdapter(
         h.t.isSelected = sel
         h.t.setTextColor(if (sel) (if (horizontal) C.PRIMARY_TEXT else C.TEXT) else C.TEXT2)
         h.t.typeface = if (sel) Fonts.bold else Fonts.regular
+        // التلفزيون (كبسولات بسطر): نفس نظام القائمة الجانبية — المختار رمادي أوضح والتحديد رمادي فاتح
+        if (horizontal && ctx.isTv()) { h.t.background = ctx.focusBg(normal = if (sel) 0x29FFFFFF else 0x14FFFFFF, radius = 18); h.t.setTextColor(if (sel) C.TEXT else C.TEXT2) }
         h.t.setOnClickListener { onClick(c) }
     }
 }

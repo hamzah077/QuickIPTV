@@ -95,6 +95,11 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
     private val phoneBar = LinearLayout(a)
     private val epgScroll by lazy { ScrollView(a).apply { addView(epgBox); isFocusable = false } }
     private var arrangedWide: Boolean? = null
+    // شكل أ (لازم قبل init لأن arrange ينادى منه)
+    private var panel: View? = null
+    private var infoBox: View? = null
+    private var shadeV: View? = null
+    private var panelHidden = false
 
     init {
         catList.layoutManager = SmoothLM(a, if (a.tv) LinearLayoutManager.VERTICAL else LinearLayoutManager.HORIZONTAL)
@@ -226,10 +231,6 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
     }
 
     // ---------- أ: البث يملى الشاشة، ولوحة شفافة فيها التصنيفات والقنوات ----------
-    private var panel: View? = null
-    private var infoBox: View? = null
-    private var shadeV: View? = null
-    private var panelHidden = false
 
     private fun arrangeFull() {
         root.addView(screenBox, FrameLayout.LayoutParams(MATCH, MATCH))
@@ -242,7 +243,10 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
         root.addView(shade, FrameLayout.LayoutParams((sw * 0.62f).toInt(), MATCH, Gravity.START))
         shadeV = shade
         val p = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL; setPadding(a.dp(14), a.dp(16), a.dp(10), a.dp(8)) }
-        p.addView(catList, lp(MATCH, WRAP).apply { bottomMargin = a.dp(8) })
+        // التصنيفات كبسولات بسطر واحد فوق القنوات
+        catList.layoutManager = SmoothLM(a, LinearLayoutManager.HORIZONTAL)
+        catList.clipToPadding = false
+        p.addView(catList, lp(MATCH, a.dp(44)).apply { bottomMargin = a.dp(8) })
         p.addView(chList, lp(MATCH, 0, 1f))
         root.addView(p, FrameLayout.LayoutParams((sw * 0.36f).toInt(), MATCH, Gravity.START))
         panel = p
@@ -273,6 +277,7 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
     private fun arrangeBig() {
         val row = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL; setPadding(a.dp(12), a.dp(14), a.dp(12), a.dp(8)) }
         val list = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL }
+        (catBtn.parent as? ViewGroup)?.removeView(catBtn)
         catBtn.apply {
             visibility = View.VISIBLE
             textSize = 14f
@@ -318,6 +323,11 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
                 catSideAdapter.items = catAdapter.items
                 val last = Store.lastCategory("live")
                 selectCategory(if (last.isNotEmpty() && catAdapter.items.any { it.id == last }) last else cats.firstOrNull()?.id ?: Live.ALL)
+                // أ: البث يملى الشاشة — نشغّل آخر قناة شفتها (أو أول قناة) عشان الخلفية ما تكون فاضية
+                if (full && current == null) {
+                    val lastId = Store.history().firstOrNull { it.type == "live" }?.key?.removePrefix("live:")
+                    (visible.firstOrNull { it.id == lastId } ?: visible.firstOrNull())?.let { preview(it) }
+                }
             } catch (e: Exception) {
                 showStatus(e.message ?: "تعذر تحميل القنوات")
             }

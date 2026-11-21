@@ -115,7 +115,10 @@ class LoginScreen(private val a: MainActivity, edit: Account?) : Screen {
             layoutDirection = View.LAYOUT_DIRECTION_RTL
         }
         col.addView(a.text("QuickTv", 26f, C.TEXT, bold = true))
-        col.addView(a.text("أضف حساب Xtream Codes للبدء", 14f, C.MUTED).apply { setPadding(0, a.dp(6), 0, a.dp(20)) })
+        val subtitle = a.text("أضف حساب Xtream Codes للبدء", 14f, C.MUTED).apply { setPadding(0, a.dp(6), 0, a.dp(20)) }
+        col.addView(subtitle)
+        // زر "التالي" بالكيبورد ينقلك للخانة اللي بعدها، وآخر خانة "دخول"
+        listOf(name, user, pass).forEach { it.imeOptions = EditorInfo.IME_ACTION_NEXT or EditorInfo.IME_FLAG_NO_EXTRACT_UI }
         for ((label, f) in listOf("الاسم" to name, "اسم المستخدم" to user, "كلمة المرور" to pass, "عنوان السيرفر" to server)) {
             col.addView(a.text(label, 13f, C.MUTED).apply { setPadding(a.dp(4), 0, a.dp(4), a.dp(4)) })
             col.addView(f, lp(MATCH, WRAP).apply { bottomMargin = a.dp(12) })
@@ -138,7 +141,48 @@ class LoginScreen(private val a: MainActivity, edit: Account?) : Screen {
         box.addView(col, FrameLayout.LayoutParams(minOf(a.dp(520), a.resources.displayMetrics.widthPixels), WRAP, Gravity.CENTER))
         sc.addView(box)
         view = sc
-        server.setOnFocusChangeListener { _, has -> if (!has) splitLink() }
+        // الكيبورد: الصفحة ترتفع فوقه (نضيف مكانه تحت) والخانة اللي تكتب فيها تتمرّر لين تبان مع زر الدخول تحتها
+        var kbOpen = false
+        sc.setOnApplyWindowInsetsListener { v, ins ->
+            val e = IntArray(5)       // يسار، فوق، يمين، تحت، الكيبورد
+            if (android.os.Build.VERSION.SDK_INT >= 30) {
+                val bars = ins.getInsets(android.view.WindowInsets.Type.systemBars() or android.view.WindowInsets.Type.displayCutout())
+                e[4] = ins.getInsets(android.view.WindowInsets.Type.ime()).bottom
+                e[0] = bars.left; e[1] = bars.top; e[2] = bars.right; e[3] = maxOf(bars.bottom, e[4])
+            } else {
+                @Suppress("DEPRECATION") e[0] = ins.systemWindowInsetLeft
+                @Suppress("DEPRECATION") e[1] = ins.systemWindowInsetTop
+                @Suppress("DEPRECATION") e[2] = ins.systemWindowInsetRight
+                @Suppress("DEPRECATION") e[3] = ins.systemWindowInsetBottom
+                e[4] = if (e[3] > a.dp(120)) e[3] else 0
+            }
+            val ime = e[4]
+            v.setPadding(e[0], e[1], e[2], e[3])
+            val open = ime > a.dp(80)
+            if (open != kbOpen) {
+                kbOpen = open
+                subtitle.visibility = if (open) View.GONE else View.VISIBLE      // مساحة أكثر وقت الكتابة
+            }
+            if (open) v.post { showFocused(sc) }
+            ins
+        }
+        listOf(name, user, pass, server).forEach { f -> f.setOnFocusChangeListener { _, has -> if (has) sc.post { showFocused(sc) }; if (!has && f === server) splitLink() } }
+    }
+
+    /** الخانة اللي تكتب فيها (ومعها زر الدخول لو يتسع) تبان فوق الكيبورد */
+    private fun showFocused(sc: ScrollView) {
+        val f = sc.findFocus() ?: return
+        val r = android.graphics.Rect(0, 0, f.width, f.height)
+        sc.offsetDescendantRectToMyCoords(f, r)
+        val visTop = sc.scrollY + sc.paddingTop
+        val visBottom = sc.scrollY + sc.height - sc.paddingBottom
+        val want = r.bottom + a.dp(if (f === server) 96 else 24)          // آخر خانة: نبيّن زر الدخول تحتها
+        val dy = when {
+            want > visBottom -> want - visBottom
+            r.top < visTop -> r.top - visTop - a.dp(12)
+            else -> 0
+        }
+        if (dy != 0) sc.smoothScrollBy(0, dy)
     }
 
     private fun splitLink() {
