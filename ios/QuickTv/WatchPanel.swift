@@ -19,8 +19,10 @@ struct WatchPanel: View {
 
     private func L(_ a: CGFloat, _ b: CGFloat) -> CGFloat { a + (b - a) * t }
 
-    // المربع الصغير: فوق الشريط السفلي
-    private var miniRect: CGRect { CGRect(x: 12, y: H - bottom - 66 - 60, width: W - 24, height: 60) }
+    // المشغّل الصغير (نفس الأندرويد): بعرض الشاشة كامل فوق الشريط السفلي مباشرة، ارتفاعه 68
+    static let miniH: CGFloat = 68
+    static func miniY(H: CGFloat, bottom: CGFloat) -> CGFloat { H - bottom - 62 - miniH }
+    private var miniRect: CGRect { CGRect(x: 0, y: Self.miniY(H: H, bottom: bottom), width: W, height: Self.miniH) }
     private var box: CGRect {
         let m = miniRect
         return CGRect(x: L(0, m.minX), y: L(0, m.minY), width: L(W, m.width), height: L(H, m.height))
@@ -31,14 +33,15 @@ struct WatchPanel: View {
         let bw = box.width
         let x0 = (t - 0.62) / 0.38
         let k = x0 <= 0 ? 0 : x0 >= 1 ? 1 : (x0 < 0.5 ? 2 * x0 * x0 : 1 - pow(-2 * x0 + 2, 2) / 2)
-        let w = bw + (96 - bw) * k
-        let baseY = top + (3 - top) * t                     // ينزل مع الصفحة
-        let y = baseY + (3 - baseY) * k
-        let x = (bw - 6 - 96) * k                           // يروح يمين المربع (مكانه بالمشغّل الصغير)
+        // مقاس الفيديو بالمشغّل الصغير: 100×56 على اليمين (4 من الحافة، 6 من فوق) — نفس الأندرويد
+        let w = bw + (100 - bw) * k
+        let baseY = top + (6 - top) * t                     // ينزل مع الصفحة
+        let y = baseY + (6 - baseY) * k
+        let x = (bw - 4 - 100) * k
         return CGRect(x: x, y: y, width: w, height: w * 9 / 16)
     }
     /// مسافة السحب الكاملة (من صفحة لمربع صغير)
-    static func range(H: CGFloat, bottom: CGFloat) -> CGFloat { max(200, H - bottom - 66 - 60) }
+    static func range(H: CGFloat, bottom: CGFloat) -> CGFloat { max(200, miniY(H: H, bottom: bottom)) }
 
     var body: some View {
         let b = box, v = video
@@ -71,21 +74,26 @@ struct WatchPanel: View {
             // معلومات المشغّل الصغير جنب الفيديو (تطلع آخر الحركة)
             if t > 0.6 {
                 miniInfo
-                    .frame(width: max(0, b.width - 96 - 18), height: b.height)
-                    .offset(x: 8)
+                    .frame(width: max(0, b.width - 100 - 14), height: b.height)
+                    .offset(x: 4)
                     .opacity(Double((t - 0.7) / 0.3))
                     .allowsHitTesting(t > 0.95)
             }
-            if t > 0.95, !pc.isLive, pc.duration > 0 {
-                ProgressLine(value: pc.position / pc.duration, height: 2)
-                    .frame(width: b.width - 24)
-                    .offset(x: 12, y: b.height - 2)
+            // خط علوي رفيع + خط التقدّم الأحمر تحت بعرض المشغّل كامل (نفس الأندرويد)
+            if t > 0.95 {
+                Rectangle().fill(Color.white.opacity(0.08)).frame(width: b.width, height: 1)
+                if !pc.isLive, pc.duration > 0 {
+                    let pw = b.width * CGFloat(min(1, max(0, pc.position / pc.duration)))
+                    Rectangle().fill(Theme.red)
+                        .frame(width: pw, height: 2)
+                        .offset(x: b.width - pw, y: b.height - 2)          // يبدأ من اليمين (عربي)
+                }
             }
         }
         .frame(width: b.width, height: b.height, alignment: .topLeading)
-        .background(t > 0.5 ? Color(white: 0.11) : Theme.bg)
-        .clipShape(RoundedRectangle(cornerRadius: L(0, 14), style: .continuous))
-        .contentShape(RoundedRectangle(cornerRadius: L(0, 14), style: .continuous))
+        .background(t > 0.35 ? Color(red: 0.082, green: 0.094, blue: 0.114) : Theme.bg)     // لون المشغّل الصغير (#15181D)
+        .clipped()
+        .contentShape(Rectangle())
         // المربع الصغير: ضغطة = يكبر، سحب لفوق = يكبر مع إصبعك (الصفحة الكاملة: الأزرار تشتغل عادي)
         .gesture(TapGesture().onEnded { if t > 0.95 { onExpand() } }, including: t > 0.95 ? .all : .subviews)
         .simultaneousGesture(DragGesture(minimumDistance: 8)
@@ -94,7 +102,8 @@ struct WatchPanel: View {
                 if fromMini == true { onDrag(d.translation.height, false) }
             }
             .onEnded { d in
-                if fromMini == true { onDrag(d.translation.height, true) }
+                // سحبة سريعة لفوق تكفي (نفس الأندرويد)
+                if fromMini == true { onDrag(d.predictedEndTranslation.height < -260 ? min(d.translation.height, -10_000) : d.translation.height, true) }
                 fromMini = nil
             })
         .offset(x: b.minX, y: b.minY)
