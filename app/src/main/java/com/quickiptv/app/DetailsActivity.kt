@@ -49,6 +49,7 @@ class DetailsActivity : Activity() {
     // الحالة (تبقى لما تقلب الجوال)
     private var kicker = ""
     private var plot = ""
+    private var backdrop = ""
     private var plotOpen = false
     private var seasons: Map<Int, List<Episode>> = emptyMap()
     private var season = 1
@@ -139,6 +140,7 @@ class DetailsActivity : Activity() {
                 if (series) {
                     val (info, s) = withContext(Dispatchers.IO) { api.seriesInfo(id) }
                     plot = info.optString("plot")
+                    backdrop = info.optJSONArray("backdrop_path")?.optString(0).orEmpty()
                     kicker = meta(info.optString("releaseDate").take(4), info.optString("genre"), info.optString("rating"))
                     seasons = s
                     season = seriesResume()?.first?.season ?: s.keys.firstOrNull() ?: 1
@@ -340,6 +342,8 @@ class DetailsActivity : Activity() {
         if (wide) renderWide() else renderTall()
         if (!wide) (miniBox ?: handedBox)?.let { b -> if (miniBox != null && b.rotation != 0f && !animating) b.post { animateBack(b) } }
         refreshDl()
+        // التلفزيون (المسلسل): أول ما تفتح الصفحة التحديد يكون على الحلقة اللي تكمل منها
+        if (tvCards && loaded && !epFocusedOnce && (focusTag == null || focusTag == "primary") && focusResumeEp()) return
         val target: View? = focusTag?.let { root.findViewWithTag<View?>(it) } ?: root.findViewWithTag<View?>("primary")
         target?.post { target.requestFocus() }
     }
@@ -402,6 +406,7 @@ class DetailsActivity : Activity() {
 
     /** أفقي/تلفزيون: عمودين بدون ما تحتاج تسحب عشان توصل للأزرار. */
     private fun renderWide() {
+        if (tvCards) { renderTvSeries(); return }
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             setPadding(inL + dp(12), inT + dp(10), inR + dp(12), 0)
@@ -535,7 +540,7 @@ class DetailsActivity : Activity() {
     }
 
     private fun episodeList(): RecyclerView = RecyclerView(this).apply {
-        layoutManager = SmoothLM(this@DetailsActivity)
+        layoutManager = SmoothLM(this@DetailsActivity, if (tvCards) LinearLayoutManager.HORIZONTAL else LinearLayoutManager.VERTICAL)
         itemAnimator = null
         setHasFixedSize(true)
         clipToPadding = false
@@ -546,7 +551,98 @@ class DetailsActivity : Activity() {
         epList = this
         // نوصل لأول حلقة ما خلصتها
         val i = episodes.items.indexOfFirst { e -> hist["ep:${e.id}"].let { h -> h == null || h.dur == 0L || h.pos < h.dur - 60 } }
-        if (i > 2) scrollToPosition(i + (if (episodes.header != null) 1 else 0) - 1)
+        if (tvCards) { if (i > 0) scrollToPosition(i) }
+        else if (i > 2) scrollToPosition(i + (if (episodes.header != null) 1 else 0) - 1)
+    }
+
+    // =====================================================================
+    // التلفزيون (المسلسل): خلفية المسلسل تملى الشاشة، العنوان والأزرار فوق، وتحت المواسم وصف حلقات أفقي
+    private val tvCards get() = series && isTv()
+    private var epFocusedOnce = false
+    private var heroEpT: TextView? = null
+    private var heroPlotT: TextView? = null
+
+    private fun renderTvSeries() {
+        val sw = resources.displayMetrics.widthPixels
+        root.addView(ImageView(this).apply {
+            scaleType = ImageView.ScaleType.CENTER_CROP; alpha = 0.6f
+            load(backdrop.ifEmpty { icon }.ifEmpty { null }) { size(1280, 720) }
+        }, FrameLayout.LayoutParams(MATCH, MATCH))
+        val bg = C.BG and 0x00FFFFFF
+        // تظليل: غامق من جهة الكلام (يمين) ومن تحت (الحلقات) عشان الكتابة تنقرى فوق أي صورة
+        root.addView(View(this).apply {
+            background = android.graphics.drawable.GradientDrawable(android.graphics.drawable.GradientDrawable.Orientation.RIGHT_LEFT,
+                intArrayOf(bg or 0xFA000000.toInt(), bg or 0xD9000000.toInt(), bg or 0x40000000))
+        }, FrameLayout.LayoutParams(MATCH, MATCH))
+        root.addView(View(this).apply {
+            background = android.graphics.drawable.GradientDrawable(android.graphics.drawable.GradientDrawable.Orientation.BOTTOM_TOP,
+                intArrayOf(bg or 0xFF000000.toInt(), bg or 0xE6000000.toInt(), bg))
+        }, FrameLayout.LayoutParams(MATCH, (resources.displayMetrics.heightPixels * 0.6f).toInt(), Gravity.BOTTOM))
+
+        val col = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutDirection = View.LAYOUT_DIRECTION_RTL
+            setPaddingRelative(inR + dp(40), inT + dp(28), 0, inB + dp(20))
+        }
+        root.addView(col, FrameLayout.LayoutParams(MATCH, MATCH))
+
+        // فوق: معلومات المسلسل + الحلقة المحددة + الأزرار
+        val hero = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        hero.addView(text(kicker, 13f, C.MUTED, lines = 1))
+        hero.addView(text(name, 30f, C.TEXT, bold = true, lines = 2).apply { textDirection = View.TEXT_DIRECTION_FIRST_STRONG; setPadding(0, dp(4), 0, dp(8)) })
+        heroEpT = text("", 15f, C.TEXT, bold = true, lines = 1).apply { textDirection = View.TEXT_DIRECTION_FIRST_STRONG }
+        hero.addView(heroEpT)
+        heroPlotT = text(if (loaded) plot else "", 14f, C.TEXT2, lines = 3).apply {
+            textDirection = View.TEXT_DIRECTION_FIRST_STRONG; setLineSpacing(0f, 1.3f); setPadding(0, dp(6), 0, 0)
+        }
+        hero.addView(heroPlotT)
+        hero.addView(tvActions(), lp(WRAP, WRAP).apply { topMargin = dp(16) })
+        col.addView(hero, lp((sw * 0.56f).toInt(), WRAP))
+        col.addView(View(this), lp(1, 0, 1f))
+
+        // تحت: المواسم + صف الحلقات
+        seasonChips()?.let { col.addView(it, lp(MATCH, WRAP).apply { bottomMargin = dp(6) }) }
+        if (!loaded) col.addView(loadingView())
+        episodes.header = null
+        col.addView(episodeList().apply { setPaddingRelative(0, dp(4), dp(40), dp(4)) }, lp(MATCH, WRAP))
+        (seriesResume()?.first)?.let { showHeroEp(it) } ?: run { heroEpT?.visibility = View.GONE }
+    }
+
+    /** الأزرار بصف واحد: كمّل/شغّل + المفضلة + تحميل الموسم */
+    private fun tvActions(): View {
+        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        val r = seriesResume()
+        row.addView(button(r?.second ?: (if (loaded) "ما فيه حلقات" else "تشغيل"), R.drawable.ic_play, primary = true) {
+            r?.first?.let { playEpisode(it) }
+        }.apply { tag = "primary" }, lp(WRAP, WRAP))
+        val fav = Store.isFav("series", id)
+        row.addView(button(if (fav) "مفضّل" else "المفضلة", R.drawable.ic_heart) { Store.toggleFav("series", id); render() }.apply {
+            tag = "fav"
+            if (fav) (getChildAt(0) as? ImageView)?.imageTintList = ColorStateList.valueOf(C.HEART)
+        }, lp(WRAP, WRAP).apply { marginStart = dp(10) })
+        if (seasons.isNotEmpty()) row.addView(button("تحميل الموسم", R.drawable.ic_download) { downloadSeason() }.apply { tag = "dlseason" },
+            lp(WRAP, WRAP).apply { marginStart = dp(10) })
+        return row
+    }
+
+    /** الحلقة المحددة: عنوانها وقصتها فوق (تتغير مع تحريك التحديد) */
+    private fun showHeroEp(e: Episode) {
+        heroEpT?.apply {
+            visibility = View.VISIBLE
+            text = "الموسم ${e.season} · الحلقة ${e.num}" + (e.title.takeIf { it.isNotEmpty() && !it.contains(name) }?.let { ": $it" } ?: "")
+        }
+        heroPlotT?.text = e.plot.ifEmpty { if (loaded) plot else "" }
+    }
+
+    private fun focusResumeEp(): Boolean {
+        val list = epList ?: return false
+        val e = seriesResume()?.first ?: return false
+        val i = episodes.items.indexOfFirst { it.id == e.id }
+        if (i < 0) return false
+        epFocusedOnce = true
+        list.scrollToPosition(i)
+        list.post { (list.findViewHolderForAdapterPosition(i)?.itemView ?: root.findViewWithTag<View?>("primary"))?.requestFocus() }
+        return true
     }
 
     // =====================================================================
@@ -572,6 +668,7 @@ class DetailsActivity : Activity() {
                 return HeadVH(h)
             }
             val c = this@DetailsActivity
+            if (tvCards) return tvCard()
             val row = LinearLayout(c).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
@@ -598,8 +695,38 @@ class DetailsActivity : Activity() {
             return VH(row, thumb, title, sub, bar, dl)
         }
 
+        /** بطاقة حلقة (التلفزيون): صورة ١٦:٩ عريضة، تحتها العنوان والمدة، والتقدّم خط أحمر على الصورة */
+        private fun tvCard(): VH {
+            val c = this@DetailsActivity
+            val tw = dp(212)
+            val card = LinearLayout(c).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(6), dp(6), dp(6), dp(8))
+                isFocusable = true; isClickable = true
+                layoutParams = RecyclerView.LayoutParams(tw + dp(12), WRAP).apply { marginEnd = dp(8) }
+            }
+            val frame = FrameLayout(c).apply { background = rounded(C.SURFACE2, dpf(8f)); clipToOutline = true }
+            val thumb = ImageView(c).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
+            frame.addView(thumb, FrameLayout.LayoutParams(MATCH, MATCH))
+            val bar = ProgressBar(c, null, android.R.attr.progressBarStyleHorizontal).apply {
+                max = 1000
+                progressTintList = ColorStateList.valueOf(C.LIVE)
+                progressBackgroundTintList = ColorStateList.valueOf(0x66000000)
+            }
+            frame.addView(bar, FrameLayout.LayoutParams(MATCH, dp(4), Gravity.BOTTOM))
+            val dl = FrameLayout(c).apply { background = rounded(0x99000000.toInt(), dpf(14f)); isFocusable = false }
+            frame.addView(dl, FrameLayout.LayoutParams(dp(28), dp(28), Gravity.TOP or Gravity.START).apply { setMargins(dp(6), dp(6), dp(6), 0) })
+            card.addView(frame, lp(tw, tw * 9 / 16))
+            val title = text("", 13.5f, C.TEXT, bold = true, lines = 1).apply {
+                textDirection = View.TEXT_DIRECTION_FIRST_STRONG; ellipsize = android.text.TextUtils.TruncateAt.END; setPadding(dp(2), dp(7), dp(2), 0)
+            }
+            val sub = text("", 11.5f, C.MUTED, lines = 1).apply { setPadding(dp(2), dp(2), dp(2), 0) }
+            card.addView(title, lp(MATCH, WRAP)); card.addView(sub, lp(MATCH, WRAP))
+            return VH(card, thumb, title, sub, bar, dl)
+        }
+
         override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int, payloads: MutableList<Any>) {
-            if (holder is VH && payloads.isNotEmpty()) epAt(position)?.let { bindDl(holder.dl, it) } ?: Unit
+            if (holder is VH && payloads.isNotEmpty()) epAt(position)?.let { bindDl(holder.dl, it); if (tvCards) tvDlVis(holder.dl, it) } ?: Unit
             else onBindViewHolder(holder, position)
         }
 
@@ -639,6 +766,17 @@ class DetailsActivity : Activity() {
             holder.dl.tag = "epdl:${e.id}"
             holder.dl.setOnClickListener { episodeDlClick(e) }
             bindDl(holder.dl, e)
+            if (tvCards) {
+                // التلفزيون: التحميل بضغطة طويلة على الحلقة، والأيقونة تطلع بس لو فيه تحميل
+                tvDlVis(holder.dl, e)
+                holder.row.setOnLongClickListener { episodeDlClick(e); true }
+                holder.row.setOnFocusChangeListener { _, has -> if (has) showHeroEp(e) }
+                holder.title.text = "${e.num}. ${e.title.ifEmpty { "الحلقة ${e.num}" }}"
+            }
+        }
+
+        private fun tvDlVis(box: FrameLayout, e: Episode) {
+            box.visibility = if (Downloads.find("ep:${e.id}") == null) View.GONE else View.VISIBLE
         }
 
         fun refreshDl() { if (items.isNotEmpty()) notifyItemRangeChanged(off, items.size, "dl") }
