@@ -180,8 +180,20 @@ class LibraryScreen(private val a: MainActivity, private val series: Boolean) : 
     }
 
     override fun focusDefault() {
-        if (gridBox.visibility == View.VISIBLE) grid.post { (grid.getChildAt(0) ?: grid).requestFocus() }
-        else rows.post { rows.findViewHolderForAdapterPosition(0)?.itemView?.requestFocus() ?: rows.requestFocus() }
+        // التلفزيون: من القائمة الجانبية = أول بوستر (مو زر «الكل»)، والصف يرجع لأوله
+        if (gridBox.visibility == View.VISIBLE) { firstOf(grid); return }
+        rows.scrollToPosition(0)
+        rows.post {
+            val h = rows.findViewHolderForAdapterPosition(0) as? ShelfAdapter.VH
+            if (h == null) { rows.requestFocus(); return@post }
+            rowScroll.remove(h.boundId)
+            firstOf(h.strip)
+        }
+    }
+
+    private fun firstOf(list: RecyclerView) {
+        list.scrollToPosition(0)
+        list.post { (list.findViewHolderForAdapterPosition(0)?.itemView ?: list.getChildAt(0) ?: list).requestFocus() }
     }
 
     // ---------- الصفوف ----------

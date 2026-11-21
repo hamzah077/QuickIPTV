@@ -307,6 +307,7 @@ class HomeScreen(private val a: MainActivity) : Screen, EpgAware {
         if (dot) h.addView(View(a).apply { background = rounded(C.LIVE, a.dpf(4f)) }, lp(a.dp(8), a.dp(8)).apply { marginEnd = a.dp(8) })
         h.addView(a.text(title, 16.5f, C.TEXT, bold = true), lp(0, WRAP, 1f))
         if (onMore != null) h.addView(a.text("$more  ‹", 13f, C.ACCENT).apply {
+            tag = "more"          // التلفزيون: الدخول من القائمة الجانبية يتخطّاه ويروح لأول عنصر
             setPadding(a.dp(10), a.dp(6), a.dp(10), a.dp(6)); background = a.focusBg(radius = 8)
             isFocusable = true; isClickable = true; setOnClickListener { onMore() }
         })
@@ -410,12 +411,15 @@ class HomeScreen(private val a: MainActivity) : Screen, EpgAware {
 
     override fun focusDefault() {
         // أول عنصر يتركّز عليه (للريموت)
+        // التلفزيون: أول عنصر بأول قسم (نتخطّى «الكل/السجل ‹» اللي جنب العنوان)
         fun find(v: View): View? {
-            if (v.isFocusable && v.visibility == View.VISIBLE && v !is ScrollView) return v
+            if (v.visibility != View.VISIBLE || v.tag == "more") return null
+            if (v.isFocusable && v !is ScrollView && v !is HorizontalScrollView && v !is androidx.recyclerview.widget.RecyclerView) return v
             if (v is android.view.ViewGroup) for (i in 0 until v.childCount) find(v.getChildAt(i))?.let { return it }
             return null
         }
-        (listOf(contSlot, liveSlot, movSlot).firstNotNullOfOrNull { it?.let { s -> find(s) } } ?: view).requestFocus()
+        val t = listOf(contSlot, liveSlot, movSlot, serSlot, favSlot).firstNotNullOfOrNull { it?.let { s -> find(s) } }
+        (t ?: view).requestFocus()       // التركيز يمرّر الصف تلقائياً لين يبان العنصر
     }
 }
 
