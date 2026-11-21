@@ -61,11 +61,7 @@ struct PhoneShell: View {
             if pc.fullscreen { FullscreenPlayer().zIndex(10) }
         }
         .animation(PanelHost.spring, value: pc.watchVod?.id)
-        // لفّيت الجوال أفقي وهو يشغّل = ملء الشاشة، ورجعته عمودي = يرجع
-        .onChange(of: vsize) { _, v in
-            if v == .compact, pc.req != nil, !pc.fullscreen { pc.autoFullscreen = true; pc.fullscreen = true }
-            else if v == .regular, pc.fullscreen, pc.autoFullscreen { pc.fullscreen = false; pc.autoFullscreen = false }
-        }
+        // (الآيفون عمودي دايماً: ملء الشاشة بس لما تضغط زر التكبير)
     }
 
     @Environment(\.verticalSizeClass) private var vsize

@@ -21,7 +21,8 @@ struct QuickTvApp: App {
 
 /// اتجاه الشاشة: المشغّل بملء الشاشة يطلب أفقي، والباقي حر
 final class AppDelegate: NSObject, UIApplicationDelegate {
-    static var orientationLock: UIInterfaceOrientationMask = .all
+    /// الآيفون: التطبيق عمودي دايماً — بس المشغّل بملء الشاشة (لما تضغط تكبير) يلف الفيديو بنفسه
+    static var orientationLock: UIInterfaceOrientationMask = UIDevice.current.userInterfaceIdiom == .phone ? .portrait : .all
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         // الصوت يكمل بصورة داخل صورة وبالخلفية
@@ -73,7 +74,7 @@ enum Orientation {
 
     @MainActor
     static func unlock() {
-        AppDelegate.orientationLock = .all
+        AppDelegate.orientationLock = UIDevice.current.userInterfaceIdiom == .phone ? .portrait : .all
         guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene else { return }
         scene.keyWindow?.rootViewController?.setNeedsUpdateOfSupportedInterfaceOrientations()
     }

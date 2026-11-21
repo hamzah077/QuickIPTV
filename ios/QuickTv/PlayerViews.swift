@@ -554,6 +554,13 @@ struct FullscreenPlayer: View {
         .ignoresSafeArea()
         .statusBarHidden()
         .persistentSystemOverlays(.hidden)
+        // لفّيت الجوال للجهة الثانية وهو بملء الشاشة: الفيديو يلف معك (التطبيق نفسه يبقى عمودي)
+        .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
+            let o = UIDevice.current.orientation
+            guard shown, o == .landscapeLeft || o == .landscapeRight else { return }
+            let a: Double = o == .landscapeRight ? -90 : 90
+            if a != angle { withAnimation(.easeInOut(duration: 0.35)) { angle = a } }
+        }
         .onAppear {
             // اتجاه اللفّة حسب مسكة الجوال
             angle = UIDevice.current.orientation == .landscapeRight ? -90 : 90
