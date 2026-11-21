@@ -99,7 +99,8 @@ final class PlayerController {
         engine = .av
         let item = AVPlayerItem(url: r.url)
         // المباشر: النظام يحدد البفر حسب السيرفر (أثبت). الأفلام: بفر أكبر عشان ما يقطع على النت البطيء
-        item.preferredForwardBufferDuration = r.type == "live" ? 0 : 20
+        item.preferredForwardBufferDuration = 0          // النظام يحدد (يبدأ أسرع ويعبّي على قد النت)
+        userPaused = false
         clearTracks()
         statusObs = item.observe(\.status, options: [.new]) { [weak self] it, _ in
             let st = it.status
@@ -107,7 +108,13 @@ final class PlayerController {
                 guard let self, self.engine == .av, self.player.currentItem === it else { return }
                 // مشغّل آبل ما قدر عليه؟ نحوّل لـ VLC تلقائياً
                 if st == .failed, let r = self.req { self.playVLC(r) }
-                if st == .readyToPlay { await self.loadAVTracks(it) }
+                if st == .readyToPlay {
+                    // جاهز؟ يبدأ على طول (بدون ما ينتظر يعبّي بفر كبير). وإذا خلص البفر بعدين، ينتظر ويكمل لحاله
+                    let d = it.duration.seconds
+                    if d.isFinite, d > 0 { self.duration = d }
+                    if !self.userPaused { self.player.playImmediately(atRate: 1) }
+                    await self.loadAVTracks(it)
+                }
             }
         }
         if let e = endObs { NotificationCenter.default.removeObserver(e) }
@@ -187,7 +194,8 @@ final class PlayerController {
 
     func togglePlay() {
         if engine == .vlc { if vlc.isPlaying { vlc.pause() } else { vlc.play() }; isPlaying = vlc.isPlaying; return }
-        if player.timeControlStatus == .paused { player.play() } else { player.pause() }
+        if player.timeControlStatus == .paused { userPaused = false; player.playImmediately(atRate: 1) }
+        else { userPaused = true; player.pause() }
     }
 
     func setRate(_ r: Float) { if engine == .vlc { vlc.rate = r } else { player.rate = r } }
@@ -215,13 +223,14 @@ final class PlayerController {
             Task { @MainActor in
                 guard let self, done, self.seekTarget == t else { return }
                 self.seekTarget = nil
-                if self.player.rate == 0 && self.wasPlayingBeforeSeek { self.player.playImmediately(atRate: 1) }
+                // بعد التقديم يكمل على طول من اللي جاهز (ما ينتظر يعبّي بفر من جديد)
+                if !self.userPaused { self.player.playImmediately(atRate: 1) }
             }
         }
     }
 
-    /// كان شغّال قبل التقديم؟ (عشان يكمل لحاله بعده)
-    private var wasPlayingBeforeSeek: Bool { isPlaying || buffering }
+    /// المستخدم وقّف بنفسه؟ (عشان ما نشغّل غصب عنه بعد التقديم أو التحميل)
+    @ObservationIgnored private var userPaused = false
 
     /// المباشر: يرجع للحظة الحالية
     func goLive() {
