@@ -42,6 +42,19 @@ final class AppModel {
     var updPopup = false
     var updTotal: Int { Int(updSteps.map { $0.state >= 2 ? 1 : $0.frac }.reduce(0, +) / 3 * 100) }
 
+    // MARK: التحديث التلقائي للقوائم (الإعدادات): كل كم يوم، 0 = إيقاف — الافتراضي كل يوم
+    var autoUpdateDays: Int = UserDefaults.standard.object(forKey: "autoUpdDays") as? Int ?? 1 {
+        didSet { UserDefaults.standard.set(autoUpdateDays, forKey: "autoUpdDays") }
+    }
+    private func markUpdated(_ acc: String) { UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: "lastUpd:\(acc)") }
+    /// جا موعد التحديث؟ (أول مرة: نعتبر المحفوظ جديد)
+    private func autoDue(_ acc: String) -> Bool {
+        guard autoUpdateDays > 0 else { return false }
+        let last = UserDefaults.standard.double(forKey: "lastUpd:\(acc)")
+        if last == 0 { markUpdated(acc); return false }
+        return Date().timeIntervalSince1970 - last >= Double(autoUpdateDays) * 86_400
+    }
+
     /// أول دخول بعد تسجيل الحساب
     func firstUpdate() { updFull = true; Task { await runUpdate() } }
     /// زر "تحديث المحتوى" بالإعدادات
@@ -71,6 +84,7 @@ final class AppModel {
         }
         updating = false
         guard current?.id == acc.id else { return }
+        if updSteps.contains(where: { $0.state == 2 }) { markUpdated(acc.id) }
         let c = ContentCache(liveCats: liveCats, channels: channels, movieCats: movieCats, movies: movies, seriesCats: seriesCats, seriesList: seriesList)
         let file = ContentCache.url(acc.id)
         Task.detached(priority: .utility) { ContentCache.write(c, file) }
@@ -146,6 +160,8 @@ final class AppModel {
         }
         let hadCache = !(channels.isEmpty && movies.isEmpty)
         loading = !hadCache
+        // عندنا نسخة محفوظة وما جا موعد التحديث التلقائي: ما نطلب من السيرفر
+        if hadCache && !force && !autoDue(acc.id) { loading = false; return }
 
         // ٢) من السيرفر بالخلفية: كل قائمة تطلع أول ما توصل (ما ننتظر الكل)
         await withTaskGroup(of: ContentPart.self) { g in
@@ -172,6 +188,7 @@ final class AppModel {
         guard current?.id == acc.id else { return }
         if channels.isEmpty && movies.isEmpty && seriesList.isEmpty { error = "تعذّر تحميل المحتوى. تأكد من الاتصال والاشتراك."; return }
 
+        markUpdated(acc.id)
         // ٣) نحفظ نسخة بالجهاز للمرة الجاية (بالخلفية)
         let c = ContentCache(liveCats: liveCats, channels: channels, movieCats: movieCats, movies: movies, seriesCats: seriesCats, seriesList: seriesList)
         Task.detached(priority: .utility) { ContentCache.write(c, file) }

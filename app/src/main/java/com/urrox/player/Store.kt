@@ -153,6 +153,24 @@ object Store {
         get() = p.getInt("dlParallel", 2)
         set(v) = p.edit().putInt("dlParallel", v).apply()
 
+    /** التحديث التلقائي للقوائم: كل كم يوم (0 = إيقاف) — الافتراضي كل يوم */
+    var autoUpdateDays: Int
+        get() = p.getInt("autoUpdDays", 1)
+        set(v) = p.edit().putInt("autoUpdDays", v).apply()
+
+    /** آخر تحديث للقوائم (لكل حساب) */
+    fun lastListsUpdate(acc: String) = p.getLong("lastUpd:$acc", 0L)
+    fun markListsUpdated(acc: String) = p.edit().putLong("lastUpd:$acc", System.currentTimeMillis()).apply()
+
+    /** موعد التحديث التلقائي جا؟ (أول مرة: نعتبر القوائم الموجودة جديدة) */
+    fun autoUpdateDue(acc: String): Boolean {
+        val days = autoUpdateDays
+        if (days <= 0) return false
+        val last = lastListsUpdate(acc)
+        if (last == 0L) { markListsUpdated(acc); return false }
+        return System.currentTimeMillis() - last >= days * 86_400_000L
+    }
+
     /** شكل صفحة المباشر بالتلفزيون: a = البث يملى الشاشة (الافتراضي)، c = أعمدة، z = مشغّل كبير + قائمة */
     var liveStyle: String
         get() = p.getString("liveStyle", "a") ?: "a"

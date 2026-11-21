@@ -624,6 +624,7 @@ class SettingsScreen(private val a: MainActivity) : Screen {
             // نافذة منبثقة بالعدّاد، ولما يخلص: الأقسام تنبني من جديد بالقوائم الجديدة
             a.showUpdatePopup { listOf("home", "live", "movie", "series").forEach { a.dropScreen(it) } }
         })
+        add(a.listRow(R.drawable.ic_refresh, "التحديث التلقائي للقوائم", autoName(Store.autoUpdateDays)) { chooseAutoUpdate() })
         add(a.listRow(R.drawable.ic_user, "تعديل الحساب / حساب آخر") { a.showLogin(acc) })
 
         col.addView(a.sectionHeader("عن التطبيق"))
@@ -644,6 +645,19 @@ class SettingsScreen(private val a: MainActivity) : Screen {
             .setSingleChoiceItems(opts, keys.indexOf(Store.uiMode).coerceAtLeast(0)) { d, w ->
                 d.dismiss()
                 if (keys[w] != Store.uiMode) a.setUiMode(keys[w])
+            }.show()
+    }
+
+    private fun autoName(d: Int) = when (d) { 0 -> "إيقاف"; 1 -> "كل يوم"; 2 -> "كل يومين"; 3 -> "كل 3 أيام"; 7 -> "كل أسبوع"; 30 -> "كل شهر"; else -> "كل $d أيام" }
+
+    private fun chooseAutoUpdate() {
+        val days = intArrayOf(0, 1, 2, 3, 7, 30)
+        AlertDialog.Builder(a, android.R.style.Theme_Material_Dialog_Alert)
+            .setTitle("التحديث التلقائي للقوائم")
+            .setSingleChoiceItems(days.map { autoName(it) }.toTypedArray(), days.indexOf(Store.autoUpdateDays).coerceAtLeast(0)) { d, w ->
+                d.dismiss()
+                Store.autoUpdateDays = days[w]
+                onShow(); first?.requestFocus()
             }.show()
     }
 

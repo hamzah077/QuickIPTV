@@ -114,7 +114,8 @@ class MainActivity : Activity() {
             screens.values.forEach { (it as? EpgAware)?.onEpgLoaded() }
         }
         // تجهيز مسبق: نقرا القوائم بالخلفية (بأولوية منخفضة) عشان المباشر والأفلام والمسلسلات تفتح فوراً
-        scope.launch {
+        // التحديث التلقائي (لو جا موعده) — وإلا نجهّز القوائم المحفوظة بالخلفية
+        if (autoUpdateIfDue(acc)) Unit else scope.launch {
             delay(1500)
             val api = Session.api ?: return@launch
             withContext(Bg.io) {

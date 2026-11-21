@@ -179,7 +179,8 @@ class Xtream(val acc: Account, private val cacheDir: File) {
     private fun apiFile(action: String, force: Boolean = false, progress: ((Long, Long) -> Unit)? = null): File {
         val url = apiUrl(action)
         val f = File(cacheDir, "xt/${md5(url)}.json")
-        if (!force && f.exists() && f.length() > 2 && System.currentTimeMillis() - f.lastModified() < TTL) return f
+        // القوائم الكبيرة تبقى لين يجي موعد التحديث التلقائي (أو تحدّث يدوي) — ما تنتهي لحالها
+        if (!force && f.exists() && f.length() > 2) return f
         return try {
             httpToFile(url, f, progress = progress)
             f
@@ -252,10 +253,10 @@ class Xtream(val acc: Account, private val cacheDir: File) {
     private fun java.io.DataOutputStream.str(s: String) = writeUTF(if (s.length > 2000) s.take(2000) else s)
 
     /** نص JSON من السيرفر، مع كاش على الجهاز (ولو انقطع النت نرجع آخر نسخة محفوظة). */
-    private fun api(action: String?, extra: Map<String, String> = emptyMap(), cache: Boolean = true, force: Boolean = false): String {
+    private fun api(action: String?, extra: Map<String, String> = emptyMap(), cache: Boolean = true, force: Boolean = false, ttl: Long = TTL): String {
         val url = apiUrl(action, extra)
         val f = File(cacheDir, "xt/${md5(url)}.json")
-        if (cache && !force && f.exists() && System.currentTimeMillis() - f.lastModified() < TTL) return f.readText()
+        if (cache && !force && f.exists() && System.currentTimeMillis() - f.lastModified() < ttl) return f.readText()
         return try {
             val txt = String(http(url, 60000), Charsets.UTF_8)
             if (cache) {
@@ -293,7 +294,7 @@ class Xtream(val acc: Account, private val cacheDir: File) {
 
     // ---------- التصنيفات والقوائم ----------
     private fun cats(action: String, force: Boolean = false): List<Category> = once(action, force) {
-        val a = runCatching { JSONArray(api(action, force = force)) }.getOrElse { JSONArray() }
+        val a = runCatching { JSONArray(api(action, force = force, ttl = Long.MAX_VALUE)) }.getOrElse { JSONArray() }
         (0 until a.length()).map {
             val o = a.getJSONObject(it)
             Category(o.optString("category_id"), o.optString("category_name"))

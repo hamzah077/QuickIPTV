@@ -47,6 +47,7 @@ object ListsUpdate {
             run(steps[1]) { p -> api.vodCategories(true); api.vods(false, true, p).size }
             run(steps[2]) { p -> api.seriesCategories(true); api.vods(true, true, p).size }
             SearchIndex.clear()
+            if (steps.any { it.state == 2 }) Store.currentId.takeIf { it.isNotEmpty() }?.let { Store.markListsUpdated(it) }
             running = false
             notifyUi()
             onDone()
@@ -154,6 +155,16 @@ fun MainActivity.showFirstUpdate(acc: Account) {
         pct.text = "100٪"; sub.text = "جاهز"
         scope.launch { delay(500); enter(acc, checkLogin = false) }
     }
+}
+
+/** التحديث التلقائي (حسب الإعدادات): بالخلفية بدون نافذة، وتنبيه صغير لما يخلص */
+fun MainActivity.autoUpdateIfDue(acc: Account): Boolean {
+    if (!Store.autoUpdateDue(acc.id)) return false
+    ListsUpdate.start(this) {
+        listOf("home", "live", "movie", "series").forEach { dropScreen(it) }
+        toast("تحدّثت القوائم تلقائياً")
+    }
+    return true
 }
 
 /** من الإعدادات: نافذة منبثقة (إخفاء = يكمل بالخلفية، وتنبيه لما يخلص). */

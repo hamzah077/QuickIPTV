@@ -592,6 +592,14 @@ struct SettingsView: View {
                 NavigationLink { DownloadsView() } label: { Label("التحميلات", systemImage: "arrow.down.circle") }
                 NavigationLink { HistoryView() } label: { Label("سجل المشاهدة", systemImage: "clock.arrow.circlepath") }
                 Button("تحديث المحتوى") { model.popupUpdate() }
+                Picker("التحديث التلقائي للقوائم", selection: Bindable(model).autoUpdateDays) {
+                    Text("إيقاف").tag(0)
+                    Text("كل يوم").tag(1)
+                    Text("كل يومين").tag(2)
+                    Text("كل 3 أيام").tag(3)
+                    Text("كل أسبوع").tag(7)
+                    Text("كل شهر").tag(30)
+                }
             }
             SwiftUI.Section { LabeledContent("URROX PLAYER", value: "1.0") }
         }
