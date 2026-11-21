@@ -46,9 +46,10 @@ targets:
         CFBundleDisplayName: QuickTv
         UILaunchScreen: {}
         UIBackgroundModes: [audio]              # صورة داخل صورة + الصوت بالخلفية
-        NSAppTransportSecurity:                 # سيرفرات IPTV غالباً http
+        # سيرفرات IPTV غالباً http. تنبيه: لا تضيف NSAllowsArbitraryLoadsForMedia هنا —
+        # وجوده يخلّي iOS يتجاهل NSAllowsArbitraryLoads ويمنع اتصال http للـ API
+        NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
-          NSAllowsArbitraryLoadsForMedia: true
         UIRequiresFullScreen: false
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
