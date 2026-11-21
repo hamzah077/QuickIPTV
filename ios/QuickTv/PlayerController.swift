@@ -14,7 +14,9 @@ final class PlayerController {
     static let shared = PlayerController()
 
     let player = AVPlayer()
-    let vlc = VLCMediaPlayer()
+    /// نسوي مشغّل VLC جديد مع كل تشغيل، والقديم نوقفه بالخلفية (إيقاف VLC يعلّق الواجهة ثواني لو السيرفر بطيء)
+    private(set) var vlc = VLCMediaPlayer()
+    @ObservationIgnored private let vlcStopQueue = DispatchQueue(label: "quicktv.vlc.stop", qos: .utility)
     /// شاشة VLC (وحدة، تنتقل بين الشاشة الصغيرة وملء الشاشة)
     let vlcView: UIView = { let v = UIView(); v.backgroundColor = .black; v.isUserInteractionEnabled = false; return v }()
     private(set) var engine: Engine = .av
@@ -43,6 +45,12 @@ final class PlayerController {
     private var statusObs: NSKeyValueObservation?
     private var waitObs: NSKeyValueObservation?
     private var lastSave = Date.distantPast
+
+    // مسارات الصوت والترجمة: تنحمّل مرة وحدة بالخلفية (السؤال المباشر عنها كان يعلّق الواجهة لين يتحمّل الملف)
+    private(set) var audioTracks: [Track] = []
+    private(set) var subTracks: [Track] = []
+    @ObservationIgnored private var avGroups: [AVMediaCharacteristic: AVMediaSelectionGroup] = [:]
+    @ObservationIgnored private var vlcTracksLoaded = false
 
     private var vlcTimer: Timer?
 
@@ -87,11 +95,14 @@ final class PlayerController {
         let item = AVPlayerItem(url: r.url)
         // المباشر: النظام يحدد البفر حسب السيرفر (أثبت). الأفلام: بفر أكبر عشان ما يقطع على النت البطيء
         item.preferredForwardBufferDuration = r.type == "live" ? 0 : 30
+        clearTracks()
         statusObs = item.observe(\.status, options: [.new]) { [weak self] it, _ in
-            let failed = it.status == .failed
+            let st = it.status
             Task { @MainActor in
+                guard let self, self.engine == .av, self.player.currentItem === it else { return }
                 // مشغّل آبل ما قدر عليه؟ نحوّل لـ VLC تلقائياً
-                if failed, let self, let r = self.req, self.engine == .av { self.playVLC(r) }
+                if st == .failed, let r = self.req { self.playVLC(r) }
+                if st == .readyToPlay { await self.loadAVTracks(it) }
             }
         }
         if let e = endObs { NotificationCenter.default.removeObserver(e) }
@@ -106,7 +117,9 @@ final class PlayerController {
     // MARK: VLC
 
     private func playVLC(_ r: PlayRequest) {
+        stopVLC()
         engine = .vlc
+        clearTracks()
         player.pause(); player.replaceCurrentItem(with: nil)
         let m = VLCMedia(url: r.url)
         m.addOption(":network-caching=3000")                                               // بفر ٣ ثواني يمنع التقطيع
@@ -124,7 +137,13 @@ final class PlayerController {
 
     private func stopVLC() {
         vlcTimer?.invalidate(); vlcTimer = nil
-        if vlc.media != nil { vlc.stop(); vlc.media = nil }
+        guard vlc.media != nil else { return }
+        let old = vlc
+        old.drawable = nil
+        nonisolated(unsafe) let p = old
+        vlcStopQueue.async { p.stop() }                 // بالخلفية: الواجهة ما تعلق
+        vlc = VLCMediaPlayer()
+        vlc.drawable = vlcView
     }
 
     private var vlcEndHandled = false
@@ -135,6 +154,7 @@ final class PlayerController {
         if t.isFinite, t >= 0 { position = t }
         if let len = vlc.media?.length.intValue, len > 0 { duration = Double(len) / 1000 }
         isPlaying = vlc.isPlaying
+        if isPlaying && !vlcTracksLoaded { vlcTracksLoaded = true; loadVLCTracks() }
         let st = vlc.state
         buffering = st == .buffering || st == .opening
         if st == .error { failed = "ما اشتغل. جرّب مرة ثانية أو محتوى ثاني." }
@@ -277,13 +297,31 @@ final class PlayerController {
     struct Track: Identifiable, Hashable { let id: String; let name: String }
 
     /// الترجمات أو الصوت المتاح (للمحرّكين)
-    func tracks(audio: Bool) -> [Track] {
-        if engine == .vlc {
-            let names = (audio ? vlc.audioTrackNames : vlc.videoSubTitlesNames) as? [String] ?? []
-            let idx = (audio ? vlc.audioTrackIndexes : vlc.videoSubTitlesIndexes) as? [NSNumber] ?? []
-            return zip(idx, names).filter { $0.0.int32Value >= 0 }.map { Track(id: "\($0.0.int32Value)", name: $0.1) }
+    func tracks(audio: Bool) -> [Track] { audio ? audioTracks : subTracks }
+
+    private func clearTracks() {
+        audioTracks = []; subTracks = []; avGroups = [:]; vlcTracksLoaded = false
+    }
+
+    private func loadAVTracks(_ item: AVPlayerItem) async {
+        let asset = item.asset
+        let a = try? await asset.loadMediaSelectionGroup(for: .audible)
+        let l = try? await asset.loadMediaSelectionGroup(for: .legible)
+        guard player.currentItem === item else { return }
+        avGroups = [:]
+        if let a { avGroups[.audible] = a }
+        if let l { avGroups[.legible] = l }
+        audioTracks = (a?.options ?? []).enumerated().map { Track(id: "\($0.offset)", name: $0.element.displayName) }
+        subTracks = (l?.options ?? []).enumerated().map { Track(id: "\($0.offset)", name: $0.element.displayName) }
+    }
+
+    private func loadVLCTracks() {
+        func list(_ n: [Any]?, _ i: [Any]?) -> [Track] {
+            zip((i as? [NSNumber]) ?? [], (n as? [String]) ?? []).filter { $0.0.int32Value >= 0 }
+                .map { Track(id: "\($0.0.int32Value)", name: $0.1) }
         }
-        return options(audio ? .audible : .legible).enumerated().map { Track(id: "\($0.offset)", name: $0.element.displayName) }
+        audioTracks = list(vlc.audioTrackNames, vlc.audioTrackIndexes)
+        subTracks = list(vlc.videoSubTitlesNames, vlc.videoSubTitlesIndexes)
     }
 
     func selectTrack(_ t: Track?, audio: Bool) {
@@ -297,12 +335,9 @@ final class PlayerController {
         select(t.flatMap { Int($0.id) }.flatMap { all.indices.contains($0) ? all[$0] : nil }, c)
     }
 
-    func options(_ c: AVMediaCharacteristic) -> [AVMediaSelectionOption] {
-        guard let it = player.currentItem, let g = it.asset.mediaSelectionGroup(forMediaCharacteristic: c) else { return [] }
-        return g.options
-    }
+    func options(_ c: AVMediaCharacteristic) -> [AVMediaSelectionOption] { avGroups[c]?.options ?? [] }
     func select(_ o: AVMediaSelectionOption?, _ c: AVMediaCharacteristic) {
-        guard let it = player.currentItem, let g = it.asset.mediaSelectionGroup(forMediaCharacteristic: c) else { return }
+        guard let it = player.currentItem, let g = avGroups[c] else { return }
         it.select(o, in: g)
     }
 }

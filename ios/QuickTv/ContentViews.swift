@@ -55,6 +55,10 @@ struct LiveView: View {
         .navigationBarTitleDisplayMode(.inline)
         .modifier(TopBar(query: $q, prompt: "ابحث في القنوات"))
         .onAppear { if let s = start, current == nil { play(s) } }
+        // طلعت من صفحة المباشر (قسم ثاني أو رجوع)؟ يوقف البث — إلا لو صورة داخل صورة شغّالة
+        .onDisappear {
+            if pc.isLive, !pc.fullscreen, !PiP.shared.active { pc.stop(); current = nil }
+        }
     }
 
     @ViewBuilder private var screen: some View {
@@ -228,6 +232,10 @@ struct DetailsView: View {
         }
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
+        // رجعت أو رحت لقسم ثاني؟ يوقف الفيلم/الحلقة ويحفظ وين وقفت — إلا لو صورة داخل صورة شغّالة
+        .onDisappear {
+            if let r = pc.req, r.type != "live", !pc.fullscreen, !PiP.shared.active { pc.stop() }
+        }
     }
 
     private var actions: some View {

@@ -68,6 +68,7 @@ final class PiP: NSObject {
     }
 
     var available: Bool { ctrl != nil }
+    var active: Bool { ctrl?.isPictureInPictureActive ?? false }
     func start() { ctrl?.startPictureInPicture() }
 }
 
