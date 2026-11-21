@@ -33,6 +33,8 @@ object MiniDock {
     var onChange: (() -> Unit)? = null
     /** مكان الشريط السفلي بالشاشة (أعلاه) — المشغّل الصغير يكون فوقه مباشرة */
     var navTop = 0
+    /** ارتفاع المشغّل الصغير الفعلي (عشان الصفحة تنزل لنفس مكانه بالضبط) */
+    var dockH = 0
     /** الصفحة وصلت مكان المشغّل الصغير بحركتها: يظهر على طول (بدون حركة ثانية) */
     var instant = false
 
@@ -93,6 +95,21 @@ object MiniDock {
 object PageSnapshot {
     var bitmap: android.graphics.Bitmap? = null
         private set
+
+    /** لقطة للشاشة كما تبان (PixelCopy: تشمل الصور — الرسم العادي يطلعها فاضية) */
+    fun take(a: android.app.Activity) {
+        val v = a.window.decorView
+        if (v.width <= 0 || v.height <= 0) return
+        if (android.os.Build.VERSION.SDK_INT >= 26) {
+            runCatching {
+                val b = android.graphics.Bitmap.createBitmap(v.width / 2, v.height / 2, android.graphics.Bitmap.Config.ARGB_8888)
+                android.view.PixelCopy.request(a.window, b, { r -> if (r == android.view.PixelCopy.SUCCESS) bitmap = b },
+                    android.os.Handler(android.os.Looper.getMainLooper()))
+                return
+            }
+        }
+        take(v)
+    }
 
     fun take(v: android.view.View) {
         if (v.width <= 0 || v.height <= 0) return

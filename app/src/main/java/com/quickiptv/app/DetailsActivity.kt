@@ -106,8 +106,17 @@ class DetailsActivity : Activity() {
             if (stage != null && mini != null) {
                 // تكمل من النقطة اللي وصل لها إصبعك وأنت تسحب المربع لفوق (أو من المربع نفسه لو ضغطته)
                 val from = intent.getFloatExtra("fromT", 1f).coerceIn(0f, 1f)
-                root.alpha = 0f
-                root.post { root.post { morphInfoText(); setMorph(from); root.alpha = 1f; animateMorph(0f) } }
+                // أول رسمة للصفحة تكون بنفس شكل المربع وهو مكبّر (بدون شاشة سودا ولا قفزة)، وبعدها تكمل
+                root.viewTreeObserver.addOnPreDrawListener(object : android.view.ViewTreeObserver.OnPreDrawListener {
+                    var tries = 0
+                    override fun onPreDraw(): Boolean {
+                        if ((root.width <= 0 || (miniBox?.width ?: 0) <= 0) && ++tries < 30) return false      // لسه ما انرسمت: ننتظر (ما نرسم الصفحة كاملة لحظة)
+                        root.viewTreeObserver.removeOnPreDrawListener(this)
+                        morphInfoText(); setMorph(from)
+                        root.post { animateMorph(0f) }
+                        return true
+                    }
+                })
             }
         }
 
@@ -985,11 +994,14 @@ class DetailsActivity : Activity() {
 
     private fun lerp(a: Float, b: Float, t: Float) = a + (b - a) * t
 
-    /** أعلى المشغّل الصغير بالشاشة (فوق الشريط السفلي مباشرة) */
+    private fun boxH(): Float = (if (MiniDock.dockH > 0) MiniDock.dockH else dp(68)).toFloat()
+
+    /** أعلى المشغّل الصغير (فوق الشريط السفلي مباشرة) — بإحداثيات الصفحة نفسها */
     private fun miniTop(): Float {
         val h = root.height.toFloat()
-        val navTop = if (MiniDock.navTop > 0) MiniDock.navTop.toFloat() else h - dp(58) - inB
-        return navTop - dp(68)
+        val loc = IntArray(2); stage?.getLocationOnScreen(loc)
+        val navTop = if (MiniDock.navTop > 0) MiniDock.navTop.toFloat() - loc[1] else h - dp(58) - inB
+        return navTop - boxH()
     }
 
     /** t = 0 صفحة كاملة … 1 المربع الصغير. الصفحة كلها نفس المربع: تنزل وتنقص، والفيديو يصغر لمكانه — بدون تلاشي. */
@@ -998,15 +1010,10 @@ class DetailsActivity : Activity() {
         morphT = t
         val w = root.width.toFloat(); val h = root.height.toFloat()
         if (w <= 0f || h <= 0f) return
-        val boxH = dp(68).toFloat()
-        val bh = lerp(h, boxH, t)
-        val radius = lerp(0f, dp(12).toFloat(), t)
+        val bh = lerp(h, boxH(), t)
         root.translationY = lerp(0f, miniTop(), t)
-        root.outlineProvider = object : android.view.ViewOutlineProvider() {
-            override fun getOutline(v: View, o: android.graphics.Outline) { o.setRoundRect(0, 0, v.width, bh.toInt(), radius) }
-        }
-        root.clipToOutline = t > 0f
-        root.invalidateOutline()
+        // الصفحة تنقص من تحت لين تصير بارتفاع المشغّل الصغير (قصّ حقيقي — يشتغل على كل الأجهزة)
+        root.clipBounds = if (t > 0f) android.graphics.Rect(0, 0, w.toInt(), bh.toInt().coerceAtLeast(1)) else null
         miniBox?.let { b ->
             val vw = b.width.toFloat()
             if (vw > 0f) {
@@ -1032,6 +1039,7 @@ class DetailsActivity : Activity() {
             mi.visibility = if (t > 0.6f) View.VISIBLE else View.GONE
             mi.alpha = ((t - 0.7f) / 0.3f).coerceIn(0f, 1f)
             mi.translationY = root.translationY
+            (mi.layoutParams as FrameLayout.LayoutParams).let { lp -> val hh = boxH().toInt(); if (lp.height != hh) { lp.height = hh; mi.layoutParams = lp } }
             mi.setPadding(dp(14), 0, dp(4) + dp(100) + dp(10), 0)
         }
     }

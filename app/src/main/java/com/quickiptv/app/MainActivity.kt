@@ -171,6 +171,7 @@ class MainActivity : Activity() {
         // مكان الشريط السفلي: صفحة التشغيل تنزل لين فوقه بالضبط (مكان المشغّل الصغير)
         nav.addOnLayoutChangeListener { v, _, _, _, _, _, _, _, _ ->
             val loc = IntArray(2); v.getLocationOnScreen(loc); MiniDock.navTop = loc[1]
+            measureDock()
         }
         // الشريط السفلي يمتد خلف أزرار الجوال (بنفس لونه) والأزرار نفسها فوقها
         nav.onSystemInsets { _, _, _, b -> nav.setPadding(0, 0, 0, b) }
@@ -286,12 +287,22 @@ class MainActivity : Activity() {
     private var ghostBoxBottom = 0f
     private var snapshotFresh = false
 
-    private fun ghostRange(): Float = (MiniDock.navTop - dp(68)).toFloat().coerceAtLeast(dp(200).toFloat())
+    /** ارتفاع المشغّل الصغير الحقيقي (حتى لو مخفي) */
+    private fun measureDock() {
+        val box = dockBox ?: return
+        val w = (box.parent as? View)?.width ?: return
+        if (w <= 0) return
+        box.measure(View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+        if (box.measuredHeight > 0) MiniDock.dockH = box.measuredHeight
+    }
+
+    private fun ghostRange(): Float = (MiniDock.navTop - dockHeight()).toFloat().coerceAtLeast(dp(200).toFloat())
+    private fun dockHeight(): Int = if (MiniDock.dockH > 0) MiniDock.dockH else dp(68)
 
     private fun beginGhost() {
         val box = dockBox ?: return; val vid = dockVid ?: return
         ghostAnim?.cancel()
-        PageSnapshot.take(window.decorView)        // الصفحة اللي تحت (قبل ما يكبر) — تبان لما تنزّلها مرة ثانية
+        PageSnapshot.take(this)                     // الصفحة اللي تحت (قبل ما يكبر) — تبان لما تنزّلها مرة ثانية
         snapshotFresh = true
         val loc = IntArray(2)
         vid.getLocationOnScreen(loc); ghostRestX = loc[0].toFloat(); ghostRestY = loc[1].toFloat(); ghostRestW = vid.width.toFloat().coerceAtLeast(1f)
@@ -309,7 +320,7 @@ class MainActivity : Activity() {
         fun lerp(a: Float, b: Float) = a + (b - a) * t
         val w = box.width.toFloat()
         val h = window.decorView.height.toFloat()
-        val miniTop = (MiniDock.navTop - dp(68)).toFloat()
+        val miniTop = (MiniDock.navTop - dockHeight()).toFloat()
         val boxTop = lerp(0f, miniTop)
         val boxBottom = lerp(h, MiniDock.navTop.toFloat())
         // خلفية الصفحة: من أعلى المربع لأسفله
@@ -594,7 +605,7 @@ class MainActivity : Activity() {
     override fun onPause() {
         super.onPause()
         // صورة للصفحة الحالية: تبان ورا صفحة التشغيل وهي تنسحب لتحت (لو أخذناها قبل السحب لفوق، نخليها)
-        if (!tv && !snapshotFresh) PageSnapshot.take(window.decorView)
+        if (!tv && !snapshotFresh) PageSnapshot.take(this)
         snapshotFresh = false
         screens[current]?.onHide()
         // طلعت من التطبيق: المشغّل الصغير يوقف (ونحفظ وين وقفت)
