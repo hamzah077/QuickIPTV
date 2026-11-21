@@ -93,7 +93,8 @@ struct PlayerOverlay: View {
             }
             .environment(\.layoutDirection, .leftToRight)
             // (المسافة بالنسبة للشاشة — المشغّل نفسه يتحرك ويصغر وأنت تسحب، فلو قسناها بالنسبة له تتذبذب)
-            .gesture(DragGesture(minimumDistance: 30, coordinateSpace: .global)
+            // المشغّل الصغير: السحب يبدأ يتبع إصبعك من أول حركة (نفس الأندرويد)
+            .gesture(DragGesture(minimumDistance: compact && onDragDown != nil ? 10 : 30, coordinateSpace: .global)
             .onChanged { d in
                 // المشغّل فوق الصفحة: سحب لتحت = الصفحة تتبع إصبعك وتصغر (زي يوتيوب)
                 guard compact, let f = onDragDown else { return }
@@ -390,12 +391,12 @@ extension InlinePlayer {
             return
         }
         if v > 0.3 {
-            withAnimation(PanelHost.spring) { t = 1 } completion: {
+            withAnimation(PanelHost.ease(1 - v)) { t = 1 } completion: {
                 var tr = Transaction(); tr.disablesAnimations = true
                 withTransaction(tr) { pc.mini = true; t = 0; from = .zero }     // النافذة العائمة تطلع بنفس المكان بالضبط
             }
         } else {
-            withAnimation(PanelHost.spring) { t = 0 } completion: { from = .zero }
+            withAnimation(PanelHost.ease(v)) { t = 0 } completion: { from = .zero }
         }
     }
 }

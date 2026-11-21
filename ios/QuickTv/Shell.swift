@@ -54,7 +54,8 @@ struct PhoneShell: View {
             // (السحب كله داخل PanelHost: إصبعك يتحرك = هي بس اللي تنرسم، مو الأقسام كلها — بدون لاج)
             if panelOn {
                 PanelHost(tab: $tab)
-                    .transition(.move(edge: .bottom))
+                    // تطلع من تحت، وتختفي (إغلاق/رجوع للمباشر) بتصغير خفيف وتلاشي — نفس الأندرويد
+                    .transition(.asymmetric(insertion: .move(edge: .bottom), removal: .scale(scale: 0.85).combined(with: .opacity)))
                     .zIndex(5)
             }
             if pc.fullscreen { FullscreenPlayer().zIndex(10) }
@@ -99,6 +100,8 @@ struct PanelHost: View {
 
     /// نابض ناعم: يبدأ بسرعة إصبعك ويهدى بدون ارتداد مزعج
     static let spring = Animation.interpolatingSpring(mass: 1, stiffness: 210, damping: 27)
+    /// نفس منحنى الأندرويد بالضبط: يبدأ بسرعة ويهدى بالتدريج، والمدة حسب المسافة الباقية
+    static func ease(_ dist: CGFloat) -> Animation { .timingCurve(0.2, 0, 0, 1, duration: 0.3 + 0.18 * Double(min(1, abs(dist)))) }
 
     var body: some View {
         GeometryReader { g in
@@ -128,8 +131,10 @@ struct PanelHost: View {
             withTransaction(tr) { dragT = v }
             return
         }
-        withAnimation(Self.spring) {
-            if v > 0.3 { pc.mini = true; miniHidden = 0 }
+        let to: CGFloat = v > 0.3 ? 1 : 0
+        let cur = dragT ?? (pc.mini ? 1 : 0)          // زر التصغير (بدون سحب) يبدأ من الصفحة الكاملة
+        withAnimation(Self.ease(to - cur)) {
+            if to == 1 { pc.mini = true; miniHidden = 0 }
             dragT = nil
         }
     }
@@ -138,10 +143,10 @@ struct PanelHost: View {
     private func expand() {
         guard let r = pc.req else { return }
         if pc.watchVod != nil {
-            withAnimation(Self.spring) { pc.mini = false }
+            withAnimation(Self.ease(1)) { pc.mini = false }
         } else if r.type == "live" {
             tab = .live
-            withAnimation(Self.spring) { pc.mini = false }
+            withAnimation(.easeOut(duration: 0.22)) { pc.mini = false }
         } else {
             pc.autoFullscreen = false
             withAnimation { pc.fullscreen = true }

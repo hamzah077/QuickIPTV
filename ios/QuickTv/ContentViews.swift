@@ -45,10 +45,14 @@ struct LiveView: View {
                 }
             } else {
                 VStack(spacing: 0) {                            // آيفون: الشاشة ثابتة فوق والقنوات تتحرك تحت
-                    screen
-                    info.padding(.horizontal, 16).padding(.vertical, 8)
+                    // القناة بالنافذة العائمة: الشاشة تختفي والقنوات تاخذ المكان كله (نفس الأندرويد)
+                    if !(pc.mini && pc.isLive) {
+                        screen
+                        info.padding(.horizontal, 16).padding(.vertical, 8)
+                    }
                     list
                 }
+                .animation(.easeOut(duration: 0.22), value: pc.mini)
             }
         }
         .navigationTitle("المباشر")
