@@ -19,6 +19,8 @@ final class PlayerController {
     @ObservationIgnored private let vlcStopQueue = DispatchQueue(label: "quicktv.vlc.stop", qos: .utility)
     /// شاشة VLC (وحدة، تنتقل بين الشاشة الصغيرة وملء الشاشة)
     let vlcView: UIView = { let v = UIView(); v.backgroundColor = .black; v.isUserInteractionEnabled = false; return v }()
+    /// شاشة مشغّل آبل (وحدة، تنتقل بين الشاشة الصغيرة وملء الشاشة)
+    let avView: PlayerLayerView = { let v = PlayerLayerView(); v.backgroundColor = .black; v.isUserInteractionEnabled = false; return v }()
     private(set) var engine: Engine = .av
     private(set) var req: PlayRequest?
     var queue: SeriesQueue?                 // حلقات المسلسل (السابقة/التالية)
@@ -56,6 +58,9 @@ final class PlayerController {
 
     private init() {
         vlc.drawable = vlcView
+        avView.playerLayer.player = player
+        avView.playerLayer.videoGravity = .resizeAspect
+        PiP.shared.attach(avView.playerLayer)
         // لازم true: لو false، الـ AVPlayer إذا خلص البفر يوقف ويطلع تقطيع وما يكمّل لحاله
         player.automaticallyWaitsToMinimizeStalling = true
         timeObs = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.5, preferredTimescale: 600), queue: .main) { [weak self] t in
@@ -94,7 +99,7 @@ final class PlayerController {
         engine = .av
         let item = AVPlayerItem(url: r.url)
         // المباشر: النظام يحدد البفر حسب السيرفر (أثبت). الأفلام: بفر أكبر عشان ما يقطع على النت البطيء
-        item.preferredForwardBufferDuration = r.type == "live" ? 0 : 30
+        item.preferredForwardBufferDuration = r.type == "live" ? 0 : 20
         clearTracks()
         statusObs = item.observe(\.status, options: [.new]) { [weak self] it, _ in
             let st = it.status
@@ -109,9 +114,14 @@ final class PlayerController {
         endObs = NotificationCenter.default.addObserver(forName: .AVPlayerItemDidPlayToEndTime, object: item, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.ended() }
         }
+        seekTarget = nil
         player.replaceCurrentItem(with: item)
-        if r.start > 0 { player.seek(to: CMTime(seconds: r.start, preferredTimescale: 600)) }
-        player.play()
+        if r.start > 0 {
+            // نكمل من وين وقفت: سماح ثانيتين = يبدأ من أقرب نقطة جاهزة (أسرع بكثير من الثانية بالضبط)
+            let tol = CMTime(seconds: 2, preferredTimescale: 600)
+            player.seek(to: CMTime(seconds: r.start, preferredTimescale: 600), toleranceBefore: tol, toleranceAfter: tol)
+        }
+        player.playImmediately(atRate: 1)        // يبدأ أول ما يقدر، وإذا خلص البفر بعدين ينتظر ويكمل لحاله
     }
 
     // MARK: VLC
@@ -122,8 +132,9 @@ final class PlayerController {
         clearTracks()
         player.pause(); player.replaceCurrentItem(with: nil)
         let m = VLCMedia(url: r.url)
-        m.addOption(":network-caching=3000")                                               // بفر ٣ ثواني يمنع التقطيع
-        m.addOption(":live-caching=3000")
+        // بفر: كافي يمنع التقطيع، وصغير يخلي البداية سريعة
+        m.addOption(r.type == "live" ? ":network-caching=2000" : ":network-caching=1500")
+        m.addOption(":live-caching=2000")
         m.addOption(":http-reconnect")                                                    // ينقطع السيرفر؟ يرجع يتصل
         m.addOption(":http-user-agent=QuickTv/1.0")
         if r.start > 0 { m.addOption(":start-time=\(Int(r.start))") }
@@ -151,7 +162,7 @@ final class PlayerController {
     private func vlcTick() {
         guard engine == .vlc else { return }
         let t = Double(vlc.time.intValue) / 1000
-        if t.isFinite, t >= 0 { position = t }
+        if t.isFinite, t >= 0, seekTarget == nil { position = t }
         if let len = vlc.media?.length.intValue, len > 0 { duration = Double(len) / 1000 }
         isPlaying = vlc.isPlaying
         if isPlaying && !vlcTracksLoaded { vlcTracksLoaded = true; loadVLCTracks() }
@@ -181,16 +192,36 @@ final class PlayerController {
 
     func setRate(_ r: Float) { if engine == .vlc { vlc.rate = r } else { player.rate = r } }
 
+    /// وين رايح التقديم (الضغطات ورا بعض تنجمع على الهدف، مو على مكان الفيديو اللي لسه ما وصل)
+    @ObservationIgnored private var seekTarget: Double?
+
     func seek(by s: Double) {
-        let t = max(0, min(duration > 0 ? duration : .infinity, position + s))
-        seek(to: t)
+        seek(to: (seekTarget ?? position) + s)
     }
 
-    func seek(to t: Double) {
+    func seek(to t0: Double) {
+        let t = max(0, duration > 0 ? min(t0, duration - 1) : t0)
         position = t
-        if engine == .vlc { vlc.time = VLCTime(int: Int32(t * 1000)); return }
-        player.seek(to: CMTime(seconds: t, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+        seekTarget = t
+        if engine == .vlc {
+            vlc.time = VLCTime(int: Int32(t * 1000))
+            Task { try? await Task.sleep(for: .milliseconds(700)); if seekTarget == t { seekTarget = nil } }
+            return
+        }
+        // تقديم سريع: نلغي التقديم اللي قبله، ونسمح بثانية = يقفز لأقرب نقطة جاهزة بدل ما يفك الفيديو من أول
+        player.currentItem?.cancelPendingSeeks()
+        let tol = CMTime(seconds: 1, preferredTimescale: 600)
+        player.seek(to: CMTime(seconds: t, preferredTimescale: 600), toleranceBefore: tol, toleranceAfter: tol) { [weak self] done in
+            Task { @MainActor in
+                guard let self, done, self.seekTarget == t else { return }
+                self.seekTarget = nil
+                if self.player.rate == 0 && self.wasPlayingBeforeSeek { self.player.playImmediately(atRate: 1) }
+            }
+        }
     }
+
+    /// كان شغّال قبل التقديم؟ (عشان يكمل لحاله بعده)
+    private var wasPlayingBeforeSeek: Bool { isPlaying || buffering }
 
     /// المباشر: يرجع للحظة الحالية
     func goLive() {
@@ -226,7 +257,7 @@ final class PlayerController {
     private func tick(_ t: CMTime) {
         guard engine == .av else { return }
         let p = t.seconds
-        if p.isFinite { position = p }
+        if p.isFinite, seekTarget == nil { position = p }     // أثناء التقديم: نخلي الشريط على الهدف (ما يرجع ويقفز)
         if let d = player.currentItem?.duration.seconds, d.isFinite, d > 0 { duration = d }
         if Date().timeIntervalSince(lastSave) > 10 { saveNow() }
         checkSkips()

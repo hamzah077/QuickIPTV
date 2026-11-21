@@ -213,7 +213,7 @@ struct HomeView: View {
 
                 posterRow("أحدث الأفلام", Array(model.movies.prefix(20)))
                 posterRow("أحدث المسلسلات", Array(model.seriesList.prefix(20)))
-                let favV = (model.movies + model.seriesList).filter { model.isFav(($0.isSeries ? "series:" : "movie:") + $0.id) }
+                let favV = model.favoriteVods
                 posterRow("مفضلتك", favV)
             }
             .padding(.bottom, 90)

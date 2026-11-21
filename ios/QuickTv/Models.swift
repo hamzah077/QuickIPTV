@@ -12,12 +12,12 @@ struct Account: Codable, Identifiable, Hashable {
 
 // MARK: - المحتوى
 
-struct Category: Identifiable, Hashable {
+struct Category: Identifiable, Hashable, Codable {
     let id: String
     let name: String
 }
 
-struct Channel: Identifiable, Hashable {
+struct Channel: Identifiable, Hashable, Codable {
     let id: String
     let num: Int
     let name: String
@@ -27,7 +27,7 @@ struct Channel: Identifiable, Hashable {
 }
 
 /// فيلم أو مسلسل
-struct Vod: Identifiable, Hashable {
+struct Vod: Identifiable, Hashable, Codable {
     let id: String
     let name: String
     let icon: String

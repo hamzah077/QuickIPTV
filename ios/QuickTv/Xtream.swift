@@ -13,7 +13,8 @@ final class Xtream: @unchecked Sendable {
         while b.hasSuffix("/") { b.removeLast() }
         base = b
         let cfg = URLSessionConfiguration.default
-        cfg.timeoutIntervalForRequest = 20
+        cfg.timeoutIntervalForRequest = 45                  // قوائم الأفلام كبيرة على بعض السيرفرات
+        cfg.httpMaximumConnectionsPerHost = 6
         cfg.httpAdditionalHeaders = ["User-Agent": "QuickTv/1.0"]
         cfg.requestCachePolicy = .reloadIgnoringLocalCacheData
         session = URLSession(configuration: cfg)

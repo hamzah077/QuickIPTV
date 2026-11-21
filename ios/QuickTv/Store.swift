@@ -63,24 +63,63 @@ final class AppModel {
 
     /// يحمّل القوائم (مرة وحدة) — بالخلفية
     func loadAll(force: Bool = false) async {
-        guard let api, force || channels.isEmpty || movies.isEmpty else { return }
-        loading = true; error = nil
-        async let lc = try? api.liveCategories()
-        async let ch = try? api.liveStreams()
-        async let mc = try? api.vodCategories(series: false)
-        async let mv = try? api.movies()
-        async let sc = try? api.vodCategories(series: true)
-        async let sv = try? api.series()
-        let r = await (lc, ch, mc, mv, sc, sv)
-        liveCats = r.0 ?? []; channels = r.1 ?? []
-        movieCats = r.2 ?? []; movies = (r.3 ?? []).sorted { $0.added > $1.added }
-        seriesCats = r.4 ?? []; seriesList = (r.5 ?? []).sorted { $0.added > $1.added }
-        if channels.isEmpty && movies.isEmpty && seriesList.isEmpty { error = "تعذّر تحميل المحتوى. تأكد من الاتصال والاشتراك." }
+        guard let api, let acc = current, force || channels.isEmpty || movies.isEmpty else { return }
+        error = nil
+        let file = ContentCache.url(acc.id)
+
+        // ١) اللي محفوظ بالجهاز يطلع على طول (بدون انتظار السيرفر)
+        if channels.isEmpty && movies.isEmpty && seriesList.isEmpty,
+           let c = await Task.detached(priority: .userInitiated, operation: { ContentCache.read(file) }).value {
+            apply(c)
+        }
+        let hadCache = !(channels.isEmpty && movies.isEmpty)
+        loading = !hadCache
+
+        // ٢) من السيرفر بالخلفية: كل قائمة تطلع أول ما توصل (ما ننتظر الكل)
+        await withTaskGroup(of: ContentPart.self) { g in
+            g.addTask { .liveCats((try? await api.liveCategories()) ?? []) }
+            g.addTask { .channels((try? await api.liveStreams()) ?? []) }
+            g.addTask { .movieCats((try? await api.vodCategories(series: false)) ?? []) }
+            g.addTask { .movies(((try? await api.movies()) ?? []).sorted { $0.added > $1.added }) }
+            g.addTask { .seriesCats((try? await api.vodCategories(series: true)) ?? []) }
+            g.addTask { .series(((try? await api.series()) ?? []).sorted { $0.added > $1.added }) }
+            for await part in g {
+                guard current?.id == acc.id else { continue }            // غيّرت الحساب بالنص؟ نتجاهل
+                switch part {                                            // فاضي = فشل الطلب: نخلي المحفوظ
+                case .liveCats(let v): if !v.isEmpty { liveCats = v }
+                case .channels(let v): if !v.isEmpty { channels = v }
+                case .movieCats(let v): if !v.isEmpty { movieCats = v }
+                case .movies(let v): if !v.isEmpty { movies = v }
+                case .seriesCats(let v): if !v.isEmpty { seriesCats = v }
+                case .series(let v): if !v.isEmpty { seriesList = v }
+                }
+                if loading && (!channels.isEmpty || !movies.isEmpty || !seriesList.isEmpty) { loading = false }
+            }
+        }
         loading = false
+        guard current?.id == acc.id else { return }
+        if channels.isEmpty && movies.isEmpty && seriesList.isEmpty { error = "تعذّر تحميل المحتوى. تأكد من الاتصال والاشتراك."; return }
+
+        // ٣) نحفظ نسخة بالجهاز للمرة الجاية (بالخلفية)
+        let c = ContentCache(liveCats: liveCats, channels: channels, movieCats: movieCats, movies: movies, seriesCats: seriesCats, seriesList: seriesList)
+        Task.detached(priority: .utility) { ContentCache.write(c, file) }
+    }
+
+    private func apply(_ c: ContentCache) {
+        liveCats = c.liveCats; channels = c.channels; movieCats = c.movieCats
+        movies = c.movies; seriesCats = c.seriesCats; seriesList = c.seriesList
     }
 
     // MARK: المفضلة
     func isFav(_ key: String) -> Bool { favs.contains(key) }
+
+    /// الأفلام والمسلسلات المفضلة (بحث بالرقم = سريع حتى مع عشرات الآلاف)
+    var favoriteVods: [Vod] {
+        if favs.isEmpty { return [] }
+        let m = Set(favs.compactMap { $0.hasPrefix("movie:") ? String($0.dropFirst(6)) : nil })
+        let s = Set(favs.compactMap { $0.hasPrefix("series:") ? String($0.dropFirst(7)) : nil })
+        return (m.isEmpty ? [] : movies.filter { m.contains($0.id) }) + (s.isEmpty ? [] : seriesList.filter { s.contains($0.id) })
+    }
     func toggleFav(_ key: String) {
         if favs.contains(key) { favs.remove(key) } else { favs.insert(key) }
         if let a = current { Persist.save("favs:\(a.id)", Array(favs)) }
@@ -189,4 +228,32 @@ struct SeriesQueue {
                            image: e.image.isEmpty ? image : e.image, seriesId: seriesId, season: e.season, epNum: e.num,
                            start: AppModel.shared.resumePoint(key))
     }
+}
+
+
+/// نسخة من القوائم محفوظة بالجهاز: الرئيسية تفتح على طول، والتحديث من السيرفر بالخلفية
+struct ContentCache: Codable, Sendable {
+    var liveCats: [Category]
+    var channels: [Channel]
+    var movieCats: [Category]
+    var movies: [Vod]
+    var seriesCats: [Category]
+    var seriesList: [Vod]
+
+    static func url(_ accountId: String) -> URL {
+        let dir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+        let safe = accountId.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? "acc"
+        return dir.appendingPathComponent("content-\(safe).json")
+    }
+    static func read(_ u: URL) -> ContentCache? {
+        guard let d = try? Data(contentsOf: u) else { return nil }
+        return try? JSONDecoder().decode(ContentCache.self, from: d)
+    }
+    static func write(_ c: ContentCache, _ u: URL) {
+        if let d = try? JSONEncoder().encode(c) { try? d.write(to: u, options: .atomic) }
+    }
+}
+
+enum ContentPart: Sendable {
+    case liveCats([Category]), channels([Channel]), movieCats([Category]), movies([Vod]), seriesCats([Category]), series([Vod])
 }

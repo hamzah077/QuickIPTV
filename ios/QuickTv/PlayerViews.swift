@@ -9,17 +9,18 @@ final class PlayerLayerView: UIView {
 }
 
 /// سطح الفيديو حسب المحرّك. active = هذي الشاشة اللي تعرض الحين (الصغيرة أو ملء الشاشة)
+/// شاشة الفيديو وحدة بس وتنتقل بين الصغيرة وملء الشاشة — ما تنعاد تتجهّز = بدون شاشة سودا وحركة التكبير ناعمة
 struct VideoSurface: View {
     @Environment(PlayerController.self) private var pc
     var active: Bool = true
     var body: some View {
-        if pc.engine == .vlc { VLCSurface(view: pc.vlcView, active: active) }
-        else { AVSurface(player: pc.player) }
+        if pc.engine == .vlc { HostedSurface(view: pc.vlcView, active: active) }
+        else { HostedSurface(view: pc.avView, active: active) }
     }
 }
 
-/// شاشة VLC: نفس الشاشة تنتقل بين الصغيرة وملء الشاشة (بدون إعادة تشغيل)
-struct VLCSurface: UIViewRepresentable {
+/// حاوية تستضيف شاشة الفيديو المشتركة لما تكون هي الشاشة المعروضة
+struct HostedSurface: UIViewRepresentable {
     let view: UIView
     let active: Bool
     func makeUIView(context: Context) -> UIView {
@@ -33,25 +34,6 @@ struct VLCSurface: UIViewRepresentable {
             view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
             c.addSubview(view)
         }
-    }
-}
-
-struct AVSurface: UIViewRepresentable {
-    let player: AVPlayer
-    var gravity: AVLayerVideoGravity = .resizeAspect
-
-    func makeUIView(context: Context) -> PlayerLayerView {
-        let v = PlayerLayerView()
-        v.backgroundColor = .black
-        v.playerLayer.player = player
-        v.playerLayer.videoGravity = gravity
-        PiP.shared.attach(v.playerLayer)
-        return v
-    }
-
-    func updateUIView(_ v: PlayerLayerView, context: Context) {
-        v.playerLayer.videoGravity = gravity
-        if v.playerLayer.player !== player { v.playerLayer.player = player }
     }
 }
 
