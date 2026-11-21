@@ -95,7 +95,6 @@ struct PanelHost: View {
     /// أثناء سحب صفحة التشغيل: وين وصلت (0 صفحة كاملة … 1 نافذة عائمة)
     @State private var dragT: CGFloat?
     /// مكان النافذة العائمة (زاوية) ومخبّية على الحافة؟
-    @State private var miniCorner = 3
     @State private var miniHidden = 0
 
     /// نابض ناعم: يبدأ بسرعة إصبعك ويهدى بدون ارتداد مزعج
@@ -111,7 +110,7 @@ struct PanelHost: View {
                 // الصفحة اللي تحت تغمق شوي وهي مغطاة، وتوضح كل ما نزلت الصفحة
                 Color.black.opacity(Double((1 - t) * 0.7)).allowsHitTesting(false)
                 WatchPanel(W: W, H: H, top: ins.top, bottom: ins.bottom, t: t,
-                           corner: $miniCorner, hiddenSide: $miniHidden,
+                           corner: Binding(get: { pc.miniCorner }, set: { pc.miniCorner = $0 }), hiddenSide: $miniHidden,
                            onDrag: { dy, ended in drag(dy, ended, range: WatchPanel.range(W: W, H: H, top: ins.top, bottom: ins.bottom)) },
                            onExpand: { expand() })
             }

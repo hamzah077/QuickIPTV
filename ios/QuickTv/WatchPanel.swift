@@ -36,6 +36,17 @@ struct WatchPanel: View {
         let y = c < 2 ? top + 8 : Self.floorY(H: H, bottom: bottom) - fh
         return CGPoint(x: x, y: y)
     }
+    /// مكان النافذة العائمة بإحداثيات الشاشة (عشان مشغّل المباشر يصغر لنفس المكان بالضبط)
+    @MainActor static func floatRect(corner c: Int) -> CGRect {
+        let win = UIApplication.shared.connectedScenes.compactMap { ($0 as? UIWindowScene)?.keyWindow }.first
+        let b = win?.bounds ?? CGRect(x: 0, y: 0, width: 390, height: 844)
+        let ins = win?.safeAreaInsets ?? .zero
+        let fw = (b.width * 0.5).rounded(), fh = fw * 9 / 16
+        let x = c % 2 == 0 ? 10 : b.width - fw - 10
+        let y = c < 2 ? ins.top + 8 : floorY(H: b.height, bottom: ins.bottom) - fh
+        return CGRect(x: x, y: y, width: fw, height: fh)
+    }
+
     /// مسافة السحب (من الصفحة الكاملة لمكان النافذة)
     static func range(W: CGFloat, H: CGFloat, top: CGFloat, bottom: CGFloat) -> CGFloat {
         max(200, floorY(H: H, bottom: bottom) - (W * 0.5) * 9 / 16 - top)
@@ -105,30 +116,27 @@ struct WatchPanel: View {
 
     // MARK: النافذة العائمة
 
-    /// زر الإيقاف (يسار) والإغلاق (يمين) فوق الفيديو + خط التقدّم
+    /// زر الإيقاف (يسار) والإغلاق (يمين) ثابتين فوق الفيديو (زي يوتيوب)، والتظليل يختفي بعد شوي.
+    /// ضغطة على الفيديو = تكبير للصفحة.
     private var floatingOverlay: some View {
         ZStack(alignment: .top) {
-            Color.black.opacity(showBtns ? 0.35 : 0.001)        // (شبه شفاف عشان يستقبل اللمس)
+            Color.black.opacity(showBtns ? 0.32 : 0.001)        // التظليل (شبه شفاف لما يختفي عشان يستقبل اللمس)
                 .contentShape(Rectangle())
-                .onTapGesture {
-                    if showBtns { onExpand() } else { flashButtons() }
-                }
-            if showBtns {
-                HStack {
-                    smallButton(pc.isPlaying ? "pause.fill" : "play.fill", pc.isPlaying ? "إيقاف مؤقت" : "تشغيل") { pc.togglePlay(); flashButtons() }
-                    Spacer()
-                    smallButton("xmark", "إغلاق") { withAnimation(.easeOut(duration: 0.2)) { pc.stop() } }
-                }
-                .padding(5)
-                .environment(\.layoutDirection, .leftToRight)
-                .transition(.opacity)
+                .onTapGesture { onExpand() }
+            HStack {
+                smallButton(pc.isPlaying ? "pause.fill" : "play.fill", pc.isPlaying ? "إيقاف مؤقت" : "تشغيل") { pc.togglePlay(); flashButtons() }
+                Spacer()
+                smallButton("xmark", "إغلاق") { withAnimation(.easeOut(duration: 0.2)) { pc.stop() } }
             }
+            .padding(5)
+            .environment(\.layoutDirection, .leftToRight)
             if !pc.isLive, pc.duration > 0 {
                 VStack { Spacer(); ProgressLine(value: pc.position / pc.duration, height: 2) }
                     .allowsHitTesting(false)
             }
         }
-        .animation(.easeOut(duration: 0.18), value: showBtns)
+        .animation(.easeInOut(duration: 0.45), value: showBtns)
+        .onAppear { flashButtons() }
     }
 
     private func smallButton(_ sym: String, _ label: String, _ action: @escaping () -> Void) -> some View {
@@ -144,7 +152,7 @@ struct WatchPanel: View {
     private func flashButtons() {
         showBtns = true
         btnTask?.cancel()
-        btnTask = Task { try? await Task.sleep(for: .seconds(3)); if !Task.isCancelled { showBtns = false } }
+        btnTask = Task { try? await Task.sleep(for: .seconds(2.5)); if !Task.isCancelled { showBtns = false } }
     }
 
     /// تسحب النافذة لأي مكان: تلتصق بأقرب زاوية، أو ترميها على الحافة تنخبى
@@ -153,7 +161,7 @@ struct WatchPanel: View {
             .onChanged { d in
                 guard t >= 1 else { return }
                 var tr = Transaction(); tr.disablesAnimations = true
-                withTransaction(tr) { showBtns = false; move = d.translation }
+                withTransaction(tr) { move = d.translation }
             }
             .onEnded { d in
                 guard t >= 1 else { return }

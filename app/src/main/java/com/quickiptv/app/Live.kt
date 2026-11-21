@@ -114,7 +114,8 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
             background = rounded(0xFF000000.toInt(), a.dpf(12f)); clipToOutline = true
             // الجوال عمودي: اسحب الشاشة لتحت = القناة تكمل في المشغّل الصغير والقنوات تاخذ المكان كله
             canDrag = { !a.tv && !a.landscape && current != null && player != null }
-            onDocked = { dockIfPlaying() }
+            // نفس حركة الأفلام: الشاشة تصغر مع إصبعك لمكان النافذة العائمة بالضبط
+            onDrag = { dy, ended -> liveDrag(dy, ended) }
         }
         screen.addView(playerView, FrameLayout.LayoutParams(MATCH, MATCH))
         screen.addView(bar, FrameLayout.LayoutParams(MATCH, MATCH))
@@ -378,6 +379,58 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
         loading.visibility = View.GONE
         status.text = t
         status.visibility = View.VISIBLE
+    }
+
+    // ---------- سحب شاشة المباشر لتحت = تصغر لين تصير النافذة العائمة (الجوال) ----------
+    private var dragT = 0f
+    private var dragAnim: android.animation.ValueAnimator? = null
+    private var restX = 0f; private var restY = 0f
+
+    private fun targetRect(): Triple<Float, Float, Float> {
+        val w = screenBox.rootView.width.toFloat()
+        val fw = if (MiniDock.floatW > 0f) MiniDock.floatW else w / 2f
+        val x = if (MiniDock.floatX >= 0f) MiniDock.floatX else w - fw - a.dp(10)
+        val y = if (MiniDock.floatY >= 0f) MiniDock.floatY else screenBox.rootView.height - a.dp(80) - fw * 9f / 16f
+        return Triple(x, y, fw)
+    }
+
+    private fun setLiveMorph(t: Float) {
+        dragT = t
+        val b = screenBox
+        val (tx, ty, fw) = targetRect()
+        val s = 1f + (fw / b.width.coerceAtLeast(1) - 1f) * t
+        b.pivotX = 0f; b.pivotY = 0f; b.scaleX = s; b.scaleY = s
+        b.translationX = (tx - restX) * t
+        b.translationY = (ty - restY) * t
+        b.translationZ = if (t > 0f) a.dp(12).toFloat() else 0f
+        bar.alpha = (1f - t * 4f).coerceAtLeast(0f)
+    }
+
+    private fun liveDrag(dy: Float, ended: Boolean) {
+        val b = screenBox
+        if (dragT == 0f && dragAnim == null) {
+            // أول السحب: مكانها الحالي، ونخلي الأب ما يقصّها وهي طالعة برا حدوده
+            val loc = IntArray(2); b.getLocationOnScreen(loc); restX = loc[0].toFloat(); restY = loc[1].toFloat()
+            var p = b.parent
+            while (p is ViewGroup) { p.clipChildren = false; p.clipToPadding = false; p = p.parent }
+        }
+        val range = (targetRect().second - restY).coerceAtLeast(a.dp(150).toFloat())
+        val t = (dy / range).coerceIn(0f, 1f)
+        if (!ended) { dragAnim?.cancel(); dragAnim = null; setLiveMorph(t); return }
+        val to = if (t > 0.3f) 1f else 0f
+        dragAnim = android.animation.ValueAnimator.ofFloat(t, to).apply {
+            duration = (300 + 180 * kotlin.math.abs(to - t)).toLong()
+            interpolator = android.view.animation.PathInterpolator(0.2f, 0f, 0f, 1f)
+            addUpdateListener { setLiveMorph(it.animatedValue as Float) }
+            addListener(object : android.animation.AnimatorListenerAdapter() {
+                override fun onAnimationEnd(an: android.animation.Animator) {
+                    dragAnim = null
+                    if (to == 1f) { MiniDock.instant = true; dockIfPlaying() }   // النافذة العائمة تطلع بنفس المكان بالضبط
+                    setLiveMorph(0f)
+                }
+            })
+            start()
+        }
     }
 
     /** القناة تنتقل للمشغّل الصغير تحت (الجوال): نفس البث يكمل بدون انقطاع. */

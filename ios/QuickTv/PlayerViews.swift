@@ -344,20 +344,28 @@ struct PlayerOverlay: View {
 
 struct InlinePlayer: View {
     @Environment(PlayerController.self) private var pc
-    @State private var dragY: CGFloat = 0
+    /// سحب لتحت (الجوال): 0 مكانه … 1 النافذة العائمة
+    @State private var t: CGFloat = 0
+    @State private var from: CGRect = .zero
+    @State private var to: CGRect = .zero
 
     var body: some View {
+        // نفس حركة الأفلام: الفيديو يصغر مع إصبعك لمكان النافذة العائمة بالضبط وزواياه تتقعّر من أول ما تسحب
+        let s = from.width > 0 ? 1 + (to.width / from.width - 1) * t : 1
+        let r = min(14, t * 120) / max(0.01, s)
         ZStack {
             Color.black
             VideoSurface(active: !pc.fullscreen && !pc.mini)
             PlayerOverlay(compact: true, onDragDown: PlayerController.phone ? { dy, ended in dragDown(dy, ended) } : nil) {
                 pc.autoFullscreen = false; pc.fullscreen = true
             }
+            .opacity(Double(max(0, 1 - t * 4)))
         }
         .aspectRatio(16 / 9, contentMode: .fit)
-        // أثناء السحب لتحت: يصغر وينزل مع إصبعك
-        .scaleEffect(1 - min(dragY, 320) / 900, anchor: .top)
-        .offset(y: dragY * 0.5)
+        .clipShape(RoundedRectangle(cornerRadius: r, style: .continuous))
+        .scaleEffect(s, anchor: .topLeading)
+        .offset(x: (to.minX - from.minX) * t, y: (to.minY - from.minY) * t)
+        .zIndex(t > 0 ? 10 : 0)
         .opacity(pc.fullscreen ? 0 : 1)                 // وقت ملء الشاشة الفيديو "طالع" من هنا
         .background(GeometryReader { g in
             Color.clear
@@ -368,13 +376,26 @@ struct InlinePlayer: View {
 }
 
 extension InlinePlayer {
-    /// سحبته لتحت كفاية؟ يصير مشغّل صغير تحت. وإلا يرجع مكانه.
+    /// سحبته لتحت: يتبع إصبعك لين النافذة العائمة. تركته بعد ثلث المسافة = يكمل ويصير النافذة، وإلا يرجع مكانه.
     fileprivate func dragDown(_ dy: CGFloat, _ ended: Bool) {
-        guard ended else { dragY = dy; return }
-        if dy > 90 {
-            withAnimation(.spring(duration: 0.35, bounce: 0.05)) { pc.mini = true; dragY = 0 }
+        if from == .zero || (t == 0 && !ended) {
+            from = pc.inlineFrame
+            to = WatchPanel.floatRect(corner: pc.miniCorner)
+        }
+        let range = max(150, to.minY - from.minY)
+        let v = min(1, max(0, dy / range))
+        guard ended else {
+            var tr = Transaction(); tr.disablesAnimations = true
+            withTransaction(tr) { t = v }
+            return
+        }
+        if v > 0.3 {
+            withAnimation(PanelHost.spring) { t = 1 } completion: {
+                var tr = Transaction(); tr.disablesAnimations = true
+                withTransaction(tr) { pc.mini = true; t = 0; from = .zero }     // النافذة العائمة تطلع بنفس المكان بالضبط
+            }
         } else {
-            withAnimation(.spring(duration: 0.3)) { dragY = 0 }
+            withAnimation(PanelHost.spring) { t = 0 } completion: { from = .zero }
         }
     }
 }

@@ -251,8 +251,9 @@ class MainActivity : Activity() {
         }.apply { background = rounded(0x80000000.toInt(), dpf(16f)) }
         val closeBtn = iconButton(R.drawable.ic_close, "إغلاق", 32) { MiniDock.stop() }
             .apply { background = rounded(0x80000000.toInt(), dpf(16f)) }
+        // الزرين ثابتين فوق الفيديو (زي يوتيوب)، والتظليل وراهم يختفي بعد شوي
+        val scrim = View(this).apply { setBackgroundColor(0x52000000); alpha = 0f }
         val btns = FrameLayout(this).apply {
-            setBackgroundColor(0x59000000); visibility = View.GONE
             layoutDirection = View.LAYOUT_DIRECTION_LTR
             addView(playBtn, FrameLayout.LayoutParams(dp(32), dp(32), Gravity.TOP or Gravity.LEFT).apply { setMargins(dp(5), dp(5), 0, 0) })
             addView(closeBtn, FrameLayout.LayoutParams(dp(32), dp(32), Gravity.TOP or Gravity.RIGHT).apply { setMargins(0, dp(5), dp(5), 0) })
@@ -263,6 +264,7 @@ class MainActivity : Activity() {
             elevation = dp(10).toFloat()
             visibility = View.GONE
             addView(pv, FrameLayout.LayoutParams(MATCH, MATCH))
+            addView(scrim, FrameLayout.LayoutParams(MATCH, MATCH))
             addView(btns, FrameLayout.LayoutParams(MATCH, MATCH))
             addView(prog, FrameLayout.LayoutParams(0, dp(2), Gravity.BOTTOM or Gravity.LEFT))
             // ضغطة = الأزرار (والثانية = تكبير). سحب = تحرّكها، وتلتصق بأقرب زاوية أو تنخبى على الحافة
@@ -276,7 +278,7 @@ class MainActivity : Activity() {
                     }
                     android.view.MotionEvent.ACTION_MOVE -> {
                         val dx = e.rawX - downX; val dy = e.rawY - downY
-                        if (!moved && kotlin.math.hypot(dx, dy) > dp(6)) { moved = true; btns.visibility = View.GONE }
+                        if (!moved && kotlin.math.hypot(dx, dy) > dp(6)) moved = true
                         if (moved) {
                             val dt = (e.eventTime - lastAt).coerceAtLeast(1L)
                             velX = (e.rawX - lastX) / dt * 1000f; lastX = e.rawX; lastAt = e.eventTime
@@ -284,7 +286,7 @@ class MainActivity : Activity() {
                         }
                     }
                     android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
-                        if (!moved) { if (e.actionMasked == android.view.MotionEvent.ACTION_UP) { if (btns.visibility == View.VISIBLE) expandDock() else flashBtns() } }
+                        if (!moved) { if (e.actionMasked == android.view.MotionEvent.ACTION_UP) expandDock() }      // ضغطة = تكبير
                         else dropDock(v.translationX, v.translationY, velX)
                     }
                 }
@@ -299,14 +301,16 @@ class MainActivity : Activity() {
         shell.addView(box, FrameLayout.LayoutParams(dp(180), dp(101), Gravity.TOP or Gravity.LEFT))
         shell.addView(handle, FrameLayout.LayoutParams(dp(24), dp(60), Gravity.TOP or Gravity.LEFT))
         box.layoutDirection = View.LAYOUT_DIRECTION_LTR
-        dockBox = box; dockPv = pv; dockBtns = btns; dockPlay = playBtn.getChildAt(0) as? android.widget.ImageView; dockProg = prog; dockHandle = handle
+        dockBox = box; dockPv = pv; dockBtns = scrim; dockPlay = playBtn.getChildAt(0) as? android.widget.ImageView; dockProg = prog; dockHandle = handle
         MiniDock.onChange = { refreshDock() }
     }
 
+    /** التظليل يطلع لحظة (لما تظهر النافذة أو تضغط إيقاف) ويختفي بهدوء — الزرين يبقون */
     private fun flashBtns() {
-        dockBtns?.visibility = View.VISIBLE
+        val sc = dockBtns ?: return
+        sc.animate().cancel(); sc.alpha = 1f
         btnsJob?.cancel()
-        btnsJob = scope.launch { delay(3000); dockBtns?.visibility = View.GONE }
+        btnsJob = scope.launch { delay(2500); sc.animate().alpha(0f).setDuration(450).start() }
     }
 
     /** تركت النافذة: رمية على الحافة = تنخبى، وإلا تلتصق بأقرب زاوية */
@@ -366,6 +370,7 @@ class MainActivity : Activity() {
             box.alpha = 0f; box.scaleX = 0.85f; box.scaleY = 0.85f
             box.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(220).setInterpolator(android.view.animation.DecelerateInterpolator()).start()
         } else placeDock(false)
+        if (box.visibility == View.VISIBLE && (dockBtns?.alpha ?: 0f) == 0f && btnsJob == null) flashBtns()
         syncDock()
         dockJob?.cancel()
         dockJob = scope.launch {
