@@ -93,12 +93,12 @@ fun rounded(color: Int, radius: Float, strokeColor: Int = 0, stroke: Int = 0): G
 
 /**
  * خلفية تتغيّر مع التركيز (الريموت) والاختيار واللمس.
- * التركيز: إطار أبيض واضح يبان من بعيد. الاختيار: أزرق خفيف.
+ * التركيز: رمادي فاتح مع إطار أبيض ناعم (يبان من بعيد وهادي على العين). الاختيار: رمادي خفيف.
  */
 fun Context.focusBg(
     normal: Int = Color.TRANSPARENT,
     radius: Int = 10,
-    selected: Int = C.ACCENT_SOFT,
+    selected: Int = 0x1FFFFFFF,
     pressed: Int = C.SURFACE3,
 ): Drawable {
     val r = dpf(radius.toFloat())
@@ -107,7 +107,7 @@ fun Context.focusBg(
         // الإطار يظهر ويختفي بتلاشي ناعم بدل ما يقفز
         setEnterFadeDuration(130)
         setExitFadeDuration(110)
-        addState(intArrayOf(android.R.attr.state_focused), rounded(0x4D7AA2FF, r, 0xB37AA2FF.toInt(), sw))
+        addState(intArrayOf(android.R.attr.state_focused), rounded(0x2EFFFFFF, r, 0x8CFFFFFF.toInt(), sw))
         addState(intArrayOf(android.R.attr.state_pressed), rounded(pressed, r))
         addState(intArrayOf(android.R.attr.state_selected), rounded(selected, r))
         addState(intArrayOf(android.R.attr.state_activated), rounded(selected, r))

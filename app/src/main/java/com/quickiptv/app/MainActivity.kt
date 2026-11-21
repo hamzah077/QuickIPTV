@@ -144,7 +144,9 @@ class MainActivity : Activity() {
             // التلفزيون: قائمة جانبية فوق المحتوى — أيقونات بس، وتتوسّع بأسمائها لما توقف عليها (مثل Google TV)
             val root = FrameLayout(this).apply { setBackgroundColor(C.BG); layoutDirection = View.LAYOUT_DIRECTION_RTL }
             nav.gravity = Gravity.CENTER_VERTICAL or Gravity.START
-            nav.setPadding(dp(12), dp(16), dp(12), dp(16))
+            // حافة الشاشة (يمين): مسافة أمان أكبر لأن بعض التلفزيونات تقص الأطراف — التحديد ما ينقص
+            nav.setPaddingRelative(dp(26), dp(16), dp(10), dp(16))
+            nav.clipToPadding = false
             // حواف آمنة: بعض التلفزيونات تقص أطراف الصورة
             content.setPadding(0, dp(18), dp(28), dp(14))
             root.addView(content, FrameLayout.LayoutParams(MATCH, MATCH).apply { marginStart = dp(RAIL_W) })
@@ -177,7 +179,7 @@ class MainActivity : Activity() {
         setContentView(root)
     }
 
-    private val RAIL_W = 76
+    private val RAIL_W = 92
     private var railOpen = false
 
     /** القائمة الجانبية: تتوسّع بأسماء الأقسام لما يوقف عليها الريموت، وترجع أيقونات لما يطلع منها. */
@@ -205,20 +207,33 @@ class MainActivity : Activity() {
         layoutParams = LinearLayout.LayoutParams(WRAP, dp(48)).apply { bottomMargin = dp(6) }
         setPadding(dp(14), 0, dp(14), 0)
         minimumWidth = dp(52)
-        background = focusBg(radius = 12)
+        // التركيز: كبسولة بيضاء والأيقونة والكتابة داكنة (مثل Google TV) — بدون أزرق
+        background = android.graphics.drawable.StateListDrawable().apply {
+            setEnterFadeDuration(120); setExitFadeDuration(100)
+            addState(intArrayOf(android.R.attr.state_focused), rounded(C.PRIMARY, dpf(24f)))
+            addState(intArrayOf(), rounded(android.graphics.Color.TRANSPARENT, dpf(24f)))
+        }
         isFocusable = true
         isClickable = true
         contentDescription = label
         addView(icon(ic, C.MUTED, 24).apply { tag = "ic" })
         addView(text(label, 15f, C.MUTED, bold = true).apply { tag = "tx"; setPadding(dp(12), 0, dp(6), 0); visibility = View.GONE })
         setOnClickListener { show(key) }
-        setOnFocusChangeListener { _, has ->
+        setOnFocusChangeListener { v, has ->
+            railTint(v, key, has)
             if (has) {
                 // دخلت القائمة من المحتوى؟ نوقّفك على القسم اللي أنت فيه (مثل Google TV)
                 if (!railOpen && key != current) navButtons[current]?.let { cur -> post { cur.requestFocus() } }
                 railExpand(true)
             } else nav.post { if (!nav.hasFocus()) railExpand(false) }
         }
+    }
+
+    /** ألوان زر القائمة: مركّز = داكن على أبيض، القسم الحالي = أبيض، الباقي = رمادي. */
+    private fun railTint(b: View, key: String, focused: Boolean = b.hasFocus()) {
+        val col = when { focused -> C.PRIMARY_TEXT; key == current -> C.TEXT; else -> C.MUTED }
+        b.findViewWithTag<android.widget.ImageView>("ic")?.imageTintList = android.content.res.ColorStateList.valueOf(col)
+        b.findViewWithTag<android.widget.TextView>("tx")?.setTextColor(col)
     }
 
     private fun tabButton(key: String, label: String, ic: Int): View = LinearLayout(this).apply {
@@ -261,6 +276,7 @@ class MainActivity : Activity() {
         s.view.fadeIn(dp(10))       // انتقال خفيف بين الأقسام
         navButtons.forEach { (k, b) ->
             val on = k == key
+            if (tv) { railTint(b, k); return@forEach }
             b.isSelected = on
             val col = if (on) C.ACCENT else C.MUTED
             b.findViewWithTag<android.widget.ImageView>("ic")?.imageTintList = android.content.res.ColorStateList.valueOf(col)
