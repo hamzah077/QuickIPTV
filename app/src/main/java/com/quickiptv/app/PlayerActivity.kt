@@ -89,6 +89,7 @@ class PlayerActivity : Activity() {
         pv = PlayerView(this).apply {
             resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
             setShutterBackgroundColor(0xFF000000.toInt())
+            setKeepContentOnPlayerReset(true)          // تغيير القناة: آخر صورة تبقى لين تجي الجديدة (بدل شاشة سودا)
             useController = false                                  // أزرارنا الموحّدة (PlayerBar) بدل أزرار المكتبة
         }
         root.addView(pv, FrameLayout.LayoutParams(MATCH, MATCH))

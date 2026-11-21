@@ -52,6 +52,8 @@ object C {
     const val HEART = 0xFFF0506E.toInt()
     const val PRIMARY = 0xFFF1F3F7.toInt()
     const val PRIMARY_TEXT = 0xFF0E1116.toInt()
+    /** تحديد التلفزيون: رمادي فاتح (أهدأ من الأبيض الصافي) والكتابة داكنة فوقه */
+    const val FOCUS = 0xFFCDD2DA.toInt()
 }
 
 fun Context.dp(v: Int): Int = (v * resources.displayMetrics.density + 0.5f).toInt()
@@ -109,7 +111,7 @@ fun Context.focusBg(
         // التحديد يظهر ويختفي بتلاشي ناعم بدل ما يقفز
         setEnterFadeDuration(130)
         setExitFadeDuration(110)
-        if (tv) addState(intArrayOf(android.R.attr.state_focused), rounded(C.PRIMARY, r))
+        if (tv) addState(intArrayOf(android.R.attr.state_focused), rounded(C.FOCUS, r))
         else addState(intArrayOf(android.R.attr.state_focused), rounded(0x2EFFFFFF, r, 0x8CFFFFFF.toInt(), sw))
         addState(intArrayOf(android.R.attr.state_pressed), rounded(pressed, r))
         addState(intArrayOf(android.R.attr.state_selected), rounded(selected, r))
@@ -471,9 +473,11 @@ private fun marquee(v: View?, on: Boolean) {
             v.setSingleLine(true)
             v.ellipsize = TextUtils.TruncateAt.MARQUEE
             v.marqueeRepeatLimit = -1
-            v.isSelected = true
+            // العنصر نفسه قابل للتحديد (مثل التصنيف)؟ الحركة تشتغل بالتحديد لحالها — ما نلمس "المختار"
+            // (كان يمسح تمييز التصنيف المختار لما تطلع منه)
+            if (!v.isFocusable) v.isSelected = true
         } else {
-            v.isSelected = false
+            if (!v.isFocusable) v.isSelected = false
             v.ellipsize = TextUtils.TruncateAt.END
         }
         return

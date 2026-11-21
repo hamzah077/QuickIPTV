@@ -107,6 +107,7 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
         playerView.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
         playerView.setBackgroundColor(0xFF000000.toInt())
         playerView.setShutterBackgroundColor(0xFF000000.toInt())
+        playerView.setKeepContentOnPlayerReset(true)          // تغيير القناة: آخر صورة تبقى لين تجي الجديدة (بدل شاشة سودا)
         playerView.isFocusable = false
 
         val screen = FrameLayout(a).apply { background = rounded(0xFF000000.toInt(), a.dpf(12f)); clipToOutline = true }

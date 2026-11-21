@@ -738,7 +738,7 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
     /** التحديد: دائرة بيضاء والأيقونة سودا (واضح من بعيد). */
     private fun tvFocusBg(radiusDp: Float) = android.graphics.drawable.StateListDrawable().apply {
         setEnterFadeDuration(110); setExitFadeDuration(110)
-        addState(intArrayOf(android.R.attr.state_focused), android.graphics.drawable.GradientDrawable().apply { cornerRadius = act.dpf(radiusDp); setColor(0xFFFFFFFF.toInt()) })
+        addState(intArrayOf(android.R.attr.state_focused), android.graphics.drawable.GradientDrawable().apply { cornerRadius = act.dpf(radiusDp); setColor(C.FOCUS) })
         addState(intArrayOf(), android.graphics.drawable.GradientDrawable().apply { cornerRadius = act.dpf(radiusDp); setColor(0x00000000) })
     }
 

@@ -159,13 +159,24 @@ object LivePlayer {
             p.playWhenReady = true
             return
         }
+        // كانت فيه قناة متصلة؟ لازم نعطي السيرفر لحظة يقفل اتصالها قبل نفتح الجديدة —
+        // أغلب السيرفرات تسمح باتصال واحد، ولو فتحنا على طول يرفض الجديدة = شاشة سودا والبث يقفل
+        val switching = url.isNotEmpty() && p.playbackState != androidx.media3.common.Player.STATE_IDLE
         url = u
         Downloads.setWatching("live", true)
         p.stop()                                  // نقفل اتصال القناة السابقة قبل نفتح الجديدة (حد الاتصالات)
-        p.setMediaItem(androidx.media3.common.MediaItem.fromUri(u))
-        p.prepare()
-        p.playWhenReady = true
+        pending?.let { main.removeCallbacks(it) }
+        val start = Runnable {
+            pending = null
+            if (player !== p || url != u) return@Runnable          // تغيّرت القناة مرة ثانية أثناء الانتظار
+            p.setMediaItem(androidx.media3.common.MediaItem.fromUri(u))
+            p.prepare()
+            p.playWhenReady = true
+        }
+        if (switching) { pending = start; main.postDelayed(start, 350) } else start.run()
     }
+    private val main = android.os.Handler(android.os.Looper.getMainLooper())
+    private var pending: Runnable? = null
 
     /**
      * حارس بعد نقل البث لشاشة ثانية (تكبير/تصغير): بعض أجهزة التلفزيون تعلّق الصورة لما تتغيّر الشاشة.
@@ -186,6 +197,7 @@ object LivePlayer {
     }
 
     fun release() {
+        pending?.let { main.removeCallbacks(it) }; pending = null
         Downloads.setWatching("live", false)
         player?.release()
         player = null
