@@ -841,10 +841,10 @@ class DetailsActivity : Activity() {
             onFullscreen = { if (fs) exitFs() else enterFs() }   // تكبير/تصغير بنفس الصفحة ونفس المشغّل (زي يوتيوب)
         }
         miniBox = DragDownFrame(this).apply {
+            background = android.graphics.drawable.GradientDrawable().apply { setColor(0xFF000000.toInt()) }   // (زواياه تتقعّر وأنت تسحب)
             // الجوال عمودي: اسحب المشغّل لتحت = يكمل في المشغّل الصغير تحت وترجع للصفحة اللي قبل (زي يوتيوب)
             canDrag = { !isTv() && !fs && !wide && !animating && fsPending == 0 }
             onDrag = { dy, ended -> onPageDrag(dy, ended) }
-            setBackgroundColor(0xFF000000.toInt())
             addView(pv, FrameLayout.LayoutParams(MATCH, MATCH))
             addView(bar, FrameLayout.LayoutParams(MATCH, MATCH))
         }
@@ -1039,7 +1039,12 @@ class DetailsActivity : Activity() {
                 b.pivotX = 0f; b.pivotY = 0f; b.scaleX = s; b.scaleY = s
                 b.translationX = lerp(0f, tx, t)
                 b.translationY = lerp(0f, ty - inT, t)
-                b.elevation = if (t > 0.05f) dp(10).toFloat() else 0f
+                // الزوايا تتقعّر من أول ما تسحب (مقسومة على التصغير عشان تطلع بنفس المقاس على الشاشة)
+                val r = minOf(dp(14).toFloat(), t * dp(120)) / s
+                (b.background as? android.graphics.drawable.GradientDrawable)?.cornerRadius = r
+                b.clipToOutline = r > 0f
+                b.invalidateOutline()
+                b.elevation = if (t >= 0.999f) dp(10).toFloat() else 0f        // الظل بس آخر الحركة (المتحرك يثقّل)
             }
         }
         miniBar?.alpha = (1f - t * 4f).coerceAtLeast(0f)
@@ -1047,14 +1052,17 @@ class DetailsActivity : Activity() {
         topSlot?.setBackgroundColor(if (t > 0f) 0 else 0xFF000000.toInt())
         topSlot?.clipChildren = t == 0f
         root.clipChildren = t == 0f
-        // باقي الصفحة (التفاصيل والحلقات): تنزل وتتلاشى
+        // باقي الصفحة (التفاصيل والحلقات): تنزل وتتلاشى — كطبقة جاهزة على كرت الشاشة (أخف وأنعم)
         val fade = (1f - t * 1.4f).coerceIn(0f, 1f)
+        val layer = if (t > 0f && t < 1f) View.LAYER_TYPE_HARDWARE else View.LAYER_TYPE_NONE
         for (i in 0 until root.childCount) {
             val c = root.getChildAt(i)
             if (c === topSlot) continue
+            if (c.layerType != layer) c.setLayerType(layer, null)
             c.alpha = fade; c.translationY = t * dp(220)
         }
-        root.background = if (t > 0f) android.graphics.drawable.ColorDrawable(C.BG).apply { alpha = (fade * 255).toInt() } else android.graphics.drawable.ColorDrawable(C.BG)
+        rootBg.alpha = (fade * 255).toInt()
+        if (root.background !== rootBg) root.background = rootBg
         val on = t > 0f
         if (!seeThrough) snapView?.let { sv ->
             if (on && sv.visibility != View.VISIBLE) { sv.setImageBitmap(PageSnapshot.bitmap); sv.visibility = View.VISIBLE }
@@ -1064,11 +1072,14 @@ class DetailsActivity : Activity() {
         morphInfo?.visibility = View.GONE
     }
 
+    private val rootBg = android.graphics.drawable.ColorDrawable(C.BG)
+
     private fun animateMorph(to: Float, end: (() -> Unit)? = null) {
         morphAnim?.cancel()
         morphAnim = android.animation.ValueAnimator.ofFloat(morphT, to).apply {
-            duration = (260 + 160 * kotlin.math.abs(to - morphT)).toLong()
-            interpolator = android.view.animation.DecelerateInterpolator(1.6f)
+            // منحنى ناعم (يبدأ بسرعة ويهدى بالتدريج) ومدة كافية عشان تبان سلسة
+            duration = (300 + 180 * kotlin.math.abs(to - morphT)).toLong()
+            interpolator = android.view.animation.PathInterpolator(0.2f, 0f, 0f, 1f)
             addUpdateListener { setMorph(it.animatedValue as Float) }
             addListener(object : android.animation.AnimatorListenerAdapter() {
                 override fun onAnimationEnd(a: android.animation.Animator) { morphAnim = null; end?.invoke() }

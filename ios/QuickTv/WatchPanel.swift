@@ -65,7 +65,12 @@ struct WatchPanel: View {
                     .allowsHitTesting(t < 0.05)
             }
 
-            // الفيديو
+            // الفيديو: مقاسه ثابت (بعرض الشاشة) ونصغّره بالتكبير/التصغير على كرت الشاشة —
+            // ما ينعاد ترتيبه مع كل حركة إصبع = سحب ناعم بدون لاج
+            let fullW = W, fullH = W * 9 / 16
+            let s = max(0.01, v.width / fullW)
+            // الزوايا تتقعّر من أول ما تسحب (ما تنتظر آخر الحركة)
+            let radius = min(14, t * 120) / s
             ZStack {
                 Color.black
                 VideoSurface(active: !pc.fullscreen)
@@ -76,11 +81,14 @@ struct WatchPanel: View {
                     .opacity(Double(1 - t * 4))
                     .environment(\.layoutDirection, .rightToLeft)
                 }
-                if t >= 1 { floatingOverlay }
             }
-            .frame(width: v.width, height: v.height)
-            .clipShape(RoundedRectangle(cornerRadius: L(0, 12), style: .continuous))
-            .shadow(color: .black.opacity(t > 0.1 ? 0.55 : 0), radius: 12, y: 5)
+            .frame(width: fullW, height: fullH)
+            .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
+            .scaleEffect(s, anchor: .topLeading)
+            .frame(width: v.width, height: v.height, alignment: .topLeading)
+            .overlay { if t >= 1 { floatingOverlay } }           // أزرار النافذة بمقاسها الحقيقي (مو مصغّرة)
+            .clipShape(RoundedRectangle(cornerRadius: min(14, t * 120), style: .continuous))
+            .shadow(color: .black.opacity(t >= 1 ? 0.5 : 0), radius: 12, y: 5)   // الظل بس وهي واقفة (الظل المتحرك يثقّل)
             .offset(x: v.minX, y: v.minY)
             .gesture(floatDrag, including: t >= 1 ? .all : .subviews)
 
@@ -141,15 +149,19 @@ struct WatchPanel: View {
 
     /// تسحب النافذة لأي مكان: تلتصق بأقرب زاوية، أو ترميها على الحافة تنخبى
     private var floatDrag: some Gesture {
-        DragGesture(minimumDistance: 6)
-            .onChanged { d in guard t >= 1 else { return }; showBtns = false; move = d.translation }
+        DragGesture(minimumDistance: 6, coordinateSpace: .global)
+            .onChanged { d in
+                guard t >= 1 else { return }
+                var tr = Transaction(); tr.disablesAnimations = true
+                withTransaction(tr) { showBtns = false; move = d.translation }
+            }
             .onEnded { d in
                 guard t >= 1 else { return }
                 let base = cornerOrigin(corner)
                 let startX = hiddenSide == 0 ? base.x : (hiddenSide < 0 ? -fw - 6 : W + 6)
                 let x = startX + d.translation.width, y = base.y + d.translation.height
                 let px = startX + d.predictedEndTranslation.width
-                withAnimation(.spring(duration: 0.34, bounce: 0.08)) {
+                withAnimation(.interpolatingSpring(mass: 1, stiffness: 230, damping: 24)) {
                     move = .zero
                     if x < -fw * 0.35 || px < -fw * 0.6 { hide(-1) }
                     else if x > W - fw * 0.65 || px > W - fw * 0.4 { hide(1) }

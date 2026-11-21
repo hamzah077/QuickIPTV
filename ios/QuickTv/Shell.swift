@@ -44,11 +44,6 @@ struct PhoneShell: View {
     @Environment(PlayerController.self) private var pc
     @Environment(AppModel.self) private var model
     @State private var tab: AppSection = .home
-    /// أثناء سحب صفحة التشغيل: وين وصلت (0 صفحة كاملة … 1 مشغّل صغير)
-    @State private var dragT: CGFloat?
-    /// مكان النافذة العائمة (زاوية) ومخبّية على الحافة؟
-    @State private var miniCorner = 3
-    @State private var miniHidden = 0
 
     /// صفحة التشغيل/المشغّل الصغير ظاهر؟ (فيلم/مسلسل بصفحته، أو أي شي صغّرته)
     private var panelOn: Bool { pc.req != nil && (pc.watchVod != nil || pc.mini) }
@@ -56,30 +51,15 @@ struct PhoneShell: View {
     var body: some View {
         ZStack {
             tabs
+            // (السحب كله داخل PanelHost: إصبعك يتحرك = هي بس اللي تنرسم، مو الأقسام كلها — بدون لاج)
             if panelOn {
-                GeometryReader { g in
-                    let ins = g.safeAreaInsets
-                    let W = g.size.width + ins.leading + ins.trailing
-                    let H = g.size.height + ins.top + ins.bottom
-                    let t = dragT ?? (pc.mini ? 1 : 0)
-                    ZStack(alignment: .topLeading) {
-                        // الصفحة اللي تحت تغمق شوي وهي مغطاة، وتوضح كل ما نزلت الصفحة
-                        Color.black.opacity(Double((1 - t) * 0.7)).allowsHitTesting(false)
-                        WatchPanel(W: W, H: H, top: ins.top, bottom: ins.bottom, t: t,
-                                   corner: $miniCorner, hiddenSide: $miniHidden,
-                                   onDrag: { dy, ended in drag(dy, ended, range: WatchPanel.range(W: W, H: H, top: ins.top, bottom: ins.bottom)) },
-                                   onExpand: { expand() })
-                    }
-                    .frame(width: W, height: H, alignment: .topLeading)
-                    .environment(\.layoutDirection, .leftToRight)      // الحساب بالبكسل من اليسار؛ المحتوى نفسه عربي
-                    .offset(x: -ins.leading, y: -ins.top)
-                }
-                .transition(.move(edge: .bottom))
-                .zIndex(5)
+                PanelHost(tab: $tab)
+                    .transition(.move(edge: .bottom))
+                    .zIndex(5)
             }
             if pc.fullscreen { FullscreenPlayer().zIndex(10) }
         }
-        .animation(.spring(duration: 0.38, bounce: 0.04), value: pc.watchVod?.id)
+        .animation(PanelHost.spring, value: pc.watchVod?.id)
         // لفّيت الجوال أفقي وهو يشغّل = ملء الشاشة، ورجعته عمودي = يرجع
         .onChange(of: vsize) { _, v in
             if v == .compact, pc.req != nil, !pc.fullscreen { pc.autoFullscreen = true; pc.fullscreen = true }
@@ -88,31 +68,6 @@ struct PhoneShell: View {
     }
 
     @Environment(\.verticalSizeClass) private var vsize
-
-    /// سحب صفحة التشغيل: تتبع الإصبع، ولما تترك: تكمل لأقرب طرف (ثلث المسافة يكفي)
-    /// سحب الصفحة الكاملة لتحت: تتبع الإصبع، ولما تترك: ثلث المسافة (أو سحبة سريعة) = نافذة عائمة
-    private func drag(_ dy: CGFloat, _ ended: Bool, range: CGFloat) {
-        let v = min(1, max(0, dy / range))
-        guard ended else { dragT = v; return }
-        withAnimation(.spring(duration: 0.38, bounce: 0.05)) {
-            if v > 0.3 { pc.mini = true; miniHidden = 0 }
-            dragT = nil
-        }
-    }
-
-    /// تكبير المشغّل الصغير: فيلم/مسلسل = صفحته ترجع كاملة، قناة = صفحة المباشر، بدون صفحة = ملء الشاشة
-    private func expand() {
-        guard let r = pc.req else { return }
-        if pc.watchVod != nil {
-            withAnimation(.spring(duration: 0.36, bounce: 0.04)) { pc.mini = false }
-        } else if r.type == "live" {
-            tab = .live
-            withAnimation(.spring(duration: 0.36, bounce: 0.04)) { pc.mini = false }
-        } else {
-            pc.autoFullscreen = false
-            withAnimation { pc.fullscreen = true }
-        }
-    }
 
     @ViewBuilder private var tabs: some View {
         if #available(iOS 18.0, *) {
@@ -128,6 +83,69 @@ struct PhoneShell: View {
                     NavigationStack { s.screen }.tabItem { Label(s.title, systemImage: s.icon) }.tag(s)
                 }
             }
+        }
+    }
+}
+
+// MARK: - طبقة صفحة التشغيل والنافذة العائمة (حالة السحب هنا لحالها)
+
+struct PanelHost: View {
+    @Environment(PlayerController.self) private var pc
+    @Binding var tab: AppSection
+    /// أثناء سحب صفحة التشغيل: وين وصلت (0 صفحة كاملة … 1 نافذة عائمة)
+    @State private var dragT: CGFloat?
+    /// مكان النافذة العائمة (زاوية) ومخبّية على الحافة؟
+    @State private var miniCorner = 3
+    @State private var miniHidden = 0
+
+    /// نابض ناعم: يبدأ بسرعة إصبعك ويهدى بدون ارتداد مزعج
+    static let spring = Animation.interpolatingSpring(mass: 1, stiffness: 210, damping: 27)
+
+    var body: some View {
+        GeometryReader { g in
+            let ins = g.safeAreaInsets
+            let W = g.size.width + ins.leading + ins.trailing
+            let H = g.size.height + ins.top + ins.bottom
+            let t = dragT ?? (pc.mini ? 1 : 0)
+            ZStack(alignment: .topLeading) {
+                // الصفحة اللي تحت تغمق شوي وهي مغطاة، وتوضح كل ما نزلت الصفحة
+                Color.black.opacity(Double((1 - t) * 0.7)).allowsHitTesting(false)
+                WatchPanel(W: W, H: H, top: ins.top, bottom: ins.bottom, t: t,
+                           corner: $miniCorner, hiddenSide: $miniHidden,
+                           onDrag: { dy, ended in drag(dy, ended, range: WatchPanel.range(W: W, H: H, top: ins.top, bottom: ins.bottom)) },
+                           onExpand: { expand() })
+            }
+            .frame(width: W, height: H, alignment: .topLeading)
+            .environment(\.layoutDirection, .leftToRight)      // الحساب بالبكسل من اليسار؛ المحتوى نفسه عربي
+            .offset(x: -ins.leading, y: -ins.top)
+        }
+    }
+
+    /// سحب الصفحة الكاملة لتحت: تتبع الإصبع، ولما تترك: ثلث المسافة (أو سحبة سريعة) = نافذة عائمة
+    private func drag(_ dy: CGFloat, _ ended: Bool, range: CGFloat) {
+        let v = min(1, max(0, dy / range))
+        guard ended else {
+            var tr = Transaction(); tr.disablesAnimations = true          // يتبع الإصبع على طول (بدون تأخير)
+            withTransaction(tr) { dragT = v }
+            return
+        }
+        withAnimation(Self.spring) {
+            if v > 0.3 { pc.mini = true; miniHidden = 0 }
+            dragT = nil
+        }
+    }
+
+    /// تكبير: فيلم/مسلسل = صفحته ترجع كاملة، قناة = صفحة المباشر، بدون صفحة = ملء الشاشة
+    private func expand() {
+        guard let r = pc.req else { return }
+        if pc.watchVod != nil {
+            withAnimation(Self.spring) { pc.mini = false }
+        } else if r.type == "live" {
+            tab = .live
+            withAnimation(Self.spring) { pc.mini = false }
+        } else {
+            pc.autoFullscreen = false
+            withAnimation { pc.fullscreen = true }
         }
     }
 }

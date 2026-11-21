@@ -225,8 +225,8 @@ class MainActivity : Activity() {
         MiniDock.floatX = cx; MiniDock.floatY = cy; MiniDock.floatW = fw.toFloat()
         val w = (box.parent as? View)?.width ?: resources.displayMetrics.widthPixels
         val x = when (dockHidden) { -1 -> -fw - dp(6).toFloat(); 1 -> w + dp(6).toFloat(); else -> cx }
-        if (animate) box.animate().translationX(x).translationY(cy).setDuration(260)
-            .setInterpolator(android.view.animation.OvershootInterpolator(0.6f)).start()
+        if (animate) box.animate().translationX(x).translationY(cy).setDuration(340)
+            .setInterpolator(android.view.animation.PathInterpolator(0.2f, 0f, 0f, 1f)).start()
         else { box.translationX = x; box.translationY = cy }
         dockHandle?.let { hnd ->
             hnd.visibility = if (dockHidden != 0 && box.visibility == View.VISIBLE) View.VISIBLE else View.GONE

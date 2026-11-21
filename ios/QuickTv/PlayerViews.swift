@@ -92,7 +92,8 @@ struct PlayerOverlay: View {
                 tapZone(1)
             }
             .environment(\.layoutDirection, .leftToRight)
-            .gesture(DragGesture(minimumDistance: 30)
+            // (المسافة بالنسبة للشاشة — المشغّل نفسه يتحرك ويصغر وأنت تسحب، فلو قسناها بالنسبة له تتذبذب)
+            .gesture(DragGesture(minimumDistance: 30, coordinateSpace: .global)
             .onChanged { d in
                 // المشغّل فوق الصفحة: سحب لتحت = الصفحة تتبع إصبعك وتصغر (زي يوتيوب)
                 guard compact, let f = onDragDown else { return }
