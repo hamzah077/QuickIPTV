@@ -12,5 +12,5 @@ dependencyResolutionManagement {
         mavenCentral()
     }
 }
-rootProject.name = "QuickIPTV"
+rootProject.name = "URROX-Player"
 include(":app")

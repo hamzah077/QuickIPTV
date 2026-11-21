@@ -40,7 +40,7 @@ jobs:
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
           script: |
-            adb install -r app/build/outputs/apk/release/app-universal-release.apk
+            adb install -r app/build/outputs/apk/release/URROX-universal-release.apk
             python3 ci/drive_tv.py shots || true
             adb logcat -d > shots/logcat.txt || true
       - name: Save results to ci-tv branch

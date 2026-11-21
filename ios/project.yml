@@ -1,8 +1,8 @@
-# مشروع QuickTv للآيفون والآيباد (XcodeGen يولّد ملف Xcode من هذا الملف)
-# على الماك:  brew install xcodegen  ثم  cd ios && xcodegen  ثم افتح QuickTv.xcodeproj
-name: QuickTv
+# مشروع URROX للآيفون والآيباد (XcodeGen يولّد ملف Xcode من هذا الملف)
+# على الماك:  brew install xcodegen  ثم  cd ios && xcodegen  ثم افتح URROX.xcodeproj
+name: URROX
 options:
-  bundleIdPrefix: com.quicktv
+  bundleIdPrefix: com.urrox
   deploymentTarget:
     iOS: "17.0"
   developmentLanguage: ar
@@ -18,20 +18,20 @@ settings:
     CURRENT_PROJECT_VERSION: "1"
     DEVELOPMENT_LANGUAGE: ar
 targets:
-  QuickTv:
+  URROX:
     type: application
     platform: iOS
     sources:
-      - path: QuickTv
+      - path: URROX
     dependencies:
       - package: VLCKitSPM
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.quicktv.app
-        PRODUCT_NAME: QuickTv
+        PRODUCT_BUNDLE_IDENTIFIER: com.urrox.player
+        PRODUCT_NAME: URROX
         TARGETED_DEVICE_FAMILY: "1,2"          # آيفون + آيباد
         GENERATE_INFOPLIST_FILE: YES
-        INFOPLIST_KEY_CFBundleDisplayName: QuickTv
+        INFOPLIST_KEY_CFBundleDisplayName: URROX
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: "UIInterfaceOrientationPortrait"      # الآيفون: عمودي دايماً (المشغّل بملء الشاشة يلف الفيديو بنفسه)
@@ -41,9 +41,9 @@ targets:
         CODE_SIGN_STYLE: Automatic
         ENABLE_PREVIEWS: YES
     info:
-      path: QuickTv/Info.plist
+      path: URROX/Info.plist
       properties:
-        CFBundleDisplayName: QuickTv
+        CFBundleDisplayName: URROX
         UILaunchScreen: {}
         UIBackgroundModes: [audio]              # صورة داخل صورة + الصوت بالخلفية
         # سيرفرات IPTV غالباً http. تنبيه: لا تضيف NSAllowsArbitraryLoadsForMedia هنا —
@@ -54,24 +54,24 @@ targets:
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
   # اختبار جولة تلقائي (لقطات شاشة على المحاكي في GitHub) — ما يدخل في التطبيق نفسه
-  QuickTvUITests:
+  URROXUITests:
     type: bundle.ui-testing
     platform: iOS
     sources:
-      - path: QuickTvUITests
+      - path: URROXUITests
     dependencies:
-      - target: QuickTv
+      - target: URROX
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.quicktv.app.uitests
+        PRODUCT_BUNDLE_IDENTIFIER: com.urrox.player.uitests
         GENERATE_INFOPLIST_FILE: YES
-        TEST_TARGET_NAME: QuickTv
+        TEST_TARGET_NAME: URROX
 schemes:
-  QuickTv:
+  URROX:
     build:
       targets:
-        QuickTv: all
-        QuickTvUITests: [test]
+        URROX: all
+        URROXUITests: [test]
     test:
       targets:
-        - QuickTvUITests
+        - URROXUITests

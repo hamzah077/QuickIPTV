@@ -20,7 +20,7 @@ jobs:
       - name: Build (simulator, unsigned)
         run: |
           cd ios
-          xcodebuild -project QuickTv.xcodeproj -scheme QuickTv -sdk iphonesimulator \
+          xcodebuild -project URROX.xcodeproj -scheme URROX -sdk iphonesimulator \
             -destination 'generic/platform=iOS Simulator' -configuration Debug \
             CODE_SIGNING_ALLOWED=NO build | tail -80
           exit ${PIPESTATUS[0]}

@@ -1,4 +1,4 @@
-# QuickTv — آيفون وآيباد
+# URROX — آيفون وآيباد
 
 ## التثبيت على جوالك (بدون حساب مطورين)
 
@@ -10,17 +10,17 @@
    (لو ما عندك Homebrew: https://brew.sh)
 3. **نزّل المشروع** من GitHub (Code ← Download ZIP) أو:
    ```
-   git clone https://github.com/hamzah077/QuickIPTV.git
+   git clone https://github.com/hamzah077/URROX-Player.git
    ```
 4. **ولّد المشروع وافتحه:**
    ```
-   cd QuickIPTV/ios
+   cd URROX-Player/ios
    xcodegen
-   open QuickTv.xcodeproj
+   open URROX.xcodeproj
    ```
 5. في Xcode: **Settings ← Accounts** ← أضف حساب Apple حقك.
-6. اضغط على المشروع **QuickTv** ← **Signing & Capabilities** ← **Team** اختر "(Personal Team)".
-   لو طلع خطأ في Bundle Identifier غيّره لأي اسم فريد مثل `com.اسمك.quicktv`.
+6. اضغط على المشروع **URROX** ← **Signing & Capabilities** ← **Team** اختر "(Personal Team)".
+   لو طلع خطأ في Bundle Identifier غيّره لأي اسم فريد مثل `com.اسمك.urrox`.
 7. وصّل الجوال بالكيبل، واختره من فوق، واضغط ▶ (أو ⌘R).
 8. أول مرة بالجوال: **الإعدادات ← عام ← VPN وإدارة الجهاز** ← وثّق حسابك.
    وفعّل **وضع المطوّر**: الإعدادات ← الخصوصية والأمان ← وضع المطوّر.

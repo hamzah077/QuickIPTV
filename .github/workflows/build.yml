@@ -31,18 +31,18 @@ jobs:
       - name: Upload APKs
         uses: actions/upload-artifact@v4
         with:
-          name: QuickTv-apk
+          name: URROX-apk
           path: app/build/outputs/apk/release/*.apk
 
-      # رابط تنزيل مباشر: github.com/<user>/QuickIPTV/releases/latest
+      # رابط تنزيل مباشر: github.com/<user>/URROX-Player/releases/latest
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v1.0.${{ github.run_number }}
-          name: QuickTv 1.0.${{ github.run_number }}
+          name: URROX Player 1.0.${{ github.run_number }}
           make_latest: true
           body: |
-            - app-universal-release.apk: يشتغل على كل الأجهزة (إذا مو متأكد نزّل هذا)
-            - app-armeabi-v7a-release.apk: أصغر — أغلب أجهزة TV Box والجوالات القديمة
-            - app-arm64-v8a-release.apk: أصغر — الجوالات والأجهزة الحديثة
+            - URROX-universal-release.apk: يشتغل على كل الأجهزة (إذا مو متأكد نزّل هذا)
+            - URROX-armeabi-v7a-release.apk: أصغر — أغلب أجهزة TV Box والجوالات القديمة
+            - URROX-arm64-v8a-release.apk: أصغر — الجوالات والأجهزة الحديثة
           files: app/build/outputs/apk/release/*.apk

@@ -3,12 +3,15 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+// ملفات الـ APK تطلع باسم التطبيق: URROX-universal-release.apk …
+base.archivesName.set("URROX")
+
 android {
-    namespace = "com.quickiptv.app"
+    namespace = "com.urrox.player"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.quickiptv.app"
+        applicationId = "com.urrox.player"
         minSdk = 21            // أندرويد 5 — يشتغل على أغلب أجهزة TV Box القديمة
         targetSdk = 35
         // كل بناء على GitHub رقمه أكبر من اللي قبله → يتثبت كتحديث فوق القديم
@@ -22,11 +25,11 @@ android {
 
     // مفتاح توقيع ثابت: لازم يكون نفس المفتاح بكل نسخة عشان أندرويد يقبل التحديث بدون حذف
     signingConfigs {
-        create("quick") {
-            storeFile = file("quickiptv.jks")
-            storePassword = "quickiptv2026"
-            keyAlias = "quickiptv"
-            keyPassword = "quickiptv2026"
+        create("urrox") {
+            storeFile = file("urrox.jks")
+            storePassword = "urrox2026"
+            keyAlias = "urrox"
+            keyPassword = "urrox2026"
         }
     }
 
@@ -35,7 +38,7 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            signingConfig = signingConfigs.getByName("quick")
+            signingConfig = signingConfigs.getByName("urrox")
         }
     }
     compileOptions {

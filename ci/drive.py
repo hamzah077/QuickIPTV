@@ -21,7 +21,7 @@ def tap_text(t, contains=False, tries=10):
         time.sleep(1.5)
     print("NOT FOUND", t, flush=True); return False
 
-sh("shell", "am", "start", "-n", "com.quickiptv.app/.MainActivity"); time.sleep(6); shot("01_login")
+sh("shell", "am", "start", "-n", "com.urrox.player/.MainActivity"); time.sleep(6); shot("01_login")
 for idx, val in enumerate(["Hamzah", "test", "test", "http://10.0.2.2:8000"]):   # الاسم ← المستخدم ← المرور ← السيرفر
     eds = [n for n in nodes(dump()) if n["cls"] == "android.widget.EditText"]
     print("edittexts", len(eds), flush=True)

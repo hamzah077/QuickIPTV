@@ -1,5 +1,9 @@
+<!-- أيقونة URROX: ثلاث شاشات فوق بعض (مباشر، أفلام، مسلسلات) وزر تشغيل أحمر -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp"
-    android:viewportWidth="108" android:viewportHeight="108">
-    <path android:fillColor="#FF3D7BFF" android:pathData="M28,8 H80 A20,20 0 0,1 100,28 V80 A20,20 0 0,1 80,100 H28 A20,20 0 0,1 8,80 V28 A20,20 0 0,1 28,8 Z"/>
-    <path android:fillColor="#FFFFFFFF" android:pathData="M43,34 L76,54 L43,74 Z"/>
+    android:viewportWidth="100" android:viewportHeight="100">
+    <path android:fillColor="#FF111317" android:pathData="M22,0 H78 A22,22 0 0,1 100,22 V78 A22,22 0 0,1 78,100 H22 A22,22 0 0,1 0,78 V22 A22,22 0 0,1 22,0 Z"/>
+    <path android:fillColor="#FF5A5F6A" android:pathData="M39,18 H73 A9,9 0 0,1 82,27 V45 A9,9 0 0,1 73,54 H39 A9,9 0 0,1 30,45 V27 A9,9 0 0,1 39,18 Z"/>
+    <path android:fillColor="#FF9AA0A8" android:pathData="M33,28 H67 A9,9 0 0,1 76,37 V55 A9,9 0 0,1 67,64 H33 A9,9 0 0,1 24,55 V37 A9,9 0 0,1 33,28 Z"/>
+    <path android:fillColor="#FFFFFFFF" android:pathData="M28,40 H64 A10,10 0 0,1 74,50 V70 A10,10 0 0,1 64,80 H28 A10,10 0 0,1 18,70 V50 A10,10 0 0,1 28,40 Z"/>
+    <path android:fillColor="#FFE5484D" android:pathData="M40,52 L54,60 L40,68 Z"/>
 </vector>

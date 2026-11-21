@@ -8,7 +8,7 @@ def key(k, n=1, gap=0.6):
     for _ in range(n): sh("shell", "input", "keyevent", str(k)); time.sleep(gap)
 UP, DOWN, LEFT, RIGHT, OK, BACK = 19, 20, 21, 22, 23, 4
 
-sh("shell", "am", "start", "-n", "com.quickiptv.app/.MainActivity", "-e", "server", "http://10.0.2.2:8000", "-e", "user", "test", "-e", "pass", "test")
+sh("shell", "am", "start", "-n", "com.urrox.player/.MainActivity", "-e", "server", "http://10.0.2.2:8000", "-e", "user", "test", "-e", "pass", "test")
 time.sleep(10); shot("tv01_home"); tree("tv01_home")
 key(RIGHT, 6); time.sleep(1); shot("tv02_rail_open"); tree("tv02_rail")       # RTL: القائمة يمين
 key(DOWN, 3); key(OK); time.sleep(7); shot("tv03_live"); tree("tv03_live")      # الرئيسية→بحث→المفضلة→مباشر

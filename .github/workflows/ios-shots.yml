@@ -28,7 +28,7 @@ jobs:
       - name: Build for testing
         run: |
           cd ios && xcodegen
-          xcodebuild -project QuickTv.xcodeproj -scheme QuickTv -sdk iphonesimulator -configuration Debug \
+          xcodebuild -project URROX.xcodeproj -scheme URROX -sdk iphonesimulator -configuration Debug \
             -destination 'generic/platform=iOS Simulator' -derivedDataPath ../dd CODE_SIGNING_ALLOWED=NO build-for-testing | tail -30
           exit ${PIPESTATUS[0]}
       - name: Run on iPhone and iPad

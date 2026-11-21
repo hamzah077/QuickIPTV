@@ -1,4 +1,4 @@
-# QuickTv — أندرويد (جوال + تلفزيون) وآيفون/آيباد
+# URROX Player — أندرويد (جوال + تلفزيون) وآيفون/آيباد
 
 تطبيق IPTV خفيف لحسابات Xtream Codes، يشتغل على الجوال والتلفزيون وأجهزة TV Box (من أندرويد 5).
 
@@ -15,12 +15,12 @@
 1. سوّ حساب في github.com (مجاني) واضغط **New repository**.
 2. ارفع محتوى هذا المجلد كامل (اسحب الملفات للصفحة، أو استخدم GitHub Desktop).
 3. افتح تبويب **Actions** ← **Build APK**. يشتغل تلقائياً بعد الرفع (أو اضغط **Run workflow**).
-4. بعد 5–8 دقايق افتح آخر تشغيل ← تحت **Artifacts** نزّل **QuickTv-apk**.
+4. بعد 5–8 دقايق افتح آخر تشغيل ← تحت **Artifacts** نزّل **URROX-apk**.
 
 داخل الملف بتلقى:
-- `app-universal-release.apk` — يشتغل على كل الأجهزة (استخدمه لو مو متأكد).
-- `app-armeabi-v7a-release.apk` — أصغر، لأغلب أجهزة TV Box والجوالات القديمة.
-- `app-arm64-v8a-release.apk` — أصغر، للجوالات والأجهزة الحديثة.
+- `URROX-universal-release.apk` — يشتغل على كل الأجهزة (استخدمه لو مو متأكد).
+- `URROX-armeabi-v7a-release.apk` — أصغر، لأغلب أجهزة TV Box والجوالات القديمة.
+- `URROX-arm64-v8a-release.apk` — أصغر، للجوالات والأجهزة الحديثة.
 
 ## أو من Android Studio
 افتح المجلد في Android Studio ← **Build ← Build APK(s)**.

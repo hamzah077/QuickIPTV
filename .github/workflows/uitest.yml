@@ -50,7 +50,7 @@ jobs:
             adb wait-for-device
             until [ "$(adb shell getprop sys.boot_completed | tr -d '\r')" = "1" ]; do sleep 2; done
             sleep 5
-            adb install -r app/build/outputs/apk/release/app-universal-release.apk
+            adb install -r app/build/outputs/apk/release/URROX-universal-release.apk
             adb logcat -c
             python3 ci/drive.py shots || true
             adb logcat -d > shots/logcat.txt || true
