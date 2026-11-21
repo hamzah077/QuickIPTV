@@ -153,6 +153,11 @@ object Store {
         get() = p.getInt("dlParallel", 2)
         set(v) = p.edit().putInt("dlParallel", v).apply()
 
+    /** شكل صفحة المباشر بالتلفزيون: a = البث يملى الشاشة (الافتراضي)، c = أعمدة، z = مشغّل كبير + قائمة */
+    var liveStyle: String
+        get() = p.getString("liveStyle", "a") ?: "a"
+        set(v) = p.edit().putString("liveStyle", v).apply()
+
     var liveFormat: String
         get() = p.getString("liveFormat", "m3u8") ?: "m3u8"
         set(v) = p.edit().putString("liveFormat", v).apply()

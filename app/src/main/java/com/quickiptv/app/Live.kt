@@ -45,7 +45,10 @@ object Live {
 @OptIn(UnstableApi::class)
 class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
     override val view: View
-    private val catAdapter = CategoryAdapter(a, horizontal = !a.tv) { selectCategory(it.id) }
+    /** شكل الصفحة بالتلفزيون: a = البث يملى الشاشة، c = أعمدة، z = مشغّل كبير + قائمة */
+    private val style = if (a.tv) Store.liveStyle else ""
+    private val full get() = style == "a"
+    private val catAdapter = CategoryAdapter(a, horizontal = !a.tv || style == "a") { selectCategory(it.id) }
     private val chAdapter = ChannelAdapter(a, { ch, i -> clicked(ch, i) }, { ch, _ -> channelMenu(ch) })
     private val catList = RecyclerView(a)
     // الجوال بالوضع الأفقي: التصنيفات قائمة جانبية ظاهرة دايماً (بدل زر التصنيف)
@@ -123,7 +126,11 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
         screen.addView(status, FrameLayout.LayoutParams(MATCH, WRAP, Gravity.CENTER).apply { setMargins(a.dp(16), 0, a.dp(16), 0) })
 
         screenBox = screen
-        if (a.tv) {
+        if (full) {
+            // البث يملى الشاشة ورا اللوحة: بدون حواف ولا أزرار (OK على القناة الشغّالة = تخفي اللوحة)
+            screen.background = android.graphics.drawable.ColorDrawable(0xFF000000.toInt()); screen.clipToOutline = false
+            bar.visibility = View.GONE
+        } else if (a.tv) {
             // التلفزيون: المشغّل نفسه يتحدد (يسار من القنوات) — إطار رمادي فاتح ويكبر شوي، و OK = ملء الشاشة
             screen.isFocusable = true
             screen.isClickable = true
@@ -169,7 +176,9 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
         arrangedWide = wide
         listOf<View>(catList, catSide, chList, screenBox, title, nowText, phoneBar, searchBox, epgScroll, numBadge).forEach { (it.parent as? ViewGroup)?.removeView(it) }
         root.removeAllViews()
-        if (wide) {
+        if (full) arrangeFull()
+        else if (style == "z") arrangeBig()
+        else if (wide) {
             val row = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL; setPadding(a.dp(12), a.dp(if (a.tv) 14 else 6), a.dp(12), a.dp(8)) }
             if (a.tv) row.addView(catList, lp(a.dp(200), MATCH).apply { marginEnd = a.dp(10) })
             else row.addView(catSide, lp(0, MATCH, 0.62f).apply { marginEnd = a.dp(8) })      // التصنيفات جنب القنوات
@@ -216,6 +225,77 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
         root.addView(numBadge, FrameLayout.LayoutParams(WRAP, WRAP, Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply { topMargin = a.dp(24) })
     }
 
+    // ---------- أ: البث يملى الشاشة، ولوحة شفافة فيها التصنيفات والقنوات ----------
+    private var panel: View? = null
+    private var infoBox: View? = null
+    private var shadeV: View? = null
+    private var panelHidden = false
+
+    private fun arrangeFull() {
+        root.addView(screenBox, FrameLayout.LayoutParams(MATCH, MATCH))
+        val bg = C.BG and 0x00FFFFFF
+        val shade = View(a).apply {
+            background = android.graphics.drawable.GradientDrawable(android.graphics.drawable.GradientDrawable.Orientation.RIGHT_LEFT,
+                intArrayOf(bg or 0xFA000000.toInt(), bg or 0xE6000000.toInt(), bg or 0x00000000))
+        }
+        val sw = a.resources.displayMetrics.widthPixels
+        root.addView(shade, FrameLayout.LayoutParams((sw * 0.62f).toInt(), MATCH, Gravity.START))
+        shadeV = shade
+        val p = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL; setPadding(a.dp(14), a.dp(16), a.dp(10), a.dp(8)) }
+        p.addView(catList, lp(MATCH, WRAP).apply { bottomMargin = a.dp(8) })
+        p.addView(chList, lp(MATCH, 0, 1f))
+        root.addView(p, FrameLayout.LayoutParams((sw * 0.36f).toInt(), MATCH, Gravity.START))
+        panel = p
+        val info = LinearLayout(a).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(a.dp(14), a.dp(10), a.dp(14), a.dp(10))
+            background = rounded(bg or 0xCC000000.toInt(), a.dpf(12f))
+        }
+        info.addView(title.apply { setPadding(0, 0, 0, a.dp(2)); textDirection = View.TEXT_DIRECTION_FIRST_STRONG })
+        info.addView(nowText.apply { setPadding(0, 0, 0, 0) })
+        root.addView(info, FrameLayout.LayoutParams(WRAP, WRAP, Gravity.BOTTOM or Gravity.END).apply { setMargins(a.dp(24), 0, a.dp(24), a.dp(20)) })
+        infoBox = info
+        // لما اللوحة مخفية: التركيز على الصفحة نفسها (عشان أي زر يرجّع اللوحة)
+        root.isFocusable = true
+        root.setTag(R.id.own_focus_anim, true)
+    }
+
+    private fun showPanel(on: Boolean, focus: Boolean = true) {
+        if (!full) return
+        panelHidden = !on
+        val v = if (on) View.VISIBLE else View.GONE
+        panel?.visibility = v; infoBox?.visibility = v; shadeV?.visibility = v
+        if (!focus) return
+        if (on) focusChannels() else root.requestFocus()
+    }
+
+    // ---------- ز: مشغّل كبير + قائمة القنوات المضغوطة (زر التصنيف فوقها) ----------
+    private fun arrangeBig() {
+        val row = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL; setPadding(a.dp(12), a.dp(14), a.dp(12), a.dp(8)) }
+        val list = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL }
+        catBtn.apply {
+            visibility = View.VISIBLE
+            textSize = 14f
+            background = a.focusBg(normal = 0x14FFFFFF, radius = 18)
+            setPadding(a.dp(16), a.dp(9), a.dp(16), a.dp(9))
+        }
+        list.addView(catBtn, lp(MATCH, WRAP).apply { bottomMargin = a.dp(8) })
+        list.addView(chList, lp(MATCH, 0, 1f))
+        row.addView(list, lp(0, MATCH, 0.34f).apply { marginEnd = a.dp(14) })
+        val right = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL }
+        right.addView(screenBox, lp(MATCH, a.dp(200)))
+        right.addView(title.apply { textSize = 18f; setPadding(a.dp(2), a.dp(12), 0, a.dp(2)); textDirection = View.TEXT_DIRECTION_FIRST_STRONG })
+        right.addView(nowText.apply { setPadding(a.dp(2), 0, 0, 0) })
+        row.addView(right, lp(0, MATCH, 0.66f))
+        root.addView(row)
+        // الشاشة 16:9 بأكبر حجم يتسع (ونخلي مكان للمعلومات تحتها)
+        right.addOnLayoutChangeListener { v, l, t, r, b, _, _, _, _ ->
+            val h = minOf((r - l) * 9 / 16, (b - t) - a.dp(90))
+            val p = screenBox.layoutParams as? LinearLayout.LayoutParams ?: return@addOnLayoutChangeListener
+            if (h > 0 && p.height != h) { p.height = h; v.post { screenBox.layoutParams = p } }
+        }
+    }
+
     override fun onConfig() {
         arrange()
         current?.let { ch -> chList.post { visible.indexOfFirst { it.id == ch.id }.takeIf { it >= 0 }?.let { chList.scrollToPosition(it) } } }
@@ -223,6 +303,7 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
 
     override fun onBack(): Boolean {
         if (searchBox.visibility == View.VISIBLE) { toggleSearch(); return true }
+        if (full && panelHidden) { showPanel(true); return true }       // اللوحة مخفية: رجوع = ترجع اللوحة
         return false
     }
 
@@ -280,7 +361,8 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
 
     // ---------- التشغيل ----------
     private fun clicked(ch: Channel, index: Int) {
-        if (current?.id == ch.id && player != null) openFull(ch) else preview(ch)
+        if (current?.id == ch.id && player != null) { if (full) showPanel(false) else openFull(ch) }     // أ: OK على الشغّالة = تخفي اللوحة وتتفرج
+        else preview(ch)
     }
 
     private fun preview(ch: Channel) {
@@ -525,8 +607,21 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
             return true
         }
         if (keyCode == KeyEvent.KEYCODE_MENU) { current?.let { channelMenu(it) }; return true }
-        // التلفزيون: التنقّل بين الأعمدة (من اليمين: التصنيفات ← القنوات ← المشغّل)
-        if (a.tv) when (keyCode) {
+        // أ: اللوحة مخفية = أي سهم أو OK يرجّعها
+        if (full && panelHidden && keyCode in listOf(KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_DPAD_LEFT,
+                KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER)) { showPanel(true); return true }
+        if (full) when (keyCode) {
+            // القنوات ← لا شي يسارها (البث ورا اللوحة)، والتصنيفات فوقها
+            KeyEvent.KEYCODE_DPAD_LEFT -> if (chList.hasFocus()) return true
+        }
+        // ز: القائمة (والتصنيف فوقها) ↔ المشغّل الكبير
+        if (style == "z") when (keyCode) {
+            KeyEvent.KEYCODE_DPAD_LEFT -> if ((chList.hasFocus() || catBtn.isFocused) && current != null) { screenBox.requestFocus(); return true }
+            KeyEvent.KEYCODE_DPAD_RIGHT -> if (screenBox.isFocused) { focusChannels(); return true }
+            KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN -> if (screenBox.isFocused) return true
+        }
+        // التلفزيون (الأعمدة): التنقّل بين الأعمدة (من اليمين: التصنيفات ← القنوات ← المشغّل)
+        if (a.tv && style == "c") when (keyCode) {
             KeyEvent.KEYCODE_DPAD_LEFT -> when {
                 chList.hasFocus() -> { if (current != null) { screenBox.requestFocus(); return true } }
                 catList.hasFocus() -> { focusChannels(); return true }
@@ -547,6 +642,7 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
     }
 
     override fun onShow() {
+        if (panelHidden) showPanel(true, focus = false)       // رجعت للصفحة: اللوحة ظاهرة
         if (LivePlayer.keepForPreview && LivePlayer.player != null) {
             // رجعنا من ملء الشاشة: نكمل نفس البث بدون إعادة اتصال (والقناة ممكن تغيّرت هناك)
             LivePlayer.keepForPreview = false

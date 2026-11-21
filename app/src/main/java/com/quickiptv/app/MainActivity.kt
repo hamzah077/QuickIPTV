@@ -518,6 +518,12 @@ class MainActivity : Activity() {
         s.view.post { s.focusDefault() }
     }
 
+    /** تنبني الشاشة من جديد أول ما تفتحها (مثلاً تغيّر شكل صفحة المباشر من الإعدادات). */
+    fun dropScreen(key: String) {
+        if (key == current) return
+        screens.remove(key)?.onHide()
+    }
+
     /** يرجّع شاشة (مثل البحث أو المفضلة) من شاشة "المزيد" على الجوال. */
     fun openExtra(key: String) {
         leaving(current, key)

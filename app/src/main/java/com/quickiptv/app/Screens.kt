@@ -572,6 +572,7 @@ class SettingsScreen(private val a: MainActivity) : Screen {
         col.addView(a.sectionHeader("الإعدادات"))
         add(a.listRow(R.drawable.ic_settings, "شكل الواجهة", when (Store.uiMode) { "tv" -> "تلفزيون"; "phone" -> "جوال"; else -> "تلقائي" },
             subtitle = "تلقائي: يعرف لحاله إذا الجهاز تلفزيون") { chooseUiMode() })
+        if (a.tv) add(a.listRow(R.drawable.ic_live, "شكل صفحة المباشر", liveStyleName(Store.liveStyle)) { chooseLiveStyle() })
         add(a.listRow(R.drawable.ic_live, "صيغة البث المباشر", if (Store.liveFormat == "ts") "MPEG-TS" else "HLS") { chooseFormat() })
         add(a.listRow(R.drawable.ic_guide, "دليل البرامج", Epg.status.ifEmpty { "—" }) { a.openExtra("epg") })
         add(a.listRow(R.drawable.ic_refresh, "تحديث القوائم", subtitle = "يجيب آخر القنوات والأفلام من السيرفر") {
@@ -597,6 +598,19 @@ class SettingsScreen(private val a: MainActivity) : Screen {
             .setSingleChoiceItems(opts, keys.indexOf(Store.uiMode).coerceAtLeast(0)) { d, w ->
                 d.dismiss()
                 if (keys[w] != Store.uiMode) a.setUiMode(keys[w])
+            }.show()
+    }
+
+    private fun liveStyleName(k: String) = when (k) { "c" -> "أعمدة"; "z" -> "مشغّل كبير + قائمة"; else -> "البث يملى الشاشة" }
+
+    private fun chooseLiveStyle() {
+        val keys = arrayOf("a", "c", "z")
+        val opts = keys.map { liveStyleName(it) + if (it == "a") " (الافتراضي)" else "" }.toTypedArray()
+        AlertDialog.Builder(a, android.R.style.Theme_Material_Dialog_Alert)
+            .setTitle("شكل صفحة المباشر")
+            .setSingleChoiceItems(opts, keys.indexOf(Store.liveStyle).coerceAtLeast(0)) { d, w ->
+                d.dismiss()
+                if (keys[w] != Store.liveStyle) { Store.liveStyle = keys[w]; a.dropScreen("live"); onShow(); first?.requestFocus() }
             }.show()
     }
 
