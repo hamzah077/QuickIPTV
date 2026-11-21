@@ -224,46 +224,50 @@ class MainActivity : Activity() {
             addView(playBtn); addView(closeBtn)
         }
         val prog = View(this).apply { setBackgroundColor(C.LIVE) }
-        // خلفية الصفحة وهي تكبر من المربع (أطول من الشاشة، تنقص من فوق حسب السحب)
-        val pageBg = View(this).apply { setBackgroundColor(C.BG); visibility = View.GONE }
         val box = FrameLayout(this).apply {
             setBackgroundColor(C.PANEL)
             visibility = View.GONE
             clipChildren = false; clipToPadding = false
-            addView(pageBg, FrameLayout.LayoutParams(MATCH, resources.displayMetrics.heightPixels + dp(120), Gravity.BOTTOM))
             addView(row, FrameLayout.LayoutParams(MATCH, WRAP))
             addView(View(this@MainActivity).apply { setBackgroundColor(C.BORDER) }, FrameLayout.LayoutParams(MATCH, dp(1), Gravity.TOP))
             addView(prog, FrameLayout.LayoutParams(0, dp(2), Gravity.BOTTOM or Gravity.START))
             isClickable = true
-            // ضغطة = يكبر. سحب لفوق = المربع يكبر مع إصبعك لين يصير صفحة (نفس حركة النزول بالعكس)
-            var downY = 0f; var dragging = false; var lastY = 0f; var lastAt = 0L; var vel = 0f
+            // ضغطة = يكبر. سحب لفوق = صفحة الفيلم الحقيقية تطلع مع إصبعك من مكان المربع (زي يوتيوب)
+            var downY = 0f; var dragging = false; var lastY = 0f; var lastAt = 0L; var vel = 0f; var t = 1f
             setOnTouchListener { v, e ->
                 val dy = e.rawY - downY
                 when (e.actionMasked) {
-                    android.view.MotionEvent.ACTION_DOWN -> { downY = e.rawY; dragging = false; v.isPressed = true; lastY = e.rawY; lastAt = e.eventTime; vel = 0f }
+                    android.view.MotionEvent.ACTION_DOWN -> { downY = e.rawY; dragging = false; v.isPressed = true; lastY = e.rawY; lastAt = e.eventTime; vel = 0f; t = 1f }
                     android.view.MotionEvent.ACTION_MOVE -> {
                         if (!dragging && dy < -dp(8)) {
                             dragging = true; v.isPressed = false
-                            if (MiniDock.live) { /* القناة: ترجع لصفحة المباشر لما تترك */ } else beginGhost()
+                            if (!MiniDock.live) {
+                                MiniDock.dragT = 1f; MiniDock.pendingEnd = null
+                                expandDock(1f, dragging = true)
+                            }
                         }
                         if (dragging) {
                             val dt = (e.eventTime - lastAt).coerceAtLeast(1L)
                             vel = (e.rawY - lastY) / dt * 1000f; lastY = e.rawY; lastAt = e.eventTime
                             if (MiniDock.live) v.translationY = minOf(0f, dy) * 0.4f
-                            else setGhost((1f + dy / ghostRange()).coerceIn(0f, 1f))
+                            else {
+                                t = (1f + dy / dockRange()).coerceIn(0f, 1f)
+                                MiniDock.dragT = t
+                                MiniDock.onDragMove?.invoke(t)
+                            }
                         }
                     }
-                    android.view.MotionEvent.ACTION_UP -> {
+                    android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
                         v.isPressed = false
-                        if (!dragging) { if (kotlin.math.abs(dy) < dp(8)) expandDock() }
-                        else if (MiniDock.live) { v.animate().translationY(0f).setDuration(150).start(); if (dy < -dp(30)) expandDock() }
-                        else if (ghostT < 0.7f || vel < -dp(900)) expandDock(ghostT)       // سحبة كفاية أو سريعة = صفحة كاملة
-                        else animateGhost(1f) { endGhost() }
-                        dragging = false
-                    }
-                    android.view.MotionEvent.ACTION_CANCEL -> {
-                        v.isPressed = false
-                        if (dragging) { if (MiniDock.live) v.animate().translationY(0f).setDuration(150).start() else animateGhost(1f) { endGhost() } }
+                        val up = e.actionMasked == android.view.MotionEvent.ACTION_UP
+                        if (!dragging) { if (up && kotlin.math.abs(dy) < dp(8)) expandDock() }
+                        else if (MiniDock.live) { v.animate().translationY(0f).setDuration(150).start(); if (up && dy < -dp(30)) expandDock() }
+                        else {
+                            val velN = if (up) vel else 0f
+                            val tt = if (up) t else 1f
+                            val f = MiniDock.onDragEnd
+                            if (f != null) f(tt, velN) else MiniDock.pendingEnd = tt to velN
+                        }
                         dragging = false
                     }
                 }
@@ -271,21 +275,9 @@ class MainActivity : Activity() {
             }
         }
         dockBox = box; dockPv = pv; dockTitle = t; dockSub = st; dockPlay = playBtn.getChildAt(0) as? android.widget.ImageView; dockProg = prog
-        dockVid = vidBox; dockRow = row; dockPageBg = pageBg
         MiniDock.onChange = { refreshDock() }
         return box
     }
-
-    // ---------- سحب المربع لفوق: يكبر مع الإصبع (نفس حساب صفحة التشغيل بالضبط) ----------
-    private var dockVid: View? = null
-    private var dockRow: LinearLayout? = null
-    private var dockPageBg: View? = null
-    private var ghostT = 1f
-    private var ghostOn = false
-    private var ghostAnim: android.animation.ValueAnimator? = null
-    private var ghostRestX = 0f; private var ghostRestY = 0f; private var ghostRestW = 1f
-    private var ghostBoxBottom = 0f
-    private var snapshotFresh = false
 
     /** ارتفاع المشغّل الصغير الحقيقي (حتى لو مخفي) */
     private fun measureDock() {
@@ -296,81 +288,10 @@ class MainActivity : Activity() {
         if (box.measuredHeight > 0) MiniDock.dockH = box.measuredHeight
     }
 
-    private fun ghostRange(): Float = (MiniDock.navTop - dockHeight()).toFloat().coerceAtLeast(dp(200).toFloat())
-    private fun dockHeight(): Int = if (MiniDock.dockH > 0) MiniDock.dockH else dp(68)
+    private fun dockRange(): Float =
+        (MiniDock.navTop - (if (MiniDock.dockH > 0) MiniDock.dockH else dp(68))).toFloat().coerceAtLeast(dp(200).toFloat())
 
-    private fun beginGhost() {
-        val box = dockBox ?: return; val vid = dockVid ?: return
-        ghostAnim?.cancel()
-        PageSnapshot.take(this)                     // الصفحة اللي تحت (قبل ما يكبر) — تبان لما تنزّلها مرة ثانية
-        snapshotFresh = true
-        val loc = IntArray(2)
-        vid.getLocationOnScreen(loc); ghostRestX = loc[0].toFloat(); ghostRestY = loc[1].toFloat(); ghostRestW = vid.width.toFloat().coerceAtLeast(1f)
-        box.getLocationOnScreen(loc); ghostBoxBottom = loc[1] + box.height.toFloat()
-        (box.parent as? android.view.ViewGroup)?.clipChildren = false
-        box.translationZ = dp(16).toFloat()             // فوق الشريط السفلي والمحتوى
-        dockPageBg?.visibility = View.VISIBLE
-        ghostOn = true
-    }
-
-    /** t = 1 المربع الصغير … 0 صفحة كاملة */
-    private fun setGhost(t: Float) {
-        val box = dockBox ?: return; val vid = dockVid ?: return; val bg = dockPageBg ?: return
-        ghostT = t
-        fun lerp(a: Float, b: Float) = a + (b - a) * t
-        val w = box.width.toFloat()
-        val h = window.decorView.height.toFloat()
-        val miniTop = (MiniDock.navTop - dockHeight()).toFloat()
-        val boxTop = lerp(0f, miniTop)
-        val boxBottom = lerp(h, MiniDock.navTop.toFloat())
-        // خلفية الصفحة: من أعلى المربع لأسفله
-        val ph = bg.height.toFloat()
-        bg.translationY = boxBottom - ghostBoxBottom
-        bg.clipBounds = android.graphics.Rect(0, (ph - (boxBottom - boxTop)).toInt().coerceAtLeast(0), w.toInt(), ph.toInt())
-        // الفيديو: يكبر من زاويته لعرض الشاشة (آخر ثلث)، وبعدها يطلع مع الصفحة لفوق
-        val k = dockEase((t - 0.62f) / 0.38f)
-        val inT = statusTop().toFloat()
-        val vw = w + (dp(100) - w) * k
-        val vx = (w - dp(4) - dp(100)) * k
-        val base = boxTop + (inT + (dp(6) - inT) * t)
-        val vy = base + (boxTop + dp(6) - base) * k
-        vid.pivotX = 0f; vid.pivotY = 0f
-        val s = vw / ghostRestW
-        vid.scaleX = s; vid.scaleY = s
-        vid.translationX = vx - ghostRestX
-        vid.translationY = vy - ghostRestY
-        val a = ((t - 0.7f) / 0.3f).coerceIn(0f, 1f)
-        dockRow?.let { r -> for (i in 0 until r.childCount) r.getChildAt(i).let { c -> if (c !== vid) c.alpha = a } }
-        dockProg?.alpha = a
-    }
-
-    private fun statusTop(): Int =
-        if (android.os.Build.VERSION.SDK_INT >= 23) window.decorView.rootWindowInsets?.systemWindowInsetTop ?: dp(24) else dp(24)
-
-    private fun animateGhost(to: Float, end: () -> Unit) {
-        ghostAnim?.cancel()
-        ghostAnim = android.animation.ValueAnimator.ofFloat(ghostT, to).apply {
-            duration = 240
-            interpolator = android.view.animation.DecelerateInterpolator(1.6f)
-            addUpdateListener { setGhost(it.animatedValue as Float) }
-            addListener(object : android.animation.AnimatorListenerAdapter() {
-                override fun onAnimationEnd(a: android.animation.Animator) { ghostAnim = null; end() }
-            })
-            start()
-        }
-    }
-
-    /** يرجّع المربع لشكله الطبيعي */
-    private fun endGhost() {
-        ghostAnim?.cancel(); ghostAnim = null
-        if (!ghostOn) return
-        ghostOn = false; ghostT = 1f
-        dockVid?.apply { scaleX = 1f; scaleY = 1f; translationX = 0f; translationY = 0f }
-        dockRow?.let { r -> for (i in 0 until r.childCount) r.getChildAt(i).alpha = 1f }
-        dockProg?.alpha = 1f
-        dockPageBg?.apply { visibility = View.GONE; translationY = 0f; clipBounds = null }
-        dockBox?.translationZ = 0f
-    }
+    private var snapshotFresh = false
 
     /** يطلع/يخفي المشغّل الصغير حسب اللي شغّال فيه. */
     private fun refreshDock() {
@@ -416,14 +337,14 @@ class MainActivity : Activity() {
     }
 
     /** تكبير المشغّل الصغير: القناة ترجع لصفحة المباشر، والفيلم/الحلقة ترجع لصفحته بنفس المشغّل. */
-    private fun expandDock(fromT: Float = 1f) {
+    private fun expandDock(fromT: Float = 1f, dragging: Boolean = false) {
         if (MiniDock.live) {
             if (current == "live") { MiniDock.undockLive(); screens["live"]?.onShow() } else show("live")
             return
         }
         val i = MiniDock.reopen ?: return
         // صفحة التشغيل تكمل من نفس النقطة (فوق المربع وهو مكبّر)؛ المربع نرجّعه لما نرجع هنا
-        startActivity(Intent(i).putExtra("fromDock", true).putExtra("fromT", fromT))
+        startActivity(Intent(i).putExtra("fromDock", true).putExtra("fromT", fromT).putExtra("dragging", dragging))
         @Suppress("DEPRECATION")
         overridePendingTransition(0, 0)
     }
@@ -595,7 +516,6 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         if (MiniDock.live) LivePlayer.player?.playWhenReady = true     // رجعت للتطبيق: البث الصغير يكمل
-        endGhost()
         refreshDock()
         val p = pendingOpen
         if (p != null && current != "") { pendingOpen = null; if (p != current) { openExtra(p); return } }
@@ -605,7 +525,8 @@ class MainActivity : Activity() {
     override fun onPause() {
         super.onPause()
         // صورة للصفحة الحالية: تبان ورا صفحة التشغيل وهي تنسحب لتحت (لو أخذناها قبل السحب لفوق، نخليها)
-        if (!tv && !snapshotFresh) PageSnapshot.take(this)
+        // (أندرويد 8.0 بس: صفحة الفيلم ما تقدر تكون شفافة — نحتاج صورة للصفحة اللي تحت)
+        if (!tv && !snapshotFresh && android.os.Build.VERSION.SDK_INT == 26) PageSnapshot.take(this)
         snapshotFresh = false
         screens[current]?.onHide()
         // طلعت من التطبيق: المشغّل الصغير يوقف (ونحفظ وين وقفت)

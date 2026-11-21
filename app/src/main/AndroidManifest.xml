@@ -40,6 +40,7 @@
 
         <activity
             android:name=".DetailsActivity"
+            android:theme="@style/DetailsTheme"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|smallestScreenSize"
             android:exported="false" />
 

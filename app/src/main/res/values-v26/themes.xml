@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- أندرويد 8.0 بالذات: الصفحات الشفافة ما تقدر تلف الشاشة (يطيح) — نخليها عادية -->
+    <style name="DetailsTheme" parent="AppTheme" />
+</resources>

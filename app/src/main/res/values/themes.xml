@@ -16,6 +16,11 @@
         <item name="android:activityCloseEnterAnimation">@anim/qi_close_enter</item>
         <item name="android:activityCloseExitAnimation">@anim/qi_close_exit</item>
     </style>
+    <!-- صفحة الفيلم/المسلسل: شفافة من ورا (الصفحة نفسها لها خلفية) — لما تسحبها لتحت تبان الصفحة الحقيقية اللي تحتها (زي يوتيوب) -->
+    <style name="DetailsTheme" parent="AppTheme">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+    </style>
     <style name="PlayerTheme" parent="AppTheme">
         <item name="android:windowBackground">@android:color/black</item>
         <item name="android:windowFullscreen">true</item>

@@ -79,7 +79,8 @@ class DetailsActivity : Activity() {
         root = FrameLayout(this).apply { setBackgroundColor(C.BG) }
         // الجوال: ورا الصفحة صورة الصفحة اللي قبل — تبان وأنت تسحب الصفحة لتحت (زي يوتيوب)
         if (!isTv()) {
-            stage = FrameLayout(this).apply { setBackgroundColor(C.BG) }
+            // الصفحة شفافة من ورا (DetailsTheme): الصفحة الحقيقية اللي تحت تبان وأنت تسحب — إلا أندرويد 8.0 (صورة لها)
+            stage = FrameLayout(this).apply { if (!seeThrough) setBackgroundColor(C.BG) }
             snapView = ImageView(this).apply { scaleType = ImageView.ScaleType.FIT_XY; visibility = View.GONE }
             shade = View(this).apply { setBackgroundColor(0xFF000000.toInt()); alpha = 0f; visibility = View.GONE }
             stage!!.addView(snapView, FrameLayout.LayoutParams(MATCH, MATCH))
@@ -106,14 +107,20 @@ class DetailsActivity : Activity() {
             if (stage != null && mini != null) {
                 // تكمل من النقطة اللي وصل لها إصبعك وأنت تسحب المربع لفوق (أو من المربع نفسه لو ضغطته)
                 val from = intent.getFloatExtra("fromT", 1f).coerceIn(0f, 1f)
+                val dragging = intent.getBooleanExtra("dragging", false)
                 // أول رسمة للصفحة تكون بنفس شكل المربع وهو مكبّر (بدون شاشة سودا ولا قفزة)، وبعدها تكمل
                 root.viewTreeObserver.addOnPreDrawListener(object : android.view.ViewTreeObserver.OnPreDrawListener {
                     var tries = 0
                     override fun onPreDraw(): Boolean {
                         if ((root.width <= 0 || (miniBox?.width ?: 0) <= 0) && ++tries < 30) return false      // لسه ما انرسمت: ننتظر (ما نرسم الصفحة كاملة لحظة)
                         root.viewTreeObserver.removeOnPreDrawListener(this)
-                        morphInfoText(); setMorph(from)
-                        root.post { animateMorph(0f) }
+                        morphInfoText()
+                        if (!dragging) { setMorph(from); root.post { animateMorph(0f) }; return true }
+                        // إصبعك لسه على الشاشة: الصفحة تتبعه خطوة بخطوة، ولما تتركه تكمل
+                        setMorph(MiniDock.dragT)
+                        MiniDock.onDragMove = { t -> morphAnim?.cancel(); setMorph(t) }
+                        MiniDock.onDragEnd = { t, v -> releaseDockDrag(t, v) }
+                        MiniDock.pendingEnd?.let { (t, v) -> MiniDock.pendingEnd = null; releaseDockDrag(t, v) }
                         return true
                     }
                 })
@@ -990,6 +997,8 @@ class DetailsActivity : Activity() {
     private var morphTitle: android.widget.TextView? = null
     private var morphSub: android.widget.TextView? = null
     private var morphT = 0f
+    /** النافذة شفافة (الصفحة اللي تحت تبان حقيقية) — كل الأجهزة إلا أندرويد 8.0 */
+    private val seeThrough = android.os.Build.VERSION.SDK_INT != 26
     private var morphAnim: android.animation.ValueAnimator? = null
 
     private fun lerp(a: Float, b: Float, t: Float) = a + (b - a) * t
@@ -1030,7 +1039,7 @@ class DetailsActivity : Activity() {
         slotBack?.alpha = (1f - t * 4f).coerceAtLeast(0f)
         topSlot?.setBackgroundColor(if (t > 0.35f) C.PANEL else 0xFF000000.toInt())
         val on = t > 0f
-        snapView?.let { sv ->
+        if (!seeThrough) snapView?.let { sv ->
             if (on && sv.visibility != View.VISIBLE) { sv.setImageBitmap(PageSnapshot.bitmap); sv.visibility = View.VISIBLE }
             if (!on) sv.visibility = View.GONE
         }
@@ -1055,6 +1064,13 @@ class DetailsActivity : Activity() {
             })
             start()
         }
+    }
+
+    /** تركت إصبعك وأنت تسحب المربع لفوق: كفاية (أو سحبة سريعة) = صفحة كاملة، وإلا يرجع مربع صغير. */
+    private fun releaseDockDrag(t: Float, vel: Float) {
+        MiniDock.onDragMove = null; MiniDock.onDragEnd = null
+        setMorph(t)
+        if (t < 0.7f || vel < -dp(900)) animateMorph(0f) else collapseToDock()
     }
 
     /** سحب من المشغّل: الصفحة تتبع إصبعك، ولما تترك: ثلث المسافة يكفي عشان تصير مشغّل صغير. */
@@ -1089,7 +1105,7 @@ class DetailsActivity : Activity() {
         miniBar?.player = null
         miniPv?.detachPlayer()
         val back = Intent(intent).apply {
-            listOf("autoUrl", "autoKey", "autoSub", "autoType", "autoResume", "fromDock", "fromT").forEach { removeExtra(it) }
+            listOf("autoUrl", "autoKey", "autoSub", "autoType", "autoResume", "fromDock", "fromT", "dragging").forEach { removeExtra(it) }
         }
         MiniDock.handVod(p, r, miniWatching, back)
         miniWatching = false
@@ -1215,6 +1231,7 @@ class DetailsActivity : Activity() {
     }
 
     override fun onDestroy() {
+        MiniDock.onDragMove = null; MiniDock.onDragEnd = null
         saveMini(); stopMini()
         VodHandoff.ownerAlive = false
         if (VodHandoff.player != null && backToMini != null) VodHandoff.drop()
