@@ -120,7 +120,7 @@ class Xtream(val acc: Account, private val cacheDir: File) {
         }
 
         /** تنزيل مباشر لملف (بدون ما نحمّل الرد كامل بالذاكرة — مهم للقوائم الكبيرة على الأجهزة الضعيفة). */
-        fun httpToFile(url: String, out: File, timeout: Int = 120000) {
+        fun httpToFile(url: String, out: File, timeout: Int = 120000, progress: ((Long, Long) -> Unit)? = null) {
             var u = url
             repeat(4) {
                 val c = URL(u).openConnection() as HttpURLConnection
@@ -139,7 +139,19 @@ class Xtream(val acc: Account, private val cacheDir: File) {
                     val ins = if ("gzip".equals(c.contentEncoding, true)) GZIPInputStream(c.inputStream) else c.inputStream
                     out.parentFile?.mkdirs()
                     val tmp = File(out.path + ".tmp")
-                    ins.use { i -> tmp.outputStream().buffered().use { o -> i.copyTo(o, 64 * 1024) } }
+                    // الحجم الكامل (لو السيرفر يقوله وما هو مضغوط) عشان عدّاد التحديث
+                    val total = if ("gzip".equals(c.contentEncoding, true)) -1L else (c.getHeaderField("Content-Length")?.toLongOrNull() ?: -1L)
+                    ins.use { i -> tmp.outputStream().buffered().use { o ->
+                        if (progress == null) i.copyTo(o, 64 * 1024)
+                        else {
+                            val buf = ByteArray(64 * 1024); var n: Int; var got = 0L; var last = 0L
+                            while (i.read(buf).also { n = it } >= 0) {
+                                o.write(buf, 0, n); got += n
+                                if (got - last > 128 * 1024) { last = got; progress(got, total) }
+                            }
+                            progress(got, total)
+                        }
+                    } }
                     if (tmp.length() < 2) throw XtreamError("رد فاضي من السيرفر")
                     tmp.renameTo(out)
                     return
@@ -164,12 +176,12 @@ class Xtream(val acc: Account, private val cacheDir: File) {
     }
 
     /** ملف JSON على الجهاز للقائمة (ينزل مرة كل 6 ساعات، ولو انقطع النت نستخدم آخر نسخة). */
-    private fun apiFile(action: String, force: Boolean = false): File {
+    private fun apiFile(action: String, force: Boolean = false, progress: ((Long, Long) -> Unit)? = null): File {
         val url = apiUrl(action)
         val f = File(cacheDir, "xt/${md5(url)}.json")
         if (!force && f.exists() && f.length() > 2 && System.currentTimeMillis() - f.lastModified() < TTL) return f
         return try {
-            httpToFile(url, f)
+            httpToFile(url, f, progress = progress)
             f
         } catch (e: Exception) {
             if (f.exists() && f.length() > 2) f else throw XtreamError(friendly(e))
@@ -280,23 +292,23 @@ class Xtream(val acc: Account, private val cacheDir: File) {
     }
 
     // ---------- التصنيفات والقوائم ----------
-    private fun cats(action: String): List<Category> = once(action) {
-        val a = runCatching { JSONArray(api(action)) }.getOrElse { JSONArray() }
+    private fun cats(action: String, force: Boolean = false): List<Category> = once(action, force) {
+        val a = runCatching { JSONArray(api(action, force = force)) }.getOrElse { JSONArray() }
         (0 until a.length()).map {
             val o = a.getJSONObject(it)
             Category(o.optString("category_id"), o.optString("category_name"))
         }
     }
 
-    fun liveCategories() = cats("get_live_categories")
-    fun vodCategories() = cats("get_vod_categories")
-    fun seriesCategories() = cats("get_series_categories")
+    fun liveCategories(force: Boolean = false) = cats("get_live_categories", force)
+    fun vodCategories(force: Boolean = false) = cats("get_vod_categories", force)
+    fun seriesCategories(force: Boolean = false) = cats("get_series_categories", force)
 
     /** القنوات محمّلة بالذاكرة؟ (عشان ما نحجب الواجهة). */
     fun hasLive(): Boolean = mem.containsKey("live")
 
-    fun liveStreams(force: Boolean = false): List<Channel> = once("live", force) {
-        val f = apiFile("get_live_streams", force)
+    fun liveStreams(force: Boolean = false, progress: ((Long, Long) -> Unit)? = null): List<Channel> = once("live", force) {
+        val f = apiFile("get_live_streams", force, progress)
         readBin(f) { i -> Channel(i.readUTF(), i.readInt(), i.readUTF(), i.readUTF(), i.readUTF(), i.readUTF(), i.readBoolean()) }
             ?: run {
                 var n = 0
@@ -311,8 +323,8 @@ class Xtream(val acc: Account, private val cacheDir: File) {
             }
     }
 
-    fun vods(series: Boolean): List<Vod> = once(if (series) "series" else "vod") {
-        val f = apiFile(if (series) "get_series" else "get_vod_streams")
+    fun vods(series: Boolean, force: Boolean = false, progress: ((Long, Long) -> Unit)? = null): List<Vod> = once(if (series) "series" else "vod", force) {
+        val f = apiFile(if (series) "get_series" else "get_vod_streams", force, progress)
         readBin(f) { i -> Vod(i.readUTF(), i.readUTF(), i.readUTF(), i.readUTF(), i.readUTF(), i.readUTF(), i.readLong(), series) }
             ?: readArray(f, if (series) arrayOf("series_id", "name", "cover", "category_id", "container_extension", "rating", "last_modified", "last_modified")
                             else arrayOf("stream_id", "name", "stream_icon", "category_id", "container_extension", "rating", "added", "last_modified")) { o ->

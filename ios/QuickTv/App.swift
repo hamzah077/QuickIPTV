@@ -89,6 +89,8 @@ struct RootView: View {
         Group {
             if model.current == nil {
                 LoginView()
+            } else if model.updFull {
+                UpdateFullView()            // أول دخول: نجهّز القوائم بعدّاد
             } else if hsize == .regular {
                 IPadShell()                 // آيباد: قائمة جانبية زجاج
             } else {
@@ -96,6 +98,10 @@ struct RootView: View {
             }
         }
         .background(Theme.bg.ignoresSafeArea())
+        // تحديث من الإعدادات: نافذة منبثقة فوق التطبيق
+        .overlay { if model.updPopup { UpdatePopup().transition(.opacity) } }
+        .animation(.easeOut(duration: 0.2), value: model.updPopup)
+        .animation(.easeOut(duration: 0.25), value: model.updFull)
         .task(id: model.currentId) { await model.loadAll() }
     }
 }

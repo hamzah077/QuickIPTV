@@ -32,20 +32,36 @@ final class Xtream: @unchecked Sendable {
     func episodeURL(_ id: String, ext: String) -> URL? { URL(string: "\(base)/series/\(up)/\(id).\(ext)") }
 
     // MARK: الطلبات
-    private func api(_ action: String?, _ extra: [String: String] = [:]) async throws -> Any {
+    /// عدّاد التحديث: كم نزل من القائمة (0…1، أو سالب = الحجم مو معروف وهذا كم بايت نزل)
+    typealias Progress = @Sendable (Double) -> Void
+
+    private func api(_ action: String?, _ extra: [String: String] = [:], progress: Progress? = nil) async throws -> Any {
         var c = URLComponents(string: "\(base)/player_api.php")!
         var q = [URLQueryItem(name: "username", value: acc.username), URLQueryItem(name: "password", value: acc.password)]
         if let action { q.append(URLQueryItem(name: "action", value: action)) }
         for (k, v) in extra { q.append(URLQueryItem(name: k, value: v)) }
         c.queryItems = q
         guard let url = c.url else { throw XError.badServer }
-        let (data, resp) = try await session.data(from: url)
+        let grab = TaskGrab()
+        let poll: Task<Void, Never>? = progress.map { p in
+            Task {
+                while !Task.isCancelled {
+                    if let t = grab.task {
+                        let got = t.countOfBytesReceived, all = t.countOfBytesExpectedToReceive
+                        if got > 0 { p(all > 0 ? Double(got) / Double(all) : -Double(got)) }
+                    }
+                    try? await Task.sleep(for: .milliseconds(150))
+                }
+            }
+        }
+        defer { poll?.cancel() }
+        let (data, resp) = try await session.data(from: url, delegate: grab)
         if let h = resp as? HTTPURLResponse, h.statusCode >= 400 { throw XError.http(h.statusCode) }
         return try JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])
     }
 
-    private func list(_ action: String, _ extra: [String: String] = [:]) async throws -> [[String: Any]] {
-        (try await api(action, extra) as? [[String: Any]]) ?? []
+    private func list(_ action: String, _ extra: [String: String] = [:], progress: Progress? = nil) async throws -> [[String: Any]] {
+        (try await api(action, extra, progress: progress) as? [[String: Any]]) ?? []
     }
 
     /// تسجيل الدخول: يرجّع معلومات الاشتراك
@@ -58,8 +74,8 @@ final class Xtream: @unchecked Sendable {
     func liveCategories() async throws -> [Category] {
         try await list("get_live_categories").map { Category(id: $0.str("category_id"), name: $0.str("category_name")) }
     }
-    func liveStreams() async throws -> [Channel] {
-        try await list("get_live_streams").map {
+    func liveStreams(progress: Progress? = nil) async throws -> [Channel] {
+        try await list("get_live_streams", progress: progress).map {
             Channel(id: $0.str("stream_id"), num: $0.int("num"), name: $0.str("name"), icon: $0.str("stream_icon"),
                     categoryId: $0.str("category_id"), epgId: $0.str("epg_channel_id"))
         }
@@ -67,15 +83,15 @@ final class Xtream: @unchecked Sendable {
     func vodCategories(series: Bool) async throws -> [Category] {
         try await list(series ? "get_series_categories" : "get_vod_categories").map { Category(id: $0.str("category_id"), name: $0.str("category_name")) }
     }
-    func movies() async throws -> [Vod] {
-        try await list("get_vod_streams").map {
+    func movies(progress: Progress? = nil) async throws -> [Vod] {
+        try await list("get_vod_streams", progress: progress).map {
             Vod(id: $0.str("stream_id"), name: $0.str("name"), icon: $0.str("stream_icon"), categoryId: $0.str("category_id"),
                 ext: $0.str("container_extension").isEmpty ? "mp4" : $0.str("container_extension"), rating: $0.str("rating"),
                 isSeries: false, added: $0.int("added"))
         }
     }
-    func series() async throws -> [Vod] {
-        try await list("get_series").map {
+    func series(progress: Progress? = nil) async throws -> [Vod] {
+        try await list("get_series", progress: progress).map {
             Vod(id: $0.str("series_id"), name: $0.str("name"), icon: $0.str("cover"), categoryId: $0.str("category_id"),
                 ext: "", rating: $0.str("rating"), isSeries: true, added: $0.int("last_modified"))
         }
@@ -132,4 +148,13 @@ enum XError: LocalizedError {
         case .http(let c): return "السيرفر رد بخطأ (\(c))"
         }
     }
+}
+
+
+/// يمسك طلب التنزيل نفسه (عشان نقرا كم نزل منه للعدّاد)
+final class TaskGrab: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+    private let lock = NSLock()
+    private var t: URLSessionTask?
+    var task: URLSessionTask? { lock.lock(); defer { lock.unlock() }; return t }
+    func urlSession(_ session: URLSession, didCreateTask task: URLSessionTask) { lock.lock(); t = task; lock.unlock() }
 }

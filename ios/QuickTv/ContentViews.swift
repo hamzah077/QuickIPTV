@@ -591,7 +591,7 @@ struct SettingsView: View {
             SwiftUI.Section {
                 NavigationLink { DownloadsView() } label: { Label("التحميلات", systemImage: "arrow.down.circle") }
                 NavigationLink { HistoryView() } label: { Label("سجل المشاهدة", systemImage: "clock.arrow.circlepath") }
-                Button("تحديث المحتوى") { Task { await model.loadAll(force: true) } }
+                Button("تحديث المحتوى") { model.popupUpdate() }
             }
             SwiftUI.Section { LabeledContent("QuickTv", value: "1.0") }
         }

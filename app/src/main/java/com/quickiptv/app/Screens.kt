@@ -204,7 +204,8 @@ class LoginScreen(private val a: MainActivity, edit: Account?) : Screen {
                 val info = withContext(Dispatchers.IO) { Xtream(acc, a.cacheDir).login() }
                 Store.saveAccount(acc)
                 Session.userInfo = info.optJSONObject("user_info")
-                a.enter(acc, checkLogin = false)
+                Store.currentId = acc.id
+                a.showFirstUpdate(acc)          // أول دخول: صفحة التحديث (المباشر ← الأفلام ← المسلسلات) ثم التطبيق
             } catch (e: Exception) {
                 err.setTextColor(C.LIVE); err.text = e.message ?: "تعذر الدخول"
             }
@@ -620,7 +621,8 @@ class SettingsScreen(private val a: MainActivity) : Screen {
         add(a.listRow(R.drawable.ic_live, "صيغة البث المباشر", if (Store.liveFormat == "ts") "MPEG-TS" else "HLS") { chooseFormat() })
         add(a.listRow(R.drawable.ic_guide, "دليل البرامج", Epg.status.ifEmpty { "—" }) { a.openExtra("epg") })
         add(a.listRow(R.drawable.ic_refresh, "تحديث القوائم", subtitle = "يجيب آخر القنوات والأفلام من السيرفر") {
-            Session.api?.clearCache(); SearchIndex.clear(); a.toast("بتتحدّث القوائم أول ما تفتح كل قسم")
+            // نافذة منبثقة بالعدّاد، ولما يخلص: الأقسام تنبني من جديد بالقوائم الجديدة
+            a.showUpdatePopup { listOf("home", "live", "movie", "series").forEach { a.dropScreen(it) } }
         })
         add(a.listRow(R.drawable.ic_user, "تعديل الحساب / حساب آخر") { a.showLogin(acc) })
 

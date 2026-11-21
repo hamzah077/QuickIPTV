@@ -23,6 +23,77 @@ final class AppModel {
     var loading = false
     var error: String?
 
+    // MARK: تحديث القوائم بعدّاد (المباشر ← الأفلام ← المسلسلات)
+    struct UpdStep: Identifiable {
+        let id: Int; let title: String; let unit: String
+        var state = 0            // 0 بالانتظار، 1 يتحدّث، 2 خلص، 3 تعذّر
+        var frac = 0.0
+        var bytes: Int64 = 0
+        var count = 0
+    }
+    var updSteps: [UpdStep] = [
+        UpdStep(id: 0, title: "البث المباشر", unit: "قناة"),
+        UpdStep(id: 1, title: "الأفلام", unit: "فيلم"),
+        UpdStep(id: 2, title: "المسلسلات", unit: "مسلسل")]
+    private(set) var updating = false
+    /// أول دخول: صفحة كاملة
+    var updFull = false
+    /// من الإعدادات: نافذة منبثقة (تقدر تخفيها والتحديث يكمل)
+    var updPopup = false
+    var updTotal: Int { Int(updSteps.map { $0.state >= 2 ? 1 : $0.frac }.reduce(0, +) / 3 * 100) }
+
+    /// أول دخول بعد تسجيل الحساب
+    func firstUpdate() { updFull = true; Task { await runUpdate() } }
+    /// زر "تحديث المحتوى" بالإعدادات
+    func popupUpdate() { updPopup = true; if !updating { Task { await runUpdate() } } }
+
+    func runUpdate() async {
+        guard let api, let acc = current, !updating else { return }
+        updating = true
+        for i in updSteps.indices { updSteps[i].state = 0; updSteps[i].frac = 0; updSteps[i].bytes = 0; updSteps[i].count = 0 }
+        await step(0) { p in
+            async let c = api.liveCategories(); let v = try await api.liveStreams(progress: p)
+            let cats = (try? await c) ?? []
+            await MainActor.run { if !cats.isEmpty { self.liveCats = cats }; if !v.isEmpty { self.channels = v } }
+            return v.count
+        }
+        await step(1) { p in
+            async let c = api.vodCategories(series: false); let v = try await api.movies(progress: p).sorted { $0.added > $1.added }
+            let cats = (try? await c) ?? []
+            await MainActor.run { if !cats.isEmpty { self.movieCats = cats }; if !v.isEmpty { self.movies = v } }
+            return v.count
+        }
+        await step(2) { p in
+            async let c = api.vodCategories(series: true); let v = try await api.series(progress: p).sorted { $0.added > $1.added }
+            let cats = (try? await c) ?? []
+            await MainActor.run { if !cats.isEmpty { self.seriesCats = cats }; if !v.isEmpty { self.seriesList = v } }
+            return v.count
+        }
+        updating = false
+        guard current?.id == acc.id else { return }
+        let c = ContentCache(liveCats: liveCats, channels: channels, movieCats: movieCats, movies: movies, seriesCats: seriesCats, seriesList: seriesList)
+        let file = ContentCache.url(acc.id)
+        Task.detached(priority: .utility) { ContentCache.write(c, file) }
+        // خلص: الصفحة الكاملة تدخلك التطبيق، والنافذة تتقفل بعد لحظة
+        try? await Task.sleep(for: .milliseconds(updFull ? 500 : 1200))
+        updFull = false; updPopup = false
+    }
+
+    private func step(_ i: Int, _ load: @escaping (@escaping Xtream.Progress) async throws -> Int) async {
+        updSteps[i].state = 1
+        let p: Xtream.Progress = { [weak self] v in
+            Task { @MainActor in
+                guard let self else { return }
+                // التنزيل = 90% من الخطوة. لو السيرفر ما قال الحجم: تقريب يقرب من 90% بالتدريج
+                let f = v >= 0 ? v : 1 - exp(v / 4_000_000)
+                self.updSteps[i].bytes = Int64(abs(v >= 0 ? 0 : v))
+                self.updSteps[i].frac = min(0.9, max(self.updSteps[i].frac, f * 0.9))
+            }
+        }
+        do { updSteps[i].count = try await load(p); updSteps[i].frac = 1; updSteps[i].state = 2 }
+        catch { updSteps[i].state = 3 }
+    }
+
     // MARK: السجل والمفضلة (لكل حساب لحاله)
     private(set) var history: [HistoryItem] = []
     private(set) var favs: Set<String> = []
@@ -53,6 +124,7 @@ final class AppModel {
         accounts.append(a)
         saveAccounts()
         open(a)
+        firstUpdate()           // أول دخول: صفحة التحديث بالعدّاد (المباشر ← الأفلام ← المسلسلات)
     }
 
     func removeAccount(_ a: Account) {
@@ -63,7 +135,7 @@ final class AppModel {
 
     /// يحمّل القوائم (مرة وحدة) — بالخلفية
     func loadAll(force: Bool = false) async {
-        guard let api, let acc = current, force || channels.isEmpty || movies.isEmpty else { return }
+        guard let api, let acc = current, !updating, !updFull, force || channels.isEmpty || movies.isEmpty else { return }
         error = nil
         let file = ContentCache.url(acc.id)
 
