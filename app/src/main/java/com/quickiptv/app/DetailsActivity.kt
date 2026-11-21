@@ -177,9 +177,10 @@ class DetailsActivity : Activity() {
         if (fsPending == -1 && !landscape) { fsExited(); return }
         // لفّيت الجوال بيدك وهو يشتغل: يدخل/يطلع من ملء الشاشة بدون حركتنا (أندرويد يلف)
         if (!isTv() && mini != null && landscape && !fs && !portraitLocked) {
+            setWindowOpaque(true)
             fs = true; immersive(true); miniBar?.fullscreenMode = true; render(); slotBack?.visibility = View.GONE; return
         }
-        if (fs && !landscape) { fs = false; immersive(false); miniBar?.fullscreenMode = false; render(); return }
+        if (fs && !landscape) { fs = false; immersive(false); miniBar?.fullscreenMode = false; render(); root.postDelayed({ if (!fs && !landscape) setWindowOpaque(false) }, 400); return }
         if (mini != null && wide && System.currentTimeMillis() - resumedAt > 3000) goFull()      // (احتياط)
         else if (!wide && backToMini != null && System.currentTimeMillis() - resumedAt < 3000) { render(); resumeMini() }
         else render()
@@ -212,6 +213,7 @@ class DetailsActivity : Activity() {
         if (fs || animating || mini == null || isTv()) return
         val box = miniBox; val slot = topSlot
         fsPending = 1
+        setWindowOpaque(true)
         setRotationAnim(rotationJumpcut)
         if (box == null || slot == null || root.width == 0 || box.width == 0) {
             requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE; return
@@ -244,6 +246,7 @@ class DetailsActivity : Activity() {
         @Suppress("DEPRECATION")
         exitSign = if (windowManager.defaultDisplay.rotation == android.view.Surface.ROTATION_270) -1f else 1f
         fsPending = -1
+        setWindowOpaque(true)
         setRotationAnim(rotationJumpcut)
         requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
         portraitLocked = true          // يبقى عمودي (حتى لو الجوال بيدك أفقي) لين تكبّر مرة ثانية أو تطلع
@@ -898,6 +901,26 @@ class DetailsActivity : Activity() {
         window.attributes = window.attributes.also { it.rotationAnimation = v }
     }
 
+    /** النافذة الشفّافة (عشان الصفحة اللي تحت تبان وقت السحب) تخلّي أندرويد يتجاهل اللفّة الفورية ويلفّ لفّته
+     *  الافتراضية فوق حركتنا = لخبطة. فقبل اللف نخليها عادية (معتمة)، ونرجّعها شفّافة بعد ما ترجع عمودي. */
+    private var opaqueNow = false
+    private fun setWindowOpaque(opaque: Boolean) {
+        if (!seeThrough || opaqueNow == opaque) return
+        opaqueNow = opaque
+        if (opaque) root.background = android.graphics.drawable.ColorDrawable(C.BG)
+        runCatching {
+            if (android.os.Build.VERSION.SDK_INT >= 30) setTranslucent(!opaque)
+            else if (opaque) Activity::class.java.getDeclaredMethod("convertFromTranslucent")
+                .apply { isAccessible = true }.invoke(this)
+            else {
+                val l = Class.forName("android.app.Activity\$TranslucentConversionListener")
+                Activity::class.java.getDeclaredMethod("convertToTranslucent", l, android.app.ActivityOptions::class.java)
+                    .apply { isAccessible = true }.invoke(this, null, null)
+            }
+        }
+        if (!opaque) { rootBg.alpha = 255; root.background = rootBg }
+    }
+
     private fun goFull(animate: Boolean = false) {
         if (animating) return
         val box = miniBox; val slot = topSlot
@@ -940,6 +963,7 @@ class DetailsActivity : Activity() {
             .withEndAction {
                 animating = false
                 resetBox(box)
+                if (!fs && !landscape) setWindowOpaque(false)
             }.start()
     }
 
@@ -1103,7 +1127,7 @@ class DetailsActivity : Activity() {
     private fun onPageDrag(dy: Float, ended: Boolean) {
         val range = (floatTarget().second - inT).coerceAtLeast(dp(200).toFloat())
         val t = (dy / range).coerceIn(0f, 1f)
-        if (!ended) { morphAnim?.cancel(); morphInfoText(); setMorph(t); return }
+        if (!ended) { setWindowOpaque(false); morphAnim?.cancel(); morphInfoText(); setMorph(t); return }
         if (t > 0.3f) collapseToDock() else animateMorph(0f)
     }
 
@@ -1117,6 +1141,7 @@ class DetailsActivity : Activity() {
     /** الصفحة كلها تنزل وتصير المربع الصغير، وبعدها المشغّل نفسه ينتقل له (بدون توقف). */
     private fun collapseToDock() {
         if (stage == null || mini == null) { dock(); return }
+        setWindowOpaque(false)
         morphInfoText()
         animateMorph(1f) { dock(instant = true) }
     }
