@@ -122,6 +122,22 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
         screen.addView(status, FrameLayout.LayoutParams(MATCH, WRAP, Gravity.CENTER).apply { setMargins(a.dp(16), 0, a.dp(16), 0) })
 
         screenBox = screen
+        if (a.tv) {
+            // التلفزيون: المشغّل نفسه يتحدد (يسار من القنوات) — إطار رمادي فاتح ويكبر شوي، و OK = ملء الشاشة
+            screen.isFocusable = true
+            screen.isClickable = true
+            screen.setTag(R.id.own_focus_anim, true)
+            screen.foreground = android.graphics.drawable.StateListDrawable().apply {
+                setEnterFadeDuration(120); setExitFadeDuration(100)
+                addState(intArrayOf(android.R.attr.state_focused), rounded(0x00000000, a.dpf(12f), C.FOCUS, a.dp(3)))
+                addState(intArrayOf(), rounded(0x00000000, a.dpf(12f)))
+            }
+            screen.setOnFocusChangeListener { v, has ->
+                v.animate().scaleX(if (has) 1.03f else 1f).scaleY(if (has) 1.03f else 1f).setDuration(140).start()
+                if (has) bar.poke()
+            }
+            screen.setOnClickListener { current?.let { openFull(it) } }
+        }
         // سطر الجوال: "القنوات" + زر التصنيف (يفتح قائمة) + بحث داخل القسم
         phoneBar.apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(a.dp(12), a.dp(8), a.dp(8), a.dp(4)) }
         phoneBar.addView(a.text("القنوات", 17f, C.TEXT, bold = true), lp(WRAP, WRAP))
@@ -453,6 +469,18 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
             return true
         }
         if (keyCode == KeyEvent.KEYCODE_MENU) { current?.let { channelMenu(it) }; return true }
+        // التلفزيون: التنقّل بين الأعمدة (من اليمين: التصنيفات ← القنوات ← المشغّل)
+        if (a.tv) when (keyCode) {
+            KeyEvent.KEYCODE_DPAD_LEFT -> when {
+                chList.hasFocus() -> { if (current != null) { screenBox.requestFocus(); return true } }
+                catList.hasFocus() -> { focusChannels(); return true }
+            }
+            KeyEvent.KEYCODE_DPAD_RIGHT -> when {
+                screenBox.isFocused -> { focusChannels(); return true }
+                chList.hasFocus() -> { focusCategories(); return true }
+            }
+            KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN -> if (screenBox.isFocused) return true      // يبقى على المشغّل
+        }
         // أزرار الميديا بالريموت
         when (keyCode) {
             KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_MEDIA_PLAY, KeyEvent.KEYCODE_MEDIA_PAUSE -> { if (player != null) { togglePause(); return true } }
@@ -482,6 +510,25 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
     override fun onHide() {
         stopPlayer()
         epgJob?.cancel()
+    }
+
+    /** القنوات: لو فيه قناة شغّالة بالقائمة يبدأ منها، وإلا من أول قناة. */
+    private fun focusChannels() {
+        val i = visible.indexOfFirst { it.id == current?.id }.coerceAtLeast(0)
+        focusAt(chList, i)
+    }
+
+    /** التصنيفات: لو اخترت تصنيف يبدأ منه، وإلا من أول تصنيف. */
+    private fun focusCategories() {
+        val i = catAdapter.items.indexOfFirst { it.id == catId }.coerceAtLeast(0)
+        focusAt(catList, i)
+    }
+
+    private fun focusAt(list: RecyclerView, i: Int) {
+        val vh = list.findViewHolderForAdapterPosition(i)
+        if (vh != null) { vh.itemView.requestFocus(); return }
+        list.scrollToPosition(i)
+        list.post { (list.findViewHolderForAdapterPosition(i)?.itemView ?: list.getChildAt(0) ?: list).requestFocus() }
     }
 
     override fun focusDefault() {

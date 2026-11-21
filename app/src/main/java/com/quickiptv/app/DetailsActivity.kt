@@ -104,8 +104,10 @@ class DetailsActivity : Activity() {
             adoptDock()
             // تبدأ من مكان المشغّل الصغير وتكبر لصفحة كاملة (نفس الحركة بالعكس)
             if (stage != null && mini != null) {
+                // تكمل من النقطة اللي وصل لها إصبعك وأنت تسحب المربع لفوق (أو من المربع نفسه لو ضغطته)
+                val from = intent.getFloatExtra("fromT", 1f).coerceIn(0f, 1f)
                 root.alpha = 0f
-                root.post { root.post { morphInfoText(); setMorph(1f); root.alpha = 1f; animateMorph(0f) } }
+                root.post { root.post { morphInfoText(); setMorph(from); root.alpha = 1f; animateMorph(0f) } }
             }
         }
 
@@ -1008,10 +1010,13 @@ class DetailsActivity : Activity() {
         miniBox?.let { b ->
             val vw = b.width.toFloat()
             if (vw > 0f) {
-                val s = lerp(1f, dp(100) / vw, t)
+                // طريقة "ب": الفيديو ينزل مع الصفحة بعرضها كامل، وفي آخر ثلث الحركة يصغر ويدخل زاويته (16:9 دايماً)
+                val k = dockEase((t - 0.62f) / 0.38f)
+                val s = lerp(1f, dp(100) / vw, k)
                 b.pivotX = 0f; b.pivotY = 0f; b.scaleX = s; b.scaleY = s
-                b.translationX = lerp(0f, w - dp(4) - dp(100), t)          // الفيديو يروح يمين المربع (نفس مكانه بالمشغّل الصغير)
-                b.translationY = lerp(0f, (dp(6) - inT).toFloat(), t)
+                b.translationX = lerp(0f, w - dp(4) - dp(100), k)          // يروح يمين المربع (نفس مكانه بالمشغّل الصغير)
+                val base = lerp(0f, (dp(6) - inT).toFloat(), t)
+                b.translationY = lerp(base, (dp(6) - inT).toFloat(), k)
             }
         }
         miniBar?.alpha = (1f - t * 4f).coerceAtLeast(0f)
@@ -1076,7 +1081,7 @@ class DetailsActivity : Activity() {
         miniBar?.player = null
         miniPv?.detachPlayer()
         val back = Intent(intent).apply {
-            listOf("autoUrl", "autoKey", "autoSub", "autoType", "autoResume", "fromDock").forEach { removeExtra(it) }
+            listOf("autoUrl", "autoKey", "autoSub", "autoType", "autoResume", "fromDock", "fromT").forEach { removeExtra(it) }
         }
         MiniDock.handVod(p, r, miniWatching, back)
         miniWatching = false

@@ -168,3 +168,10 @@ class DragDownFrame(ctx: Context) : FrameLayout(ctx) {
         return true
     }
 }
+
+
+/** تسارع ناعم (بداية ونهاية هادية) — لدخول الفيديو للزاوية */
+fun dockEase(x: Float): Float {
+    val v = x.coerceIn(0f, 1f)
+    return if (v < 0.5f) 2 * v * v else 1 - (-2 * v + 2) * (-2 * v + 2) / 2
+}

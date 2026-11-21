@@ -25,9 +25,17 @@ struct WatchPanel: View {
         let m = miniRect
         return CGRect(x: L(0, m.minX), y: L(0, m.minY), width: L(W, m.width), height: L(H, m.height))
     }
-    /// الفيديو داخل المربع
+    /// الفيديو داخل المربع (طريقة "ب"): ينزل مع الصفحة بعرضها كامل، وفي آخر ثلث الحركة يصغر ويدخل زاويته —
+    /// ومقاسه 16:9 طول الوقت (ما يتمطّط)
     private var video: CGRect {
-        CGRect(x: L(0, 6), y: L(top, 6), width: L(W, 96), height: L(W * 9 / 16, 48))
+        let bw = box.width
+        let x0 = (t - 0.62) / 0.38
+        let k = x0 <= 0 ? 0 : x0 >= 1 ? 1 : (x0 < 0.5 ? 2 * x0 * x0 : 1 - pow(-2 * x0 + 2, 2) / 2)
+        let w = bw + (96 - bw) * k
+        let baseY = top + (3 - top) * t                     // ينزل مع الصفحة
+        let y = baseY + (3 - baseY) * k
+        let x = (bw - 6 - 96) * k                           // يروح يمين المربع (مكانه بالمشغّل الصغير)
+        return CGRect(x: x, y: y, width: w, height: w * 9 / 16)
     }
     /// مسافة السحب الكاملة (من صفحة لمربع صغير)
     static func range(H: CGFloat, bottom: CGFloat) -> CGFloat { max(200, H - bottom - 66 - 60) }
@@ -57,14 +65,14 @@ struct WatchPanel: View {
                 }
             }
             .frame(width: v.width, height: v.height)
-            .clipShape(RoundedRectangle(cornerRadius: L(0, 8), style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: min(8, 8 * t * 3), style: .continuous))
             .offset(x: v.minX, y: v.minY)
 
             // معلومات المشغّل الصغير جنب الفيديو (تطلع آخر الحركة)
             if t > 0.6 {
                 miniInfo
-                    .frame(width: max(0, b.width - v.maxX - 6), height: b.height)
-                    .offset(x: v.maxX + 6)
+                    .frame(width: max(0, b.width - 96 - 18), height: b.height)
+                    .offset(x: 8)
                     .opacity(Double((t - 0.7) / 0.3))
                     .allowsHitTesting(t > 0.95)
             }
