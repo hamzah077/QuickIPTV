@@ -81,7 +81,7 @@ final class TourTests: XCTestCase {
             shot("login-filled")
             app.typeText("\n")                                     // زر "انتقال" يدخل مباشرة
             if !el("الخير").waitForExistence(timeout: 20) {         // احتياط: نسكّر الكيبورد ونضغط دخول
-                app.staticTexts["URROX"].firstMatch.tap(); pause(1)
+                app.staticTexts["URROX Player"].firstMatch.tap(); pause(1)
                 tap(app.buttons["دخول"])
             }
         }

@@ -31,7 +31,7 @@ targets:
         PRODUCT_NAME: URROX
         TARGETED_DEVICE_FAMILY: "1,2"          # آيفون + آيباد
         GENERATE_INFOPLIST_FILE: YES
-        INFOPLIST_KEY_CFBundleDisplayName: URROX
+        INFOPLIST_KEY_CFBundleDisplayName: "URROX Player"
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: "UIInterfaceOrientationPortrait"      # الآيفون: عمودي دايماً (المشغّل بملء الشاشة يلف الفيديو بنفسه)
@@ -43,7 +43,7 @@ targets:
     info:
       path: URROX/Info.plist
       properties:
-        CFBundleDisplayName: URROX
+        CFBundleDisplayName: "URROX Player"
         UILaunchScreen: {}
         UIBackgroundModes: [audio]              # صورة داخل صورة + الصوت بالخلفية
         # سيرفرات IPTV غالباً http. تنبيه: لا تضيف NSAllowsArbitraryLoadsForMedia هنا —
