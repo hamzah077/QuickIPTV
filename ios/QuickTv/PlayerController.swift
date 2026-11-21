@@ -146,7 +146,7 @@ final class PlayerController {
                     // جاهز؟ يبدأ على طول (بدون ما ينتظر يعبّي بفر كبير). وإذا خلص البفر بعدين، ينتظر ويكمل لحاله
                     let d = it.duration.seconds
                     if d.isFinite, d > 0 { self.duration = d }
-                    if !self.userPaused { self.player.playImmediately(atRate: 1) }
+                    if !self.userPaused { self.player.playImmediately(atRate: self.playRate) }
                     await self.loadAVTracks(it)
                 }
             }
@@ -162,7 +162,7 @@ final class PlayerController {
             let tol = CMTime(seconds: 2, preferredTimescale: 600)
             player.seek(to: CMTime(seconds: r.start, preferredTimescale: 600), toleranceBefore: tol, toleranceAfter: tol)
         }
-        player.playImmediately(atRate: 1)        // يبدأ أول ما يقدر، وإذا خلص البفر بعدين ينتظر ويكمل لحاله
+        player.playImmediately(atRate: playRate)        // يبدأ أول ما يقدر، وإذا خلص البفر بعدين ينتظر ويكمل لحاله
     }
 
     // MARK: VLC
@@ -181,6 +181,7 @@ final class PlayerController {
         if r.start > 0 { m.addOption(":start-time=\(Int(r.start))") }
         vlc.media = m
         vlc.play()
+        if playRate != 1 { vlc.rate = playRate }      // نفس السرعة اللي اخترتها
         vlcTimer?.invalidate()
         vlcTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.vlcTick() }
@@ -255,11 +256,32 @@ final class PlayerController {
 
     func togglePlay() {
         if engine == .vlc { if vlc.isPlaying { vlc.pause() } else { vlc.play() }; isPlaying = vlc.isPlaying; return }
-        if player.timeControlStatus == .paused { userPaused = false; player.playImmediately(atRate: 1) }
+        if player.timeControlStatus == .paused { userPaused = false; player.playImmediately(atRate: playRate) }
         else { userPaused = true; player.pause() }
     }
 
-    func setRate(_ r: Float) { if engine == .vlc { vlc.rate = r } else { player.rate = r } }
+    /// سرعة التشغيل (نفس الأندرويد: 0.5 … 2) — تبقى للحلقة اللي بعدها، والمباشر دايماً عادي
+    var rate: Float = 1
+    var playRate: Float { isLive ? 1 : rate }
+    func setRate(_ r: Float) {
+        rate = r
+        if engine == .vlc { vlc.rate = r } else if player.timeControlStatus != .paused { player.rate = r }
+    }
+
+    /// المباشر: البث يدعم التأخير والتقديم؟
+    var liveSeekable: Bool { engine == .av && player.currentItem?.seekableTimeRanges.isEmpty == false }
+    /// المباشر: متأخر عن اللحظة الحالية (موقّف أو رجعت أكثر من 20 ثانية) — زر "مباشر" يصير رمادي ↻
+    var liveBehind: Bool {
+        if !isPlaying { return true }
+        guard engine == .av, let it = player.currentItem, let r = it.seekableTimeRanges.last?.timeRangeValue else { return false }
+        return r.end.seconds - it.currentTime().seconds > 20
+    }
+
+    /// قائمة القنوات بملء الشاشة: تشغّل القناة اللي اخترتها
+    func playChannel(_ ch: Channel) {
+        guard let api = AppModel.shared.api, let u = api.liveURL(ch.id) else { return }
+        play(PlayRequest(url: u, key: "live:\(ch.id)", title: ch.name, sub: "", type: "live", image: ch.icon))
+    }
 
     /// وين رايح التقديم (الضغطات ورا بعض تنجمع على الهدف، مو على مكان الفيديو اللي لسه ما وصل)
     @ObservationIgnored private var seekTarget: Double?
@@ -286,7 +308,7 @@ final class PlayerController {
                 guard let self, done, self.seekTarget == t else { return }
                 self.seekTarget = nil
                 // بعد التقديم يكمل على طول من اللي جاهز (ما ينتظر يعبّي بفر من جديد)
-                if !self.userPaused { self.player.playImmediately(atRate: 1) }
+                if !self.userPaused { self.player.playImmediately(atRate: self.playRate) }
             }
         }
     }

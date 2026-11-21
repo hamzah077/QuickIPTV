@@ -82,6 +82,12 @@ struct PlayerOverlay: View {
     @State private var tapAccum = 0
     @State private var tapReset: Task<Void, Never>?
     @State private var showSettings = false
+    /// القوائم (نفس الأندرويد): الإعدادات ← السرعة / الصوت / الترجمة، وزر الترجمة لحاله
+    enum PMenu: Identifiable { case main, speed, audio, subs; var id: Self { self } }
+    @State private var menu: PMenu?
+    @State private var showChannels = false
+    @State private var toast: String?
+    @State private var toastTask: Task<Void, Never>?
     @State private var draggingDown = false
 
     var body: some View {
@@ -141,9 +147,27 @@ struct PlayerOverlay: View {
                 Text(f).font(.footnote).multilineTextAlignment(.center).padding(12).glass(14).padding(20)
             }
         }
+        .overlay(alignment: .top) {
+            if let toast {
+                Text(toast).font(.footnote.weight(.semibold)).padding(.horizontal, 14).padding(.vertical, 9)
+                    .glass(14).padding(.top, compact ? 10 : 40).transition(.opacity)
+            }
+        }
+        // قائمة القنوات بملء الشاشة (تطلع من الجنب — نفس الأندرويد)
+        .overlay {
+            if showChannels {
+                HStack(spacing: 0) { Spacer(minLength: 0); channelsPanel }
+                    .environment(\.layoutDirection, .leftToRight)       // على يمين الشاشة
+                    .transition(.move(edge: .trailing))
+            }
+        }
         .animation(.easeOut(duration: 0.2), value: visible)
+        .animation(.easeOut(duration: 0.2), value: showChannels)
+        .animation(.easeOut(duration: 0.2), value: toast)
         .onAppear { scheduleHide() }
-        .confirmationDialog("الإعدادات", isPresented: $showSettings) { settingsButtons }
+        .confirmationDialog(menuTitle, isPresented: Binding(get: { menu != nil }, set: { if !$0 { menu = nil } }), titleVisibility: .visible) {
+            menuButtons
+        }
     }
 
     // MARK: الطبقات
@@ -161,7 +185,11 @@ struct PlayerOverlay: View {
                     }
                     Text(titleLine).font(compact ? .footnote.weight(.semibold) : .subheadline.weight(.semibold)).lineLimit(1)
                     Spacer()
-                    if !pc.isLive { iconButton("captions.bubble") { showSettings = true } }
+                    // نفس الأندرويد: زر الترجمة لحاله، وزر الإعدادات (السرعة، الصوت، الترجمة)
+                    if !pc.isLive {
+                        iconButton("captions.bubble") { openMenu(.subs) }
+                        iconButton("gearshape") { menu = .main }
+                    }
                     if !compact, pc.engine == .av, PiP.shared.available { iconButton("pip.enter") { PiP.shared.start() } }
                     AirPlayButton().frame(width: 30, height: 30)
                 }
@@ -172,16 +200,17 @@ struct PlayerOverlay: View {
                 Spacer()
                 // الوسط: السابقة · تشغيل · التالية (فيلم/مباشر بدون حلقات: تأخير · تشغيل · تقديم)
                 HStack(spacing: compact ? 34 : 64) {
-                    if pc.queue != nil || pc.isLive {
-                        roundButton("backward.end.fill", size: compact ? 44 : 56) { pc.prev() }.opacity(pc.isLive || pc.hasPrev ? 1 : 0.35)
+                    // نفس الأندرويد: المسلسل = الحلقة السابقة/التالية، الفيلم والمباشر = تأخير/تقديم 10 ثواني
+                    if pc.queue != nil && !pc.isLive {
+                        roundButton("backward.end.fill", size: compact ? 44 : 56) { pc.prev() }.opacity(pc.hasPrev ? 1 : 0.35)
                     } else {
-                        roundButton("gobackward.10", size: compact ? 44 : 56) { pc.seek(by: -10) }
+                        roundButton("gobackward.10", size: compact ? 44 : 56) { seekTen(-1) }.opacity(pc.isLive && !pc.liveSeekable ? 0.4 : 1)
                     }
                     roundButton(pc.isPlaying ? "pause.fill" : "play.fill", size: compact ? 62 : 78) { pc.togglePlay(); scheduleHide() }
-                    if pc.queue != nil || pc.isLive {
-                        roundButton("forward.end.fill", size: compact ? 44 : 56) { pc.learnManualNext(); pc.next() }.opacity(pc.isLive || pc.hasNext ? 1 : 0.35)
+                    if pc.queue != nil && !pc.isLive {
+                        roundButton("forward.end.fill", size: compact ? 44 : 56) { pc.learnManualNext(); pc.next() }.opacity(pc.hasNext ? 1 : 0.35)
                     } else {
-                        roundButton("goforward.10", size: compact ? 44 : 56) { pc.seek(by: 10) }
+                        roundButton("goforward.10", size: compact ? 44 : 56) { seekTen(1) }.opacity(pc.isLive && !pc.liveSeekable ? 0.4 : 1)
                     }
                 }
                 .environment(\.layoutDirection, .leftToRight)
@@ -191,17 +220,27 @@ struct PlayerOverlay: View {
                 VStack(spacing: compact ? 4 : 10) {
                     HStack {
                         if pc.isLive {
+                            // ● مباشر (أحمر) = على اللحظة الحالية، ↻ مباشر (رمادي) = متأخر — تضغطه يرجعك للحظة الحالية
+                            let behind = pc.liveBehind
                             Button { pc.goLive() } label: {
-                                Label("مباشر", systemImage: "dot.radiowaves.left.and.right").font(.caption.weight(.bold)).foregroundStyle(Theme.red)
+                                Text(behind ? "↻  مباشر" : "●  مباشر").font(.caption.weight(.bold))
+                                    .foregroundStyle(behind ? Color(white: 0.79) : Theme.red)
                                     .padding(.horizontal, 10).padding(.vertical, 6)
                             }.glass()
                         } else {
                             Text("\(fmtTime(scrub ?? pc.position)) / \(fmtTime(pc.duration))").font(.caption.monospacedDigit())
                         }
                         Spacer()
+                        if pc.isLive && !compact && !pc.channels.isEmpty {
+                            Button { showChannels = true; visible = false } label: {
+                                Label("القنوات", systemImage: "list.bullet").font(.caption.weight(.bold))
+                                    .padding(.horizontal, 10).padding(.vertical, 6)
+                            }.glass()
+                        }
                         iconButton(compact ? "arrow.up.left.and.arrow.down.right" : "arrow.down.right.and.arrow.up.left") { onFullscreen() }
                     }
-                    if !pc.isLive && pc.duration > 0 { scrubber }
+                    // المشغّل الصغير: الخط الأحمر على حافة الفيديو نفسها (نفس الأندرويد)
+                    if !pc.isLive && pc.duration > 0 { scrubber.padding(.horizontal, compact ? -10 : 0).offset(y: compact ? 10 : 0) }
                 }
                 .padding(.horizontal, compact ? 10 : 20)
                 .padding(.bottom, compact ? 4 : 14)
@@ -248,6 +287,7 @@ struct PlayerOverlay: View {
         Color.clear.contentShape(Rectangle())
             .onTapGesture(count: 2) { doubleTap(side) }
             .onTapGesture(count: 1) {
+                if showChannels { showChannels = false; return }                   // قائمة القنوات مفتوحة: ضغطة برا = تقفلها
                 if tapSide == side && tapAccum > 0 { doubleTap(side); return }      // ضغطات ورا بعض = +10 كل وحدة
                 if pc.showNextUp { pc.cancelAutoNext() }
                 visible.toggle()
@@ -256,7 +296,8 @@ struct PlayerOverlay: View {
     }
 
     private func doubleTap(_ side: Int) {
-        guard !pc.isLive || (pc.engine == .av && pc.player.currentItem?.seekableTimeRanges.isEmpty == false) else { return }
+        // المباشر: ضغطتين = إظهار/إخفاء الأزرار (التأخير والتقديم بالأزرار) — نفس الأندرويد
+        if pc.isLive { visible.toggle(); if visible { scheduleHide() }; return }
         if side != tapSide { tapAccum = 0 }
         tapSide = side
         tapAccum += 10
@@ -322,14 +363,96 @@ struct PlayerOverlay: View {
         .environment(\.layoutDirection, .rightToLeft)
     }
 
-    @ViewBuilder private var settingsButtons: some View {
-        Button("سرعة 1x") { pc.setRate(1) }
-        Button("سرعة 1.25x") { pc.setRate(1.25) }
-        Button("سرعة 1.5x") { pc.setRate(1.5) }
-        Button("سرعة 2x") { pc.setRate(2) }
-        Button("بدون ترجمة") { pc.selectTrack(nil, audio: false) }
-        ForEach(pc.tracks(audio: false)) { t in Button("ترجمة: \(t.name)") { pc.selectTrack(t, audio: false) } }
-        ForEach(pc.tracks(audio: true)) { t in Button("الصوت: \(t.name)") { pc.selectTrack(t, audio: true) } }
+    private func fmtSpeed(_ r: Float) -> String { r == 1 ? "عادي" : "\(r.formatted())x" }
+
+    private var menuTitle: String {
+        switch menu { case .speed: "سرعة التشغيل"; case .audio: "الصوت"; case .subs: "الترجمة"; default: "الإعدادات" }
+    }
+
+    /// الصوت/الترجمة: لو ما فيه خيارات نقول لك بدل قائمة فاضية (نفس الأندرويد)
+    private func openMenu(_ m: PMenu) {
+        if m == .audio && pc.tracks(audio: true).count < 2 { showToast("ما فيه أكثر من صوت"); return }
+        if m == .subs && pc.tracks(audio: false).isEmpty { showToast("ما فيه ترجمة"); return }
+        menu = m
+    }
+
+    @ViewBuilder private var menuButtons: some View {
+        switch menu {
+        case .speed:
+            ForEach([Float(0.5), 0.75, 1, 1.25, 1.5, 2], id: \.self) { r in
+                Button((pc.rate == r ? "✓ " : "") + fmtSpeed(r)) { pc.setRate(r) }
+            }
+        case .audio:
+            ForEach(pc.tracks(audio: true)) { t in Button(t.name) { pc.selectTrack(t, audio: true) } }
+        case .subs:
+            Button("إيقاف") { pc.selectTrack(nil, audio: false) }
+            ForEach(pc.tracks(audio: false)) { t in Button(t.name) { pc.selectTrack(t, audio: false) } }
+        default:
+            Button("سرعة التشغيل  (\(fmtSpeed(pc.rate)))") { reopen(.speed) }
+            Button("الصوت") { reopen(.audio) }
+            Button("الترجمة") { reopen(.subs) }
+        }
+        Button("إلغاء", role: .cancel) {}
+    }
+
+    /// من قائمة الإعدادات لقائمة فرعية (بعد ما تتقفل الأولى)
+    private func reopen(_ m: PMenu) {
+        Task { try? await Task.sleep(for: .milliseconds(350)); openMenu(m) }
+    }
+
+    private func showToast(_ t: String) {
+        toast = t
+        toastTask?.cancel()
+        toastTask = Task { try? await Task.sleep(for: .seconds(2)); if !Task.isCancelled { toast = nil } }
+    }
+
+    /// ±10 ثواني (المباشر: لو البث ما يدعم، نقول لك)
+    private func seekTen(_ dir: Double) {
+        if pc.isLive && !pc.liveSeekable { showToast("هذا البث ما يدعم التقديم والتأخير"); return }
+        let from = pc.position
+        pc.seek(by: dir * 10)
+        if !pc.isLive { pc.learnFromSeek(from: from, to: pc.position) }
+    }
+
+    /// قائمة القنوات بملء الشاشة: القناة الشغّالة مميّزة، تضغط قناة = تشتغل
+    private var channelsPanel: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("القنوات  ·  \(pc.channels.count)").font(.headline)
+                Spacer()
+                Button { showChannels = false } label: { Image(systemName: "xmark").frame(width: 34, height: 34) }.buttonStyle(.plain)
+            }
+            .padding(.horizontal, 14).padding(.vertical, 10)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(spacing: 2) {
+                        ForEach(pc.channels) { ch in
+                            let on = pc.req?.key == "live:\(ch.id)"
+                            Button { pc.playChannel(ch) } label: {
+                                HStack(spacing: 10) {
+                                    Poster(url: ch.icon, radius: 8, contentMode: .fit).frame(width: 40, height: 40)
+                                    Text("\(ch.num > 0 ? "\(ch.num). " : "")\(ch.name)").lineLimit(1)
+                                    Spacer()
+                                    if on { Image(systemName: "speaker.wave.2.fill").foregroundStyle(Theme.muted) }
+                                }
+                                .padding(.horizontal, 12).padding(.vertical, 6)
+                                .background(on ? Color.white.opacity(0.14) : .clear, in: RoundedRectangle(cornerRadius: 10))
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .id(ch.id)
+                        }
+                    }
+                    .padding(.horizontal, 6).padding(.bottom, 12)
+                }
+                .onAppear { if let k = pc.req?.key { proxy.scrollTo(String(k.dropFirst(5)), anchor: .center) } }
+            }
+        }
+        .foregroundStyle(.white)
+        .frame(width: 340)
+        .frame(maxHeight: .infinity)
+        .background(.black.opacity(0.82))
+        .environment(\.layoutDirection, .rightToLeft)
     }
 
     private func scheduleHide() {
