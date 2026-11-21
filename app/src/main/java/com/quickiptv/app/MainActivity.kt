@@ -204,7 +204,8 @@ class MainActivity : Activity() {
     private fun railButton(key: String, label: String, ic: Int): View = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
-        layoutParams = LinearLayout.LayoutParams(WRAP, dp(48)).apply { bottomMargin = dp(6) }
+        // عرض القائمة (على قد أطول اسم) = كل الكبسولات نفس العرض
+        layoutParams = LinearLayout.LayoutParams(MATCH, dp(48)).apply { bottomMargin = dp(6) }
         setPadding(dp(14), 0, dp(14), 0)
         minimumWidth = dp(52)
         // التركيز: كبسولة بيضاء والأيقونة والكتابة داكنة (مثل Google TV) — بدون أزرق

@@ -93,7 +93,8 @@ fun rounded(color: Int, radius: Float, strokeColor: Int = 0, stroke: Int = 0): G
 
 /**
  * خلفية تتغيّر مع التركيز (الريموت) والاختيار واللمس.
- * التركيز: رمادي فاتح مع إطار أبيض ناعم (يبان من بعيد وهادي على العين). الاختيار: رمادي خفيف.
+ * التلفزيون: التركيز أبيض والكتابة والأيقونات داكنة فوقه (نفس القائمة الجانبية — مثل Google TV). الاختيار: رمادي خفيف.
+ * الجوال: رمادي فاتح مع إطار أبيض ناعم.
  */
 fun Context.focusBg(
     normal: Int = Color.TRANSPARENT,
@@ -103,19 +104,44 @@ fun Context.focusBg(
 ): Drawable {
     val r = dpf(radius.toFloat())
     val sw = dp(2)
-    val states = StateListDrawable().apply {
-        // الإطار يظهر ويختفي بتلاشي ناعم بدل ما يقفز
+    val tv = isTv()
+    val states = (if (tv) TvFocusDrawable() else StateListDrawable()).apply {
+        // التحديد يظهر ويختفي بتلاشي ناعم بدل ما يقفز
         setEnterFadeDuration(130)
         setExitFadeDuration(110)
-        addState(intArrayOf(android.R.attr.state_focused), rounded(0x2EFFFFFF, r, 0x8CFFFFFF.toInt(), sw))
+        if (tv) addState(intArrayOf(android.R.attr.state_focused), rounded(C.PRIMARY, r))
+        else addState(intArrayOf(android.R.attr.state_focused), rounded(0x2EFFFFFF, r, 0x8CFFFFFF.toInt(), sw))
         addState(intArrayOf(android.R.attr.state_pressed), rounded(pressed, r))
         addState(intArrayOf(android.R.attr.state_selected), rounded(selected, r))
         addState(intArrayOf(android.R.attr.state_activated), rounded(selected, r))
         addState(intArrayOf(), rounded(normal, r))
     }
-    if (isTv()) return states
+    if (tv) return states
     // الجوال: موجة لمس ناعمة فوق الخلفية (مقصوصة على نفس الزوايا)
     return android.graphics.drawable.RippleDrawable(ColorStateList.valueOf(0x2EFFFFFF), states, rounded(Color.WHITE, r))
+}
+
+/** خلفية تحديد التلفزيون البيضاء: اللي يتحدد فيها تنقلب كتابته وأيقوناته داكنة (installFocusMotion). */
+class TvFocusDrawable : StateListDrawable()
+
+private const val INK = 0xFF0E1116.toInt()
+
+/** يقلب ألوان الكتابة والأيقونات داخل العنصر المحدد للداكن (on) ويرجعها (off). الصور (شعارات/بوسترات) ما تنلمس. */
+private fun ink(v: View, on: Boolean) {
+    when (v) {
+        is TextView -> {
+            if (on) {
+                if (v.currentTextColor != INK) { v.setTag(R.id.ink_orig, v.textColors); v.setTextColor(INK) }
+            } else (v.getTag(R.id.ink_orig) as? ColorStateList)?.let { v.setTextColor(it); v.setTag(R.id.ink_orig, null) }
+        }
+        is android.widget.ImageView -> {
+            val t = v.imageTintList ?: (v.getTag(R.id.ink_orig) as? ColorStateList) ?: return   // بدون تلوين = صورة: نخليها
+            if (on) {
+                if (t.defaultColor != INK) { v.setTag(R.id.ink_orig, t); v.imageTintList = ColorStateList.valueOf(INK) }
+            } else (v.getTag(R.id.ink_orig) as? ColorStateList)?.let { v.imageTintList = it; v.setTag(R.id.ink_orig, null) }
+        }
+        is android.view.ViewGroup -> for (i in 0 until v.childCount) ink(v.getChildAt(i), on)
+    }
 }
 
 /** انضغاط خفيف لما تلمس العنصر (الجوال)، ويرجع لما ترفع إصبعك أو تسحب. */
@@ -415,7 +441,15 @@ fun android.app.Activity.installFocusMotion() {
     fun eligible(v: View?): Boolean = v != null && v.getTag(R.id.own_focus_anim) != true &&
         v !is android.widget.EditText && v !is RecyclerView && v !is android.widget.ScrollView &&
         v.width in 1 until (screenW * 0.92).toInt()
+    // التلفزيون: العنصر المحدد (أبيض) تنقلب ألوانه داكنة — ونتأكد كل رسمة إنها باقية (لو القائمة تحدّثت وهو محدد)
+    var inked: View? = null
+    if (isTv()) window.decorView.viewTreeObserver.addOnPreDrawListener {
+        inked?.let { v -> if (v.isFocused) ink(v, true) else { ink(v, false); inked = null } }
+        true
+    }
     window.decorView.viewTreeObserver.addOnGlobalFocusChangeListener { old, new ->
+        if (old != null && old === inked) { ink(old, false); inked = null }
+        if (new != null && new.background is TvFocusDrawable) { inked = new; ink(new, true) }
         if (eligible(old)) old!!.animate().scaleX(1f).scaleY(1f).setDuration(120).setInterpolator(interp).start()
         if (eligible(new)) {
             val v = new!!

@@ -106,6 +106,7 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
         v.setTag(R.id.own_focus_anim, true)          // حركتنا الخاصة بدل الحركة العامة
         v.setOnFocusChangeListener { _, has ->
             v.animate().scaleX(if (has) 1.08f else 1f).scaleY(if (has) 1.08f else 1f).setDuration(140).start()
+            if (tvBig && v in tvStyled) tvTintChildren(v, has)          // دائرة بيضاء = الأيقونة داكنة (ما تختفي)
             if (has) showTip(v) else if (tipFor === v) hideTip()
             if (has) poke()
         }
@@ -740,16 +741,22 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
         addState(intArrayOf(android.R.attr.state_focused), android.graphics.drawable.GradientDrawable().apply { cornerRadius = act.dpf(radiusDp); setColor(0xFFFFFFFF.toInt()) })
         addState(intArrayOf(), android.graphics.drawable.GradientDrawable().apply { cornerRadius = act.dpf(radiusDp); setColor(0x00000000) })
     }
-    private val tvTint = ColorStateList(arrayOf(intArrayOf(android.R.attr.state_focused), intArrayOf()), intArrayOf(0xFF111214.toInt(), 0xFFFFFFFF.toInt()))
 
-    /** الأيقونات والنص داخل الزر ياخذون حالة التحديد (أسود على الأبيض). */
+    /** أزرار التلفزيون: دائرة بيضاء لما تتحدد والأيقونة داكنة جواها (نلوّنها بأنفسنا مع كل تحديد —
+     *  الطريقة القديمة ما كانت توصل للأيقونة فكانت تختفي أبيض على أبيض). */
+    private val tvStyled = HashSet<View>()
     private fun tvStyle(b: View, radiusDp: Float) {
         b.background = tvFocusBg(radiusDp)
+        tvStyled.add(b)
+        tvTintChildren(b, b.isFocused)
+    }
+    private fun tvTintChildren(b: View, focused: Boolean) {
+        val col = if (focused) 0xFF111214.toInt() else 0xFFFFFFFF.toInt()
         if (b is android.view.ViewGroup) for (i in 0 until b.childCount) {
             val c = b.getChildAt(i)
-            c.isDuplicateParentStateEnabled = true
-            if (c is android.widget.ImageView) c.imageTintList = tvTint
-            else if (c is TextView && c !== liveText) c.setTextColor(tvTint)
+            if (c is android.widget.ImageView) c.imageTintList = ColorStateList.valueOf(col)
+            else if (c is TextView && c !== liveText) c.setTextColor(col)
+            else if (c is android.view.ViewGroup) tvTintChildren(c, focused)
         }
     }
 
