@@ -79,6 +79,8 @@ class PlayerActivity : Activity() {
         super.onCreate(savedInstanceState)
         installFocusMotion()
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        // ملء الشاشة لشي جديد: المشغّل الصغير يتقفل (اتصال واحد بالسيرفر)
+        if (MiniDock.active && !intent.getBooleanExtra("handoff", false)) MiniDock.stop()
         window.decorView.layoutDirection = View.LAYOUT_DIRECTION_RTL
         immersive()
         if (Session.api == null) Store.current?.let { Session.open(this, it) }

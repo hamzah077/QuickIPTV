@@ -54,15 +54,26 @@ struct LiveView: View {
         .navigationTitle("المباشر")
         .navigationBarTitleDisplayMode(.inline)
         .modifier(TopBar(query: $q, prompt: "ابحث في القنوات"))
-        .onAppear { if let s = start, current == nil { play(s) } }
-        // طلعت من صفحة المباشر (قسم ثاني أو رجوع)؟ يوقف البث — إلا لو صورة داخل صورة شغّالة
+        .onAppear {
+            pc.hostAppear("live")
+            if let s = start, current == nil {
+                if pc.req?.key == "live:\(s.id)" { current = s } else { play(s) }      // نفس القناة شغّالة؟ نكمل عليها
+            }
+            if pc.isLive {
+                if current == nil { current = model.channels.first { "live:\($0.id)" == pc.req?.key } }
+                if pc.mini { withAnimation(.spring(duration: 0.35, bounce: 0.05)) { pc.mini = false } }   // رجعت للمباشر: يكبر هنا
+            }
+        }
+        // طلعت من صفحة المباشر: الجوال = يكمل في المشغّل الصغير تحت، الآيباد = يوقف
         .onDisappear {
-            if pc.isLive, !pc.fullscreen, !PiP.shared.active { pc.stop(); current = nil }
+            pc.hostDisappear("live")
+            if pc.isLive { pc.leftHost() }
+            if pc.req == nil { current = nil }
         }
     }
 
     @ViewBuilder private var screen: some View {
-        if current != nil, pc.req?.type == "live" {
+        if current != nil, pc.req?.type == "live", !pc.mini {
             InlinePlayer()
         } else {
             Rectangle().fill(Theme.surface).aspectRatio(16 / 9, contentMode: .fit)
@@ -127,6 +138,7 @@ struct LiveView: View {
     private func play(_ ch: Channel) {
         guard let api = model.api, let u = api.liveURL(ch.id) else { return }
         current = ch
+        pc.mini = false
         pc.queue = nil
         pc.channels = visible
         pc.play(PlayRequest(url: u, key: "live:\(ch.id)", title: ch.name, sub: "", type: "live", image: ch.icon))
@@ -212,10 +224,10 @@ struct DetailsView: View {
     var body: some View {
         VStack(spacing: 0) {
             // المشغّل ثابت فوق (ما يتحرك مع القائمة)
-            if playingHere { InlinePlayer() }
+            if playingHere && !pc.mini { InlinePlayer() }
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
-                    if !playingHere {
+                    if !(playingHere && !pc.mini) {
                         Poster(url: vod.icon, radius: 0).frame(height: 230).clipped().opacity(0.55)
                     }
                     VStack(alignment: .leading, spacing: 12) {
@@ -232,9 +244,14 @@ struct DetailsView: View {
         }
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
-        // رجعت أو رحت لقسم ثاني؟ يوقف الفيلم/الحلقة ويحفظ وين وقفت — إلا لو صورة داخل صورة شغّالة
+        .onAppear {
+            pc.hostAppear(key)
+            if playingHere && pc.mini { withAnimation(.spring(duration: 0.35, bounce: 0.05)) { pc.mini = false } }   // رجعت لصفحته: يكبر هنا
+        }
+        // رجعت أو رحت لقسم ثاني وهو شغّال: الجوال = يكمل في المشغّل الصغير تحت، الآيباد = يوقف ويحفظ وين وقفت
         .onDisappear {
-            if let r = pc.req, r.type != "live", !pc.fullscreen, !PiP.shared.active { pc.stop() }
+            pc.hostDisappear(key)
+            if playingHere { pc.leftHost() }
         }
     }
 
@@ -342,6 +359,7 @@ struct DetailsView: View {
 
     private func playMovie() {
         guard let r = movieRequest() else { return }
+        pc.mini = false
         pc.queue = nil
         pc.play(r)
     }
@@ -349,6 +367,7 @@ struct DetailsView: View {
     private func playEpisode(_ e: Episode) {
         let all = seasons.keys.sorted().flatMap { seasons[$0] ?? [] }
         let q = SeriesQueue(seriesId: vod.id, name: vod.name, image: vod.icon, list: all)
+        pc.mini = false
         pc.queue = q
         if let i = q.index(of: "ep:\(e.id)"), let r = q.request(i) { pc.play(r) }
     }

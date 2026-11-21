@@ -71,6 +71,8 @@ struct AirPlayButton: UIViewRepresentable {
 struct PlayerOverlay: View {
     @Environment(PlayerController.self) private var pc
     var compact: Bool                       // المشغّل الصغير فوق الصفحة
+    /// سحب المشغّل لتحت (الجوال): المسافة، وهل خلص السحب
+    var onDragDown: ((CGFloat, Bool) -> Void)? = nil
     var onFullscreen: () -> Void
 
     @State private var visible = true
@@ -89,8 +91,16 @@ struct PlayerOverlay: View {
                 tapZone(1)
             }
             .environment(\.layoutDirection, .leftToRight)
-            .gesture(DragGesture(minimumDistance: 40).onEnded { d in
+            .gesture(DragGesture(minimumDistance: 30)
+            .onChanged { d in
+                // المشغّل الصغير فوق الصفحة: سحب لتحت = يتبع إصبعك ويصغر (زي يوتيوب)
+                guard compact, let f = onDragDown else { return }
                 let dx = d.translation.width, dy = d.translation.height
+                if dy > 0 && dy > abs(dx) { f(dy, false) }
+            }
+            .onEnded { d in
+                let dx = d.translation.width, dy = d.translation.height
+                if compact, let f = onDragDown, dy > 0, dy > abs(dx) { f(dy, true); return }
                 if !compact && dy > 110 && abs(dx) < 80 { onFullscreen(); return }          // سحب لتحت = تصغير
                 guard abs(dx) > 90, abs(dy) < 60, pc.isLive || pc.queue != nil else { return }
                 if dx < 0 { pc.learnManualNext(); pc.next() } else { pc.prev() }         // سحب = الحلقة/القناة التالية أو السابقة
@@ -329,20 +339,91 @@ struct PlayerOverlay: View {
 
 struct InlinePlayer: View {
     @Environment(PlayerController.self) private var pc
+    @State private var dragY: CGFloat = 0
 
     var body: some View {
         ZStack {
             Color.black
-            VideoSurface(active: !pc.fullscreen)
-            PlayerOverlay(compact: true) { pc.autoFullscreen = false; pc.fullscreen = true }
+            VideoSurface(active: !pc.fullscreen && !pc.mini)
+            PlayerOverlay(compact: true, onDragDown: PlayerController.phone ? { dy, ended in dragDown(dy, ended) } : nil) {
+                pc.autoFullscreen = false; pc.fullscreen = true
+            }
         }
         .aspectRatio(16 / 9, contentMode: .fit)
+        // أثناء السحب لتحت: يصغر وينزل مع إصبعك
+        .scaleEffect(1 - min(dragY, 320) / 900, anchor: .top)
+        .offset(y: dragY * 0.5)
         .opacity(pc.fullscreen ? 0 : 1)                 // وقت ملء الشاشة الفيديو "طالع" من هنا
         .background(GeometryReader { g in
             Color.clear
                 .onAppear { pc.inlineFrame = g.frame(in: .global) }
                 .onChange(of: g.frame(in: .global)) { _, f in if !pc.fullscreen { pc.inlineFrame = f } }
         })
+    }
+}
+
+extension InlinePlayer {
+    /// سحبته لتحت كفاية؟ يصير مشغّل صغير تحت. وإلا يرجع مكانه.
+    fileprivate func dragDown(_ dy: CGFloat, _ ended: Bool) {
+        guard ended else { dragY = dy; return }
+        if dy > 90 {
+            withAnimation(.spring(duration: 0.35, bounce: 0.05)) { pc.mini = true; dragY = 0 }
+        } else {
+            withAnimation(.spring(duration: 0.3)) { dragY = 0 }
+        }
+    }
+}
+
+// MARK: - المشغّل الصغير تحت (الجوال): الفيديو يكمل وأنت تتنقّل — اضغطه أو اسحبه لفوق يرجع كامل
+
+struct MiniPlayer: View {
+    @Environment(PlayerController.self) private var pc
+    var onExpand: () -> Void
+    @State private var drag: CGFloat = 0
+
+    var body: some View {
+        HStack(spacing: 10) {
+            ZStack {
+                Color.black
+                VideoSurface(active: pc.mini && !pc.fullscreen)
+            }
+            .frame(width: 100, height: 56)
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(pc.req?.title ?? "").font(.subheadline.weight(.semibold)).lineLimit(1)
+                if let s = pc.req?.sub, !s.isEmpty { Text(s).font(.caption).foregroundStyle(Theme.muted).lineLimit(1) }
+            }
+            Spacer(minLength: 4)
+            Button { pc.togglePlay() } label: {
+                Image(systemName: pc.isPlaying ? "pause.fill" : "play.fill").font(.title3).frame(width: 40, height: 44)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(pc.isPlaying ? "إيقاف مؤقت" : "تشغيل")
+            Button { withAnimation(.easeOut(duration: 0.2)) { pc.stop() } } label: {
+                Image(systemName: "xmark").font(.headline).frame(width: 40, height: 44)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("إغلاق")
+        }
+        .padding(6)
+        .padding(.trailing, 2)
+        .foregroundStyle(.white)
+        .glass(16)
+        .overlay(alignment: .bottom) {
+            if !pc.isLive && pc.duration > 0 {
+                ProgressLine(value: pc.position / pc.duration, height: 2).padding(.horizontal, 12)
+            }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { onExpand() }
+        .gesture(DragGesture(minimumDistance: 10)
+            .onChanged { d in drag = min(0, d.translation.height) }
+            .onEnded { d in
+                if d.translation.height < -40 { onExpand() }
+                withAnimation(.spring(duration: 0.3)) { drag = 0 }
+            })
+        .offset(y: drag * 0.6)
+        .padding(.horizontal, 12)
     }
 }
 
@@ -388,6 +469,8 @@ struct FullscreenPlayer: View {
         withAnimation(.spring(duration: 0.45, bounce: 0.04)) { shown = false } completion: {
             pc.fullscreen = false
             pc.autoFullscreen = false
+            // ما فيه صفحة تعرضه (مثل التشغيل من التحميلات)؟ يكمل في المشغّل الصغير تحت
+            if PlayerController.phone, let r = pc.req, !pc.hostVisible(r), !pc.mini { pc.mini = true }
             Orientation.unlockWhenPortrait()            // يرجع يلف عادي بس لما تمسك الجوال عمودي
         }
     }

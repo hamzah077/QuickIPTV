@@ -110,7 +110,12 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
         playerView.setKeepContentOnPlayerReset(true)          // تغيير القناة: آخر صورة تبقى لين تجي الجديدة (بدل شاشة سودا)
         playerView.isFocusable = false
 
-        val screen = FrameLayout(a).apply { background = rounded(0xFF000000.toInt(), a.dpf(12f)); clipToOutline = true }
+        val screen = DragDownFrame(a).apply {
+            background = rounded(0xFF000000.toInt(), a.dpf(12f)); clipToOutline = true
+            // الجوال عمودي: اسحب الشاشة لتحت = القناة تكمل في المشغّل الصغير والقنوات تاخذ المكان كله
+            canDrag = { !a.tv && !a.landscape && current != null && player != null }
+            onDocked = { dockIfPlaying() }
+        }
         screen.addView(playerView, FrameLayout.LayoutParams(MATCH, MATCH))
         screen.addView(bar, FrameLayout.LayoutParams(MATCH, MATCH))
         screen.addView(loading, FrameLayout.LayoutParams(a.dp(36), a.dp(36), Gravity.CENTER))
@@ -262,6 +267,9 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
     }
 
     private fun preview(ch: Channel) {
+        if (MiniDock.live) MiniDock.undockLive()          // اخترت قناة: ترجع لشاشة المعاينة هنا
+        else if (MiniDock.active) MiniDock.stop()         // فيلم بالمشغّل الصغير؟ نقفله (اتصال واحد بالسيرفر)
+        showPreview(true)
         current = ch
         chAdapter.playingId = ch.id
         title.text = ch.name
@@ -356,7 +364,25 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
         status.visibility = View.VISIBLE
     }
 
+    /** القناة تنتقل للمشغّل الصغير تحت (الجوال): نفس البث يكمل بدون انقطاع. */
+    fun dockIfPlaying() {
+        val ch = current ?: return
+        val p = player ?: return
+        if (a.tv || LivePlayer.keepForPreview || p.playbackState == Player.STATE_IDLE) return
+        detach()
+        MiniDock.dockLive(ch.name, nowText.text?.toString()?.lineSequence()?.firstOrNull() ?: "")
+        showPreview(false)
+    }
+
+    /** شاشة المعاينة فوق القنوات: تختفي لما القناة بالمشغّل الصغير (القنوات تاخذ المكان). */
+    private fun showPreview(on: Boolean) {
+        if (a.tv || a.landscape) return
+        val v = if (on) View.VISIBLE else View.GONE
+        screenBox.visibility = v; title.visibility = v; nowText.visibility = v
+    }
+
     private fun stopPlayer() {
+        if (MiniDock.live) { detach(); return }        // القناة بالمشغّل الصغير: تكمل (ما نطفيها)
         if (LivePlayer.keepForPreview) { player?.removeListener(listener); player = null; bar.player = null; return }   // انتقل لملء الشاشة: لا نفك الصورة
         detach()
         LivePlayer.release()

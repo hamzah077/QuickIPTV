@@ -42,13 +42,43 @@ enum AppSection: String, CaseIterable, Identifiable {
 
 struct PhoneShell: View {
     @Environment(PlayerController.self) private var pc
+    @Environment(AppModel.self) private var model
+    @Environment(Downloads.self) private var dl
     @State private var tab: AppSection = .home
+    @State private var coverReq: PlayRequest?        // صفحة التشغيل لما تكبّر الصغير وصفحته مو ظاهرة
 
     var body: some View {
-        ZStack {
+        ZStack(alignment: .bottom) {
             tabs
-            if pc.fullscreen { FullscreenPlayer().zIndex(10) }
+            // المشغّل الصغير فوق الشريط السفلي: الفيديو يكمل وأنت تتنقّل
+            if pc.mini, pc.req != nil, !pc.fullscreen {
+                MiniPlayer { expand() }
+                    .padding(.bottom, 66)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .zIndex(5)
+            }
+            if pc.fullscreen && coverReq == nil { FullscreenPlayer().zIndex(10) }     // (لو صفحة التشغيل مفتوحة فوق، ملء الشاشة يطلع فيها)
         }
+        .fullScreenCover(item: $coverReq) { r in
+            NavigationStack {
+                coverPage(r)
+                    .toolbar {
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button { withAnimation(.spring(duration: 0.35, bounce: 0.05)) { pc.mini = true } } label: {
+                                Image(systemName: "chevron.down")
+                            }
+                            .accessibilityLabel("تصغير")
+                        }
+                    }
+            }
+            .environment(model).environment(pc).environment(dl)
+            .environment(\.layoutDirection, .rightToLeft)
+            .preferredColorScheme(.dark)
+            .tint(.white)
+            .overlay { if pc.fullscreen { FullscreenPlayer() } }
+        }
+        .onChange(of: pc.mini) { _, m in if m { coverReq = nil } }
+        .onChange(of: pc.req == nil) { _, gone in if gone { coverReq = nil } }
         // لفّيت الجوال أفقي وهو يشغّل = ملء الشاشة، ورجعته عمودي = يرجع
         .onChange(of: vsize) { _, v in
             if v == .compact, pc.req != nil, !pc.fullscreen { pc.autoFullscreen = true; pc.fullscreen = true }
@@ -57,6 +87,25 @@ struct PhoneShell: View {
     }
 
     @Environment(\.verticalSizeClass) private var vsize
+
+    /// تكبير المشغّل الصغير: صفحته ظاهرة؟ يرجع فيها. وإلا نفتح صفحته فوق.
+    private func expand() {
+        guard let r = pc.req else { return }
+        if pc.hostVisible(r) { withAnimation(.spring(duration: 0.35, bounce: 0.05)) { pc.mini = false } }
+        else { coverReq = r }
+    }
+
+    @ViewBuilder private func coverPage(_ r: PlayRequest) -> some View {
+        if r.type == "live" {
+            if let ch = model.channels.first(where: { "live:\($0.id)" == r.key }) { LiveView(start: ch) }
+        } else if r.type == "episode" {
+            DetailsView(vod: Vod(id: r.seriesId, name: pc.queue?.name ?? r.title, icon: pc.queue?.image ?? r.image,
+                                 categoryId: "", ext: "", rating: "", isSeries: true, added: 0))
+        } else {
+            DetailsView(vod: Vod(id: String(r.key.dropFirst(6)), name: r.title, icon: r.image, categoryId: "",
+                                 ext: r.url.pathExtension, rating: "", isSeries: false, added: 0))
+        }
+    }
 
     @ViewBuilder private var tabs: some View {
         if #available(iOS 18.0, *) {

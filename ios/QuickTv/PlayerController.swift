@@ -33,6 +33,10 @@ final class PlayerController {
     private(set) var buffering = false
     private(set) var failed: String?
     var fullscreen = false
+    /// المشغّل الصغير تحت (الجوال): سحبت المشغّل لتحت أو طلعت من صفحته وهو شغّال
+    var mini = false
+    /// الصفحات اللي تعرض المشغّل الحين (عشان التكبير من الصغير يرجع لها لو هي ظاهرة)
+    @ObservationIgnored private var hosts: [String: Int] = [:]
     /// دخل ملء الشاشة لأنك لفّيت الجوال (يطلع لما ترجعه عمودي)
     var autoFullscreen = false
     /// مكان المشغّل الصغير بالشاشة (تبدأ منه حركة التكبير وترجع له)
@@ -219,8 +223,22 @@ final class PlayerController {
         checkSkips()
     }
 
+    static var phone: Bool { UIDevice.current.userInterfaceIdiom == .phone }
+
+    func hostKey(_ r: PlayRequest) -> String { r.type == "episode" ? "series:\(r.seriesId)" : (r.type == "live" ? "live" : r.key) }
+    func hostAppear(_ k: String) { hosts[k, default: 0] += 1 }
+    func hostDisappear(_ k: String) { hosts[k] = max(0, (hosts[k] ?? 0) - 1) }
+    func hostVisible(_ r: PlayRequest) -> Bool { (hosts[hostKey(r)] ?? 0) > 0 }
+
+    /// طلعت من صفحة التشغيل وهو شغّال: الجوال = يكمل في المشغّل الصغير، الآيباد = يوقف
+    func leftHost() {
+        guard req != nil, !fullscreen, !PiP.shared.active, !mini else { return }
+        if Self.phone { withAnimation(.spring(duration: 0.35, bounce: 0.05)) { mini = true } } else { stop() }
+    }
+
     func stop() {
         saveNow()
+        mini = false
         stopVLC()
         player.pause()
         player.replaceCurrentItem(with: nil)

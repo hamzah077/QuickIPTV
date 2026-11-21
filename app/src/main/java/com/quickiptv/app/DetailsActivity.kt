@@ -83,6 +83,8 @@ class DetailsActivity : Activity() {
         }
         hist = Store.history().associateBy { it.key }
         render()
+        // جاي من المشغّل الصغير (كبّرته): نفس المشغّل يرجع هنا ويكمل بدون إعادة تحميل
+        if (intent.getBooleanExtra("fromDock", false)) adoptDock()
 
         if (Session.api == null) Store.current?.let { Session.open(this, it) }
         val api = Session.api ?: return finish()
@@ -274,6 +276,7 @@ class DetailsActivity : Activity() {
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
         if (fs) { exitFs(); return }           // رجوع بملء الشاشة = تصغير (زي يوتيوب)
+        if (!isTv() && !wide && mini != null) { dock(); return }     // رجوع وهو شغّال (الجوال) = يكمل في المشغّل الصغير
         @Suppress("DEPRECATION")
         super.onBackPressed()
     }
@@ -404,7 +407,8 @@ class DetailsActivity : Activity() {
         }
     }
 
-    private fun backButton() = iconButton(R.drawable.ic_chev_right, "رجوع") { finish() }.apply {
+    @Suppress("DEPRECATION")
+    private fun backButton() = iconButton(R.drawable.ic_chev_right, "رجوع") { onBackPressed() }.apply {
         background = focusBg(normal = 0x66000000, radius = 22)
     }
 
@@ -707,6 +711,7 @@ class DetailsActivity : Activity() {
     private fun play(url: String, key: String, title: String, sub: String, start: Long, type: String) {
         val r = VodReq(url, key, title, sub, type)
         clearBackJob?.cancel()
+        if (MiniDock.active) MiniDock.stop()        // شي ثاني شغّال بالمشغّل الصغير؟ نقفله (السيرفر يسمح باتصال واحد غالباً)
         if (wide) { stopMini(); backToMini = r; openFull(r, start) } else startMini(r, start)
     }
 
@@ -794,7 +799,10 @@ class DetailsActivity : Activity() {
             fullscreenMode = false
             onFullscreen = { if (fs) exitFs() else enterFs() }   // تكبير/تصغير بنفس الصفحة ونفس المشغّل (زي يوتيوب)
         }
-        miniBox = FrameLayout(this).apply {
+        miniBox = DragDownFrame(this).apply {
+            // الجوال عمودي: اسحب المشغّل لتحت = يكمل في المشغّل الصغير تحت وترجع للصفحة اللي قبل (زي يوتيوب)
+            canDrag = { !isTv() && !fs && !wide && !animating && fsPending == 0 }
+            onDocked = { dock() }
             setBackgroundColor(0xFF000000.toInt())
             addView(pv, FrameLayout.LayoutParams(MATCH, MATCH))
             addView(bar, FrameLayout.LayoutParams(MATCH, MATCH))
@@ -938,6 +946,44 @@ class DetailsActivity : Activity() {
         p.playWhenReady = true
         miniJob = scope.launch { saveLoop() }
         return true
+    }
+
+    /** يسلّم المشغّل للمشغّل الصغير تحت (الجوال) ويرجع للصفحة اللي قبل — الفيديو يكمل بدون توقف. */
+    private fun dock() {
+        val p = mini ?: return
+        val r = miniReq ?: return
+        saveMini()
+        miniJob?.cancel(); miniJob = null
+        p.removeListener(miniListener)
+        miniBar?.player = null
+        miniPv?.detachPlayer()
+        val back = Intent(intent).apply {
+            listOf("autoUrl", "autoKey", "autoSub", "autoType", "autoResume", "fromDock").forEach { removeExtra(it) }
+        }
+        MiniDock.handVod(p, r, miniWatching, back)
+        miniWatching = false
+        mini = null; miniReq = null
+        (miniBox?.parent as? ViewGroup)?.removeView(miniBox)
+        miniBox = null; miniPv = null; miniBar = null
+        window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        unlockPortrait()
+        finish()
+        @Suppress("DEPRECATION")
+        overridePendingTransition(0, R.anim.slide_down_out)
+    }
+
+    /** كبّرت المشغّل الصغير: ناخذ نفس المشغّل ونكمل هنا. */
+    private fun adoptDock() {
+        val (p, r, w) = MiniDock.takeVod() ?: return
+        mini = p; miniReq = r; miniWatching = w
+        p.addListener(miniListener)
+        makeMini(p)
+        SeriesQueue.indexOfKey(r.key).takeIf { it >= 0 }?.let { SeriesQueue.index = it; season = SeriesQueue.list[it].season }
+        p.playWhenReady = true
+        window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        miniJob = scope.launch { saveLoop() }
+        hist = Store.history().associateBy { it.key }
+        render()
     }
 
     private fun saveMini() {
