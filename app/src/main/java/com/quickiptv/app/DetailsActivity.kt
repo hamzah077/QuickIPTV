@@ -77,14 +77,37 @@ class DetailsActivity : Activity() {
         kicker = if (series) "مسلسل" else "فيلم"
 
         root = FrameLayout(this).apply { setBackgroundColor(C.BG) }
-        setContentView(root)
+        // الجوال: ورا الصفحة صورة الصفحة اللي قبل — تبان وأنت تسحب الصفحة لتحت (زي يوتيوب)
+        if (!isTv()) {
+            stage = FrameLayout(this).apply { setBackgroundColor(C.BG) }
+            snapView = ImageView(this).apply { scaleType = ImageView.ScaleType.FIT_XY; visibility = View.GONE }
+            shade = View(this).apply { setBackgroundColor(0xFF000000.toInt()); alpha = 0f; visibility = View.GONE }
+            stage!!.addView(snapView, FrameLayout.LayoutParams(MATCH, MATCH))
+            stage!!.addView(shade, FrameLayout.LayoutParams(MATCH, MATCH))
+            stage!!.addView(root, FrameLayout.LayoutParams(MATCH, MATCH))
+            morphTitle = text("", 13.5f, C.TEXT, bold = true).apply { maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END; textDirection = View.TEXT_DIRECTION_FIRST_STRONG }
+            morphSub = text("", 11.5f, C.MUTED).apply { maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END; textDirection = View.TEXT_DIRECTION_FIRST_STRONG }
+            morphInfo = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_VERTICAL; alpha = 0f; visibility = View.GONE
+                addView(morphTitle); addView(morphSub)
+            }
+            stage!!.addView(morphInfo, FrameLayout.LayoutParams(MATCH, dp(68)))
+            setContentView(stage)
+        } else setContentView(root)
         root.onSystemInsets { l, t, r, b ->
             if (l != inL || t != inT || r != inR || b != inB) { inL = l; inT = t; inR = r; inB = b; render() }
         }
         hist = Store.history().associateBy { it.key }
         render()
         // جاي من المشغّل الصغير (كبّرته): نفس المشغّل يرجع هنا ويكمل بدون إعادة تحميل
-        if (intent.getBooleanExtra("fromDock", false)) adoptDock()
+        if (intent.getBooleanExtra("fromDock", false)) {
+            adoptDock()
+            // تبدأ من مكان المشغّل الصغير وتكبر لصفحة كاملة (نفس الحركة بالعكس)
+            if (stage != null && mini != null) {
+                root.alpha = 0f
+                root.post { root.post { morphInfoText(); setMorph(1f); root.alpha = 1f; animateMorph(0f) } }
+            }
+        }
 
         if (Session.api == null) Store.current?.let { Session.open(this, it) }
         val api = Session.api ?: return finish()
@@ -276,7 +299,7 @@ class DetailsActivity : Activity() {
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
         if (fs) { exitFs(); return }           // رجوع بملء الشاشة = تصغير (زي يوتيوب)
-        if (!isTv() && !wide && mini != null) { dock(); return }     // رجوع وهو شغّال (الجوال) = يكمل في المشغّل الصغير
+        if (!isTv() && !wide && mini != null) { if (morphAnim == null) collapseToDock(); return }     // رجوع وهو شغّال (الجوال) = الصفحة تنزل وتصير المشغّل الصغير
         @Suppress("DEPRECATION")
         super.onBackPressed()
     }
@@ -802,7 +825,7 @@ class DetailsActivity : Activity() {
         miniBox = DragDownFrame(this).apply {
             // الجوال عمودي: اسحب المشغّل لتحت = يكمل في المشغّل الصغير تحت وترجع للصفحة اللي قبل (زي يوتيوب)
             canDrag = { !isTv() && !fs && !wide && !animating && fsPending == 0 }
-            onDocked = { dock() }
+            onDrag = { dy, ended -> onPageDrag(dy, ended) }
             setBackgroundColor(0xFF000000.toInt())
             addView(pv, FrameLayout.LayoutParams(MATCH, MATCH))
             addView(bar, FrameLayout.LayoutParams(MATCH, MATCH))
@@ -948,8 +971,103 @@ class DetailsActivity : Activity() {
         return true
     }
 
+    // ---------- سحب الصفحة كاملة لتحت ← تصير المشغّل الصغير (الجوال) ----------
+    private var stage: FrameLayout? = null
+    private var snapView: ImageView? = null
+    private var shade: View? = null
+    private var morphInfo: LinearLayout? = null
+    private var morphTitle: android.widget.TextView? = null
+    private var morphSub: android.widget.TextView? = null
+    private var morphT = 0f
+    private var morphAnim: android.animation.ValueAnimator? = null
+
+    private fun lerp(a: Float, b: Float, t: Float) = a + (b - a) * t
+
+    /** أعلى المشغّل الصغير بالشاشة (فوق الشريط السفلي مباشرة) */
+    private fun miniTop(): Float {
+        val h = root.height.toFloat()
+        val navTop = if (MiniDock.navTop > 0) MiniDock.navTop.toFloat() else h - dp(58) - inB
+        return navTop - dp(68)
+    }
+
+    /** t = 0 صفحة كاملة … 1 المربع الصغير. الصفحة كلها نفس المربع: تنزل وتنقص، والفيديو يصغر لمكانه — بدون تلاشي. */
+    private fun setMorph(t0: Float) {
+        val t = t0.coerceIn(0f, 1f)
+        morphT = t
+        val w = root.width.toFloat(); val h = root.height.toFloat()
+        if (w <= 0f || h <= 0f) return
+        val boxH = dp(68).toFloat()
+        val bh = lerp(h, boxH, t)
+        val radius = lerp(0f, dp(12).toFloat(), t)
+        root.translationY = lerp(0f, miniTop(), t)
+        root.outlineProvider = object : android.view.ViewOutlineProvider() {
+            override fun getOutline(v: View, o: android.graphics.Outline) { o.setRoundRect(0, 0, v.width, bh.toInt(), radius) }
+        }
+        root.clipToOutline = t > 0f
+        root.invalidateOutline()
+        miniBox?.let { b ->
+            val vw = b.width.toFloat()
+            if (vw > 0f) {
+                val s = lerp(1f, dp(100) / vw, t)
+                b.pivotX = 0f; b.pivotY = 0f; b.scaleX = s; b.scaleY = s
+                b.translationX = lerp(0f, w - dp(4) - dp(100), t)          // الفيديو يروح يمين المربع (نفس مكانه بالمشغّل الصغير)
+                b.translationY = lerp(0f, (dp(6) - inT).toFloat(), t)
+            }
+        }
+        miniBar?.alpha = (1f - t * 4f).coerceAtLeast(0f)
+        slotBack?.alpha = (1f - t * 4f).coerceAtLeast(0f)
+        topSlot?.setBackgroundColor(if (t > 0.35f) C.PANEL else 0xFF000000.toInt())
+        val on = t > 0f
+        snapView?.let { sv ->
+            if (on && sv.visibility != View.VISIBLE) { sv.setImageBitmap(PageSnapshot.bitmap); sv.visibility = View.VISIBLE }
+            if (!on) sv.visibility = View.GONE
+        }
+        shade?.let { it.visibility = if (on) View.VISIBLE else View.GONE; it.alpha = (1f - t) * 0.55f }
+        morphInfo?.let { mi ->
+            mi.visibility = if (t > 0.6f) View.VISIBLE else View.GONE
+            mi.alpha = ((t - 0.7f) / 0.3f).coerceIn(0f, 1f)
+            mi.translationY = root.translationY
+            mi.setPadding(dp(14), 0, dp(4) + dp(100) + dp(10), 0)
+        }
+    }
+
+    private fun animateMorph(to: Float, end: (() -> Unit)? = null) {
+        morphAnim?.cancel()
+        morphAnim = android.animation.ValueAnimator.ofFloat(morphT, to).apply {
+            duration = (260 + 160 * kotlin.math.abs(to - morphT)).toLong()
+            interpolator = android.view.animation.DecelerateInterpolator(1.6f)
+            addUpdateListener { setMorph(it.animatedValue as Float) }
+            addListener(object : android.animation.AnimatorListenerAdapter() {
+                override fun onAnimationEnd(a: android.animation.Animator) { morphAnim = null; end?.invoke() }
+            })
+            start()
+        }
+    }
+
+    /** سحب من المشغّل: الصفحة تتبع إصبعك، ولما تترك: ثلث المسافة يكفي عشان تصير مشغّل صغير. */
+    private fun onPageDrag(dy: Float, ended: Boolean) {
+        val range = miniTop().coerceAtLeast(dp(200).toFloat())
+        val t = (dy / range).coerceIn(0f, 1f)
+        if (!ended) { morphAnim?.cancel(); morphInfoText(); setMorph(t); return }
+        if (t > 0.3f) collapseToDock() else animateMorph(0f)
+    }
+
+    private fun morphInfoText() {
+        val r = miniReq ?: return
+        morphTitle?.text = SeriesQueue.name.takeIf { r.type == "episode" && it.isNotEmpty() } ?: r.title
+        morphSub?.text = r.sub
+        morphSub?.visibility = if (r.sub.isBlank()) View.GONE else View.VISIBLE
+    }
+
+    /** الصفحة كلها تنزل وتصير المربع الصغير، وبعدها المشغّل نفسه ينتقل له (بدون توقف). */
+    private fun collapseToDock() {
+        if (stage == null || mini == null) { dock(); return }
+        morphInfoText()
+        animateMorph(1f) { dock(instant = true) }
+    }
+
     /** يسلّم المشغّل للمشغّل الصغير تحت (الجوال) ويرجع للصفحة اللي قبل — الفيديو يكمل بدون توقف. */
-    private fun dock() {
+    private fun dock(instant: Boolean = false) {
         val p = mini ?: return
         val r = miniReq ?: return
         saveMini()
@@ -967,9 +1085,10 @@ class DetailsActivity : Activity() {
         miniBox = null; miniPv = null; miniBar = null
         window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         unlockPortrait()
+        MiniDock.instant = instant
         finish()
         @Suppress("DEPRECATION")
-        overridePendingTransition(0, R.anim.slide_down_out)
+        overridePendingTransition(0, if (instant) 0 else R.anim.slide_down_out)
     }
 
     /** كبّرت المشغّل الصغير: ناخذ نفس المشغّل ونكمل هنا. */

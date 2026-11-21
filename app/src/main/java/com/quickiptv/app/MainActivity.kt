@@ -168,6 +168,10 @@ class MainActivity : Activity() {
         root.addView(content, lp(MATCH, 0, 1f))
         root.addView(buildDock(), lp(MATCH, WRAP))           // المشغّل الصغير (مخفي لين تسحب مشغّل لتحت)
         root.addView(nav, lp(MATCH, WRAP))
+        // مكان الشريط السفلي: صفحة التشغيل تنزل لين فوقه بالضبط (مكان المشغّل الصغير)
+        nav.addOnLayoutChangeListener { v, _, _, _, _, _, _, _, _ ->
+            val loc = IntArray(2); v.getLocationOnScreen(loc); MiniDock.navTop = loc[1]
+        }
         // الشريط السفلي يمتد خلف أزرار الجوال (بنفس لونه) والأزرار نفسها فوقها
         nav.onSystemInsets { _, _, _, b -> nav.setPadding(0, 0, 0, b) }
         // المحتوى ما يدخل تحت الساعة ولا تحت نتوء الكاميرا
@@ -264,7 +268,11 @@ class MainActivity : Activity() {
         dockSub?.text = MiniDock.sub
         dockSub?.visibility = if (MiniDock.sub.isBlank()) View.GONE else View.VISIBLE
         if (dockPv?.player !== p) { dockPv?.player = null; dockPv?.attachSmooth(p) }
-        if (box.visibility != View.VISIBLE) {
+        if (MiniDock.instant) {
+            // الصفحة نزلت لين صارت هي المربع: يظهر بمكانه على طول (بدون حركة ثانية)
+            MiniDock.instant = false
+            box.animate().cancel(); box.alpha = 1f; box.translationY = 0f; box.visibility = View.VISIBLE
+        } else if (box.visibility != View.VISIBLE) {
             box.visibility = View.VISIBLE
             box.alpha = 0f; box.translationY = dp(40).toFloat()
             box.animate().alpha(1f).translationY(0f).setDuration(220).setInterpolator(android.view.animation.DecelerateInterpolator()).start()
@@ -294,9 +302,10 @@ class MainActivity : Activity() {
         }
         val i = MiniDock.reopen ?: return
         dockPv?.player = null
+        dockBox?.visibility = View.INVISIBLE        // صفحة التشغيل تبدأ من مكانه بالضبط وتكبر
         startActivity(Intent(i).putExtra("fromDock", true))
         @Suppress("DEPRECATION")
-        overridePendingTransition(R.anim.slide_up_in, R.anim.stay)
+        overridePendingTransition(0, 0)
     }
 
     /** طالع من صفحة المباشر (لقسم ثاني) والقناة شغّالة؟ تكمل في المشغّل الصغير. */
@@ -470,6 +479,8 @@ class MainActivity : Activity() {
 
     override fun onPause() {
         super.onPause()
+        // صورة للصفحة الحالية: تبان ورا صفحة التشغيل وهي تنسحب لتحت
+        if (!tv) PageSnapshot.take(window.decorView)
         screens[current]?.onHide()
         // طلعت من التطبيق: المشغّل الصغير يوقف (ونحفظ وين وقفت)
         MiniDock.save()

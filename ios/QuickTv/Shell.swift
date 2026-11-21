@@ -43,42 +43,39 @@ enum AppSection: String, CaseIterable, Identifiable {
 struct PhoneShell: View {
     @Environment(PlayerController.self) private var pc
     @Environment(AppModel.self) private var model
-    @Environment(Downloads.self) private var dl
     @State private var tab: AppSection = .home
-    @State private var coverReq: PlayRequest?        // صفحة التشغيل لما تكبّر الصغير وصفحته مو ظاهرة
+    /// أثناء سحب صفحة التشغيل: وين وصلت (0 صفحة كاملة … 1 مشغّل صغير)
+    @State private var dragT: CGFloat?
+
+    /// صفحة التشغيل/المشغّل الصغير ظاهر؟ (فيلم/مسلسل بصفحته، أو أي شي صغّرته)
+    private var panelOn: Bool { pc.req != nil && (pc.watchVod != nil || pc.mini) }
 
     var body: some View {
-        ZStack(alignment: .bottom) {
+        ZStack {
             tabs
-            // المشغّل الصغير فوق الشريط السفلي: الفيديو يكمل وأنت تتنقّل
-            if pc.mini, pc.req != nil, !pc.fullscreen {
-                MiniPlayer { expand() }
-                    .padding(.bottom, 66)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-                    .zIndex(5)
-            }
-            if pc.fullscreen && coverReq == nil { FullscreenPlayer().zIndex(10) }     // (لو صفحة التشغيل مفتوحة فوق، ملء الشاشة يطلع فيها)
-        }
-        .fullScreenCover(item: $coverReq) { r in
-            NavigationStack {
-                coverPage(r)
-                    .toolbar {
-                        ToolbarItem(placement: .topBarLeading) {
-                            Button { withAnimation(.spring(duration: 0.35, bounce: 0.05)) { pc.mini = true } } label: {
-                                Image(systemName: "chevron.down")
-                            }
-                            .accessibilityLabel("تصغير")
-                        }
+            if panelOn {
+                GeometryReader { g in
+                    let ins = g.safeAreaInsets
+                    let W = g.size.width + ins.leading + ins.trailing
+                    let H = g.size.height + ins.top + ins.bottom
+                    let t = dragT ?? (pc.mini ? 1 : 0)
+                    ZStack(alignment: .topLeading) {
+                        // الصفحة اللي تحت تغمق شوي وهي مغطاة، وتوضح كل ما نزلت الصفحة
+                        Color.black.opacity(Double((1 - t) * 0.55)).allowsHitTesting(false)
+                        WatchPanel(W: W, H: H, top: ins.top, bottom: ins.bottom, t: t,
+                                   onDrag: { dy, ended in drag(dy, ended, range: WatchPanel.range(H: H, bottom: ins.bottom)) },
+                                   onExpand: { expand() })
                     }
+                    .frame(width: W, height: H, alignment: .topLeading)
+                    .environment(\.layoutDirection, .leftToRight)      // الحساب بالبكسل من اليسار؛ المحتوى نفسه عربي
+                    .offset(x: -ins.leading, y: -ins.top)
+                }
+                .transition(.move(edge: .bottom))
+                .zIndex(5)
             }
-            .environment(model).environment(pc).environment(dl)
-            .environment(\.layoutDirection, .rightToLeft)
-            .preferredColorScheme(.dark)
-            .tint(.white)
-            .overlay { if pc.fullscreen { FullscreenPlayer() } }
+            if pc.fullscreen { FullscreenPlayer().zIndex(10) }
         }
-        .onChange(of: pc.mini) { _, m in if m { coverReq = nil } }
-        .onChange(of: pc.req == nil) { _, gone in if gone { coverReq = nil } }
+        .animation(.spring(duration: 0.38, bounce: 0.04), value: pc.watchVod?.id)
         // لفّيت الجوال أفقي وهو يشغّل = ملء الشاشة، ورجعته عمودي = يرجع
         .onChange(of: vsize) { _, v in
             if v == .compact, pc.req != nil, !pc.fullscreen { pc.autoFullscreen = true; pc.fullscreen = true }
@@ -88,32 +85,44 @@ struct PhoneShell: View {
 
     @Environment(\.verticalSizeClass) private var vsize
 
-    /// تكبير المشغّل الصغير: صفحته ظاهرة؟ يرجع فيها. وإلا نفتح صفحته فوق.
-    private func expand() {
-        guard let r = pc.req else { return }
-        if pc.hostVisible(r) { withAnimation(.spring(duration: 0.35, bounce: 0.05)) { pc.mini = false } }
-        else { coverReq = r }
+    /// سحب صفحة التشغيل: تتبع الإصبع، ولما تترك: تكمل لأقرب طرف (ثلث المسافة يكفي)
+    private func drag(_ dy: CGFloat, _ ended: Bool, range: CGFloat) {
+        let start: CGFloat = pc.mini ? 1 : 0
+        // المباشر أو بدون صفحة (مثل التحميلات): المربع الصغير ما يكبر لصفحة — يتحرك شوي بس
+        let canPage = pc.watchVod != nil
+        var v = start + dy / range
+        if !canPage { v = max(0.9, v) }
+        v = min(1, max(0, v))
+        guard ended else { dragT = v; return }
+        let toMini = pc.mini ? v > 0.7 : v > 0.3
+        if !canPage && pc.mini && dy < -30 { dragT = nil; expand(); return }
+        withAnimation(.spring(duration: 0.36, bounce: 0.04)) {
+            pc.mini = canPage ? toMini : true
+            dragT = nil
+        }
     }
 
-    @ViewBuilder private func coverPage(_ r: PlayRequest) -> some View {
-        if r.type == "live" {
-            if let ch = model.channels.first(where: { "live:\($0.id)" == r.key }) { LiveView(start: ch) }
-        } else if r.type == "episode" {
-            DetailsView(vod: Vod(id: r.seriesId, name: pc.queue?.name ?? r.title, icon: pc.queue?.image ?? r.image,
-                                 categoryId: "", ext: "", rating: "", isSeries: true, added: 0))
+    /// تكبير المشغّل الصغير: فيلم/مسلسل = صفحته ترجع كاملة، قناة = صفحة المباشر، بدون صفحة = ملء الشاشة
+    private func expand() {
+        guard let r = pc.req else { return }
+        if pc.watchVod != nil {
+            withAnimation(.spring(duration: 0.36, bounce: 0.04)) { pc.mini = false }
+        } else if r.type == "live" {
+            tab = .live
+            withAnimation(.spring(duration: 0.36, bounce: 0.04)) { pc.mini = false }
         } else {
-            DetailsView(vod: Vod(id: String(r.key.dropFirst(6)), name: r.title, icon: r.image, categoryId: "",
-                                 ext: r.url.pathExtension, rating: "", isSeries: false, added: 0))
+            pc.autoFullscreen = false
+            withAnimation { pc.fullscreen = true }
         }
     }
 
     @ViewBuilder private var tabs: some View {
         if #available(iOS 18.0, *) {
-            TabView {
-                Tab(AppSection.home.title, systemImage: AppSection.home.icon) { NavigationStack { HomeView() } }
-                Tab(AppSection.live.title, systemImage: AppSection.live.icon) { NavigationStack { LiveView() } }
-                Tab(AppSection.movies.title, systemImage: AppSection.movies.icon) { NavigationStack { VodGridView(series: false) } }
-                Tab(AppSection.series.title, systemImage: AppSection.series.icon) { NavigationStack { VodGridView(series: true) } }
+            TabView(selection: $tab) {
+                Tab(AppSection.home.title, systemImage: AppSection.home.icon, value: AppSection.home) { NavigationStack { HomeView() } }
+                Tab(AppSection.live.title, systemImage: AppSection.live.icon, value: AppSection.live) { NavigationStack { LiveView() } }
+                Tab(AppSection.movies.title, systemImage: AppSection.movies.icon, value: AppSection.movies) { NavigationStack { VodGridView(series: false) } }
+                Tab(AppSection.series.title, systemImage: AppSection.series.icon, value: AppSection.series) { NavigationStack { VodGridView(series: true) } }
             }
         } else {
             TabView(selection: $tab) {

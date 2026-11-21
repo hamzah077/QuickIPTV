@@ -31,6 +31,10 @@ object MiniDock {
     private var watching = false
     /** الواجهة (الشريط في الصفحة الرئيسية) تتحدّث */
     var onChange: (() -> Unit)? = null
+    /** مكان الشريط السفلي بالشاشة (أعلاه) — المشغّل الصغير يكون فوقه مباشرة */
+    var navTop = 0
+    /** الصفحة وصلت مكان المشغّل الصغير بحركتها: يظهر على طول (بدون حركة ثانية) */
+    var instant = false
 
     val active get() = player != null || live
 
@@ -85,6 +89,24 @@ object MiniDock {
     }
 }
 
+/** صورة للصفحة اللي تحت (قبل ما تفتح صفحة التشغيل) — تبان ورا صفحة التشغيل وهي تنسحب لتحت. */
+object PageSnapshot {
+    var bitmap: android.graphics.Bitmap? = null
+        private set
+
+    fun take(v: android.view.View) {
+        if (v.width <= 0 || v.height <= 0) return
+        runCatching {
+            val s = 0.5f                // نص الدقة: كافي وهي مغطاة جزئياً وخفيف على الذاكرة
+            val b = android.graphics.Bitmap.createBitmap((v.width * s).toInt(), (v.height * s).toInt(), android.graphics.Bitmap.Config.RGB_565)
+            val c = android.graphics.Canvas(b)
+            c.scale(s, s)
+            v.draw(c)
+            bitmap = b
+        }
+    }
+}
+
 /**
  * حاوية المشغّل اللي فوق الصفحة: سحب لتحت = المشغّل يتبع إصبعك ويصغر، ولو سحبت كفاية يروح للشريط الصغير.
  * الضغطات العادية والسحب يمين/يسار (التقديم) تروح للأزرار عادي — نمسك بس السحب لتحت الواضح.
@@ -92,13 +114,15 @@ object MiniDock {
 class DragDownFrame(ctx: Context) : FrameLayout(ctx) {
     var canDrag: () -> Boolean = { false }
     var onDocked: (() -> Unit)? = null
+    /** بدل ما الحاوية تتحرك لحالها: نعطي المسافة للصفحة (تتحرك كلها) — المسافة، وهل خلص السحب */
+    var onDrag: ((Float, Boolean) -> Unit)? = null
     private var downX = 0f
     private var downY = 0f
     private var dragging = false
     private val slop = ViewConfiguration.get(ctx).scaledTouchSlop
 
     override fun onInterceptTouchEvent(e: MotionEvent): Boolean {
-        if (onDocked == null || !canDrag()) return false
+        if ((onDocked == null && onDrag == null) || !canDrag()) return false
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> { downX = e.rawX; downY = e.rawY; dragging = false }
             MotionEvent.ACTION_MOVE -> {
@@ -116,6 +140,13 @@ class DragDownFrame(ctx: Context) : FrameLayout(ctx) {
     override fun onTouchEvent(e: MotionEvent): Boolean {
         if (!dragging) return super.onTouchEvent(e)
         val dy = maxOf(0f, e.rawY - downY)
+        onDrag?.let { f ->
+            when (e.actionMasked) {
+                MotionEvent.ACTION_MOVE -> f(dy, false)
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> { dragging = false; f(if (e.actionMasked == MotionEvent.ACTION_UP) dy else 0f, true) }
+            }
+            return true
+        }
         when (e.actionMasked) {
             MotionEvent.ACTION_MOVE -> {
                 pivotX = width / 2f; pivotY = 0f

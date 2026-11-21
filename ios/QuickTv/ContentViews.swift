@@ -139,6 +139,7 @@ struct LiveView: View {
         guard let api = model.api, let u = api.liveURL(ch.id) else { return }
         current = ch
         pc.mini = false
+        pc.watchVod = nil
         pc.queue = nil
         pc.channels = visible
         pc.play(PlayRequest(url: u, key: "live:\(ch.id)", title: ch.name, sub: "", type: "live", image: ch.icon))
@@ -208,6 +209,9 @@ struct DetailsView: View {
     @Environment(PlayerController.self) private var pc
     let vod: Vod
     var autoplayKey: String? = nil
+    /// داخل صفحة التشغيل (الجوال): المشغّل فوق تابع للصفحة نفسها، هنا التفاصيل والحلقات بس
+    var inPanel = false
+    @Environment(\.dismiss) private var dismiss
 
     @State private var plot = ""
     @State private var meta = ""
@@ -216,6 +220,15 @@ struct DetailsView: View {
     @State private var loaded = false
 
     private var key: String { vod.isSeries ? "series:\(vod.id)" : "movie:\(vod.id)" }
+    /// المشغّل داخل الصفحة: الآيباد بس (الجوال: صفحة التشغيل فوق تعرضه)
+    private var showInline: Bool { !PlayerController.phone && playingHere }
+
+    /// الجوال: التشغيل يفتح صفحة التشغيل فوق كل شي (تنسحب لتحت وتصير مشغّل صغير)، وهالصفحة تسكّر تحتها
+    private func openWatch() {
+        guard PlayerController.phone, !inPanel else { return }
+        withAnimation(.spring(duration: 0.38, bounce: 0.04)) { pc.watchVod = vod; pc.mini = false }
+        Task { try? await Task.sleep(for: .milliseconds(350)); dismiss() }
+    }
     private var playingHere: Bool {
         guard let r = pc.req else { return false }
         return vod.isSeries ? r.seriesId == vod.id : r.key == "movie:\(vod.id)"
@@ -224,10 +237,10 @@ struct DetailsView: View {
     var body: some View {
         VStack(spacing: 0) {
             // المشغّل ثابت فوق (ما يتحرك مع القائمة)
-            if playingHere && !pc.mini { InlinePlayer() }
+            if showInline { InlinePlayer() }
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
-                    if !(playingHere && !pc.mini) {
+                    if !showInline && !inPanel {
                         Poster(url: vod.icon, radius: 0).frame(height: 230).clipped().opacity(0.55)
                     }
                     VStack(alignment: .leading, spacing: 12) {
@@ -244,14 +257,10 @@ struct DetailsView: View {
         }
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
-        .onAppear {
-            pc.hostAppear(key)
-            if playingHere && pc.mini { withAnimation(.spring(duration: 0.35, bounce: 0.05)) { pc.mini = false } }   // رجعت لصفحته: يكبر هنا
-        }
-        // رجعت أو رحت لقسم ثاني وهو شغّال: الجوال = يكمل في المشغّل الصغير تحت، الآيباد = يوقف ويحفظ وين وقفت
+        // الآيباد: رجعت أو رحت لقسم ثاني وهو شغّال = يوقف ويحفظ وين وقفت
+        // (الجوال: التشغيل بصفحته الخاصة فوق كل شي، تسحبها لتحت تصير مشغّل صغير)
         .onDisappear {
-            pc.hostDisappear(key)
-            if playingHere { pc.leftHost() }
+            if !PlayerController.phone, playingHere { pc.leftHost() }
         }
     }
 
@@ -362,6 +371,7 @@ struct DetailsView: View {
         pc.mini = false
         pc.queue = nil
         pc.play(r)
+        openWatch()
     }
 
     private func playEpisode(_ e: Episode) {
@@ -369,7 +379,7 @@ struct DetailsView: View {
         let q = SeriesQueue(seriesId: vod.id, name: vod.name, image: vod.icon, list: all)
         pc.mini = false
         pc.queue = q
-        if let i = q.index(of: "ep:\(e.id)"), let r = q.request(i) { pc.play(r) }
+        if let i = q.index(of: "ep:\(e.id)"), let r = q.request(i) { pc.play(r); openWatch() }
     }
 
     private func load() async {

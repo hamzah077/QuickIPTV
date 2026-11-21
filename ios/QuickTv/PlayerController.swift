@@ -33,8 +33,10 @@ final class PlayerController {
     private(set) var buffering = false
     private(set) var failed: String?
     var fullscreen = false
-    /// المشغّل الصغير تحت (الجوال): سحبت المشغّل لتحت أو طلعت من صفحته وهو شغّال
+    /// المشغّل الصغير تحت (الجوال): سحبت الصفحة لتحت أو طلعت من المباشر وهو شغّال
     var mini = false
+    /// صفحة التشغيل (الجوال): الفيلم/المسلسل اللي صفحته فوق كل شي وتنسحب لتحت وتصير المشغّل الصغير
+    var watchVod: Vod?
     /// الصفحات اللي تعرض المشغّل الحين (عشان التكبير من الصغير يرجع لها لو هي ظاهرة)
     @ObservationIgnored private var hosts: [String: Int] = [:]
     /// دخل ملء الشاشة لأنك لفّيت الجوال (يطلع لما ترجعه عمودي)
@@ -239,6 +241,7 @@ final class PlayerController {
     func stop() {
         saveNow()
         mini = false
+        watchVod = nil
         stopVLC()
         player.pause()
         player.replaceCurrentItem(with: nil)

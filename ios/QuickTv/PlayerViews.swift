@@ -82,6 +82,7 @@ struct PlayerOverlay: View {
     @State private var tapAccum = 0
     @State private var tapReset: Task<Void, Never>?
     @State private var showSettings = false
+    @State private var draggingDown = false
 
     var body: some View {
         ZStack {
@@ -93,14 +94,15 @@ struct PlayerOverlay: View {
             .environment(\.layoutDirection, .leftToRight)
             .gesture(DragGesture(minimumDistance: 30)
             .onChanged { d in
-                // المشغّل الصغير فوق الصفحة: سحب لتحت = يتبع إصبعك ويصغر (زي يوتيوب)
+                // المشغّل فوق الصفحة: سحب لتحت = الصفحة تتبع إصبعك وتصغر (زي يوتيوب)
                 guard compact, let f = onDragDown else { return }
                 let dx = d.translation.width, dy = d.translation.height
-                if dy > 0 && dy > abs(dx) { f(dy, false) }
+                if !draggingDown && dy > 0 && dy > abs(dx) { draggingDown = true }
+                if draggingDown { f(max(0, dy), false) }
             }
             .onEnded { d in
                 let dx = d.translation.width, dy = d.translation.height
-                if compact, let f = onDragDown, dy > 0, dy > abs(dx) { f(dy, true); return }
+                if draggingDown, let f = onDragDown { draggingDown = false; f(max(0, dy), true); return }
                 if !compact && dy > 110 && abs(dx) < 80 { onFullscreen(); return }          // سحب لتحت = تصغير
                 guard abs(dx) > 90, abs(dy) < 60, pc.isLive || pc.queue != nil else { return }
                 if dx < 0 { pc.learnManualNext(); pc.next() } else { pc.prev() }         // سحب = الحلقة/القناة التالية أو السابقة
@@ -152,6 +154,8 @@ struct PlayerOverlay: View {
                 HStack(spacing: 10) {
                     if !compact {
                         iconButton("chevron.down") { onFullscreen() }
+                    } else if let f = onDragDown, PlayerController.phone {
+                        iconButton("chevron.down") { f(10_000, true) }          // صفحة التشغيل: تصغير للمشغّل الصغير
                     }
                     Text(titleLine).font(compact ? .footnote.weight(.semibold) : .subheadline.weight(.semibold)).lineLimit(1)
                     Spacer()
@@ -374,59 +378,6 @@ extension InlinePlayer {
     }
 }
 
-// MARK: - المشغّل الصغير تحت (الجوال): الفيديو يكمل وأنت تتنقّل — اضغطه أو اسحبه لفوق يرجع كامل
-
-struct MiniPlayer: View {
-    @Environment(PlayerController.self) private var pc
-    var onExpand: () -> Void
-    @State private var drag: CGFloat = 0
-
-    var body: some View {
-        HStack(spacing: 10) {
-            ZStack {
-                Color.black
-                VideoSurface(active: pc.mini && !pc.fullscreen)
-            }
-            .frame(width: 100, height: 56)
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-            VStack(alignment: .leading, spacing: 2) {
-                Text(pc.req?.title ?? "").font(.subheadline.weight(.semibold)).lineLimit(1)
-                if let s = pc.req?.sub, !s.isEmpty { Text(s).font(.caption).foregroundStyle(Theme.muted).lineLimit(1) }
-            }
-            Spacer(minLength: 4)
-            Button { pc.togglePlay() } label: {
-                Image(systemName: pc.isPlaying ? "pause.fill" : "play.fill").font(.title3).frame(width: 40, height: 44)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(pc.isPlaying ? "إيقاف مؤقت" : "تشغيل")
-            Button { withAnimation(.easeOut(duration: 0.2)) { pc.stop() } } label: {
-                Image(systemName: "xmark").font(.headline).frame(width: 40, height: 44)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("إغلاق")
-        }
-        .padding(6)
-        .padding(.trailing, 2)
-        .foregroundStyle(.white)
-        .glass(16)
-        .overlay(alignment: .bottom) {
-            if !pc.isLive && pc.duration > 0 {
-                ProgressLine(value: pc.position / pc.duration, height: 2).padding(.horizontal, 12)
-            }
-        }
-        .contentShape(Rectangle())
-        .onTapGesture { onExpand() }
-        .gesture(DragGesture(minimumDistance: 10)
-            .onChanged { d in drag = min(0, d.translation.height) }
-            .onEnded { d in
-                if d.translation.height < -40 { onExpand() }
-                withAnimation(.spring(duration: 0.3)) { drag = 0 }
-            })
-        .offset(y: drag * 0.6)
-        .padding(.horizontal, 12)
-    }
-}
-
 // MARK: - ملء الشاشة: يكبر من مكان المشغّل الصغير ويلف ربع لفّة (زي يوتيوب) — مرسوم داخل التطبيق = سلس 100٪
 
 struct FullscreenPlayer: View {
@@ -470,7 +421,7 @@ struct FullscreenPlayer: View {
             pc.fullscreen = false
             pc.autoFullscreen = false
             // ما فيه صفحة تعرضه (مثل التشغيل من التحميلات)؟ يكمل في المشغّل الصغير تحت
-            if PlayerController.phone, let r = pc.req, !pc.hostVisible(r), !pc.mini { pc.mini = true }
+            if PlayerController.phone, let r = pc.req, pc.watchVod == nil, !pc.hostVisible(r), !pc.mini { pc.mini = true }
             Orientation.unlockWhenPortrait()            // يرجع يلف عادي بس لما تمسك الجوال عمودي
         }
     }

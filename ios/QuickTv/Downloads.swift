@@ -260,6 +260,7 @@ struct DownloadsView: View {
     private func play(_ it: Downloads.Item) {
         guard it.status == "done", let u = dl.localURL(it.key) else { return }
         pc.queue = nil
+        pc.watchVod = nil; pc.mini = false
         pc.play(PlayRequest(url: u, key: it.key, title: it.title, sub: it.sub, type: it.type, image: it.image,
                             seriesId: it.seriesId, season: it.season, epNum: it.epNum, start: AppModel.shared.resumePoint(it.key)))
         withAnimation { pc.fullscreen = true }
