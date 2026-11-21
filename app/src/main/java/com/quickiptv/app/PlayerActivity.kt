@@ -177,6 +177,7 @@ class PlayerActivity : Activity() {
         if (handedOff) window.attributes = window.attributes.also { it.rotationAnimation = android.view.WindowManager.LayoutParams.ROTATION_ANIMATION_JUMPCUT }
         player = (if (live) LivePlayer.get(this) else if (handedOff) VodHandoff.take()!! else buildPlayer(this, false)).also { p ->
             pv.attachSmooth(p)        // الصورة تنتقل أول ما تجهز الشاشة الكبيرة (بدون ومضة سودا)
+            if (live) LivePlayer.watch(pv)      // الصوت شغّال والصورة واقفة؟ يصلّحها تلقائياً
             p.addListener(listener)
             bar.player = p
         }
@@ -524,6 +525,7 @@ class PlayerActivity : Activity() {
         if (watchingVod) Downloads.setWatching("vod", false)
         scope.cancel()
         player?.removeListener(listener)
+        LivePlayer.unwatch(pv)
         pv.detachPlayer()
         if (live) { if (!returnsToPreview) LivePlayer.release() } else player?.release()
         player = null

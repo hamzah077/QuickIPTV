@@ -134,7 +134,7 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
                 addState(intArrayOf(), rounded(0x00000000, a.dpf(12f)))
             }
             screen.setOnFocusChangeListener { v, has ->
-                v.animate().scaleX(if (has) 1.03f else 1f).scaleY(if (has) 1.03f else 1f).setDuration(140).start()
+                // بدون تكبير: تغيير حجم شاشة الفيديو وهي شغّالة يجمّد الصورة على بعض الشاشات (الإطار يكفي)
                 if (has) bar.poke()
             }
             screen.setOnClickListener { current?.let { openFull(it) } }
@@ -326,6 +326,7 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
             player = p
             p.addListener(listener)
             playerView.attachSmooth(p)       // أول ما تجهز الشاشة الصغيرة (بدون ومضة سودا)
+            LivePlayer.watch(playerView)     // الصوت شغّال والصورة واقفة؟ يصلّحها تلقائياً
             bar.player = p
         }
         return p
@@ -361,6 +362,7 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
     /** ملء الشاشة بدون انقطاع: نفس المشغّل ينتقل للشاشة الكبيرة (ما يعيد الاتصال). */
     private fun openFull(ch: Channel) {
         LivePlayer.keepForPreview = true
+        LivePlayer.unwatch(playerView)
         player?.removeListener(listener)      // الصورة تبقى هنا لين الشاشة الكبيرة تاخذها (بدون فراغ = بدون بافرينج)
         player = null
         bar.player = null
@@ -369,6 +371,7 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
     }
 
     private fun detach() {
+        LivePlayer.unwatch(playerView)
         player?.removeListener(listener)
         player = null
         playerView.detachPlayer()
