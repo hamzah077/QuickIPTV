@@ -57,6 +57,9 @@ fun buildPlayer(ctx: Context, live: Boolean): ExoPlayer {
     val renderers = DefaultRenderersFactory(ctx)
         .setEnableDecoderFallback(true)
         .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF)
+    // شاشات التلفزيون: الوضع غير المتزامن لفك الفيديو (الافتراضي بأندرويد 12+) يجمّد الصورة على بعض
+    // الشاشات والصوت يكمل — نرجع للوضع العادي المجرّب على كل الأجهزة
+    if (Device.autoTv(ctx)) renderers.forceDisableMediaCodecAsynchronousQueueing()
     return ExoPlayer.Builder(ctx, renderers)
         .setMediaSourceFactory(FastSourceFactory(ctx, MemoRedirects(http)))   // http + ملفات محمّلة، بداية سريعة لبث TS/HLS
         .setLoadControl(load)
@@ -196,7 +199,53 @@ object LivePlayer {
         }
     }
 
+    // ---------- حارس الصورة: الصوت شغّال والصورة واقفة؟ نصلّحها تلقائياً ----------
+    /** الشاشة اللي تعرض البث الحين (المعاينة أو ملء الشاشة) */
+    private var view: androidx.media3.ui.PlayerView? = null
+    private var lastFrames = -1
+    private var stuckChecks = 0
+    private var fixes = 0
+    private var fixedUrl = ""
+
+    /** الشاشة صارت تعرض البث: نبدأ نراقب إن الصور تتحرك */
+    fun watch(pv: androidx.media3.ui.PlayerView) {
+        view = pv
+        lastFrames = -1; stuckChecks = 0
+        main.removeCallbacks(guard); main.postDelayed(guard, 2000)
+    }
+
+    fun unwatch(pv: androidx.media3.ui.PlayerView) {
+        if (view === pv) { view = null; main.removeCallbacks(guard) }
+    }
+
+    @OptIn(UnstableApi::class)
+    private val guard: Runnable = object : Runnable {
+        override fun run() {
+            val p = player ?: return
+            val pv = view ?: return
+            main.postDelayed(this, 1500)
+            if (url != fixedUrl) { fixedUrl = url; fixes = 0 }
+            // نراقب بس وهو فعلاً يشتغل (مو موقّف ولا يحمّل) وفيه فيديو
+            if (!p.isPlaying || p.videoFormat == null || !pv.isShown) { lastFrames = -1; stuckChecks = 0; return }
+            val c = p.videoDecoderCounters ?: return
+            c.ensureUpdated()
+            val n = c.renderedOutputBufferCount
+            if (n != lastFrames) { lastFrames = n; stuckChecks = 0; return }
+            if (++stuckChecks < 2 || fixes >= 3) return          // ~3 ثواني بدون صور جديدة
+            stuckChecks = 0; fixes++
+            if (fixes == 1) {
+                // أول محاولة: نعيد ربط الشاشة (بدون ما ينقطع الصوت)
+                pv.player = null; pv.player = p
+            } else {
+                // ما نفع: نعيد الاتصال بنفس القناة
+                val u = url
+                if (u.isNotEmpty()) play(pv.context, u, force = true)
+            }
+        }
+    }
+
     fun release() {
+        main.removeCallbacks(guard); view = null
         pending?.let { main.removeCallbacks(it) }; pending = null
         Downloads.setWatching("live", false)
         player?.release()
