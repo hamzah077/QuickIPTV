@@ -176,7 +176,8 @@ fun Context.text(
     lines: Int = 1,
 ): TextView = TextView(this).apply {
     text = s
-    setTextSize(TypedValue.COMPLEX_UNIT_SP, if (isTv()) size * 1.18f else size)
+    // التلفزيون من 3 أمتار: كل الكتابات أكبر، وأصغر كتابة 13 (إلا الأرقام داخل الأيقونات)
+    setTextSize(TypedValue.COMPLEX_UNIT_SP, if (isTv()) (if (size >= 9.5f) maxOf(size * 1.18f, 13f) else size * 1.18f) else size)
     setTextColor(color)
     typeface = if (bold) Fonts.bold else Fonts.regular
     if (lines > 0) {

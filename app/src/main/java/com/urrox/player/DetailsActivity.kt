@@ -527,6 +527,8 @@ class DetailsActivity : Activity() {
     @Suppress("DEPRECATION")
     private fun backButton() = iconButton(R.drawable.ic_chev_right, "رجوع") { onBackPressed() }.apply {
         background = focusBg(normal = 0x66000000, radius = 22)
+        // التلفزيون: بدون زر رجوع على الشاشة — زر الرجوع بالريموت يكفي (دليل Google للتلفزيون)
+        if (isTv()) { visibility = View.GONE; isFocusable = false }
     }
 
     private fun poster() = ImageView(this).apply {
@@ -650,7 +652,7 @@ class DetailsActivity : Activity() {
         val col = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             layoutDirection = View.LAYOUT_DIRECTION_RTL
-            setPaddingRelative(inR + dp(40), inT + dp(28), 0, inB + dp(20))
+            setPaddingRelative(inR + dp(48), inT + dp(28), 0, inB + dp(27))
         }
         root.addView(col, FrameLayout.LayoutParams(MATCH, MATCH))
 
@@ -672,7 +674,7 @@ class DetailsActivity : Activity() {
         seasonChips()?.let { col.addView(it, lp(MATCH, WRAP).apply { bottomMargin = dp(6) }) }
         if (!loaded) col.addView(loadingView())
         episodes.header = null
-        col.addView(episodeList().apply { setPaddingRelative(0, dp(4), dp(40), dp(4)) }, lp(MATCH, WRAP))
+        col.addView(episodeList().apply { setPaddingRelative(0, dp(4), dp(48), dp(4)) }, lp(MATCH, WRAP))
         (seriesResume()?.first)?.let { showHeroEp(it) } ?: run { heroEpT?.visibility = View.GONE }
     }
 

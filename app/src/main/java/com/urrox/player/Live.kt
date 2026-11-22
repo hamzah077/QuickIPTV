@@ -245,7 +245,7 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
         val sw = a.resources.displayMetrics.widthPixels
         root.addView(shade, FrameLayout.LayoutParams((sw * 0.62f).toInt(), MATCH, Gravity.START))
         shadeV = shade
-        val p = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL; setPadding(a.dp(14), a.dp(16), a.dp(10), a.dp(8)) }
+        val p = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL; setPadding(a.dp(14), a.dp(27), a.dp(10), a.dp(27)) }
         // التصنيفات كبسولات بسطر واحد فوق القنوات
         catList.layoutManager = SmoothLM(a, LinearLayoutManager.HORIZONTAL)
         catList.clipToPadding = false
@@ -260,7 +260,7 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
         }
         info.addView(title.apply { setPadding(0, 0, 0, a.dp(2)); textDirection = View.TEXT_DIRECTION_FIRST_STRONG })
         info.addView(nowText.apply { setPadding(0, 0, 0, 0) })
-        root.addView(info, FrameLayout.LayoutParams(WRAP, WRAP, Gravity.BOTTOM or Gravity.END).apply { setMargins(a.dp(24), 0, a.dp(24), a.dp(20)) })
+        root.addView(info, FrameLayout.LayoutParams(WRAP, WRAP, Gravity.BOTTOM or Gravity.END).apply { setMargins(a.dp(48), 0, a.dp(48), a.dp(27)) })
         infoBox = info
         // لما اللوحة مخفية: التركيز على الصفحة نفسها (عشان أي زر يرجّع اللوحة)
         root.isFocusable = true

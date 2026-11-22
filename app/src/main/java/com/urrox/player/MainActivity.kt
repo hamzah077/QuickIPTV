@@ -149,7 +149,8 @@ class MainActivity : Activity() {
             nav.setPaddingRelative(dp(26), dp(16), dp(10), dp(16))
             nav.clipToPadding = false
             // حواف آمنة: بعض التلفزيونات تقص أطراف الصورة
-            content.setPadding(0, dp(18), dp(28), dp(14))
+            // حواف آمنة (دليل Google: ~48 من الجنب و27 من فوق وتحت) — بعض التلفزيونات تقص أطراف الصورة
+            content.setPadding(0, dp(27), dp(48), dp(27))
             root.addView(content, FrameLayout.LayoutParams(MATCH, MATCH).apply { marginStart = dp(RAIL_W) })
             root.addView(nav, FrameLayout.LayoutParams(WRAP, MATCH, Gravity.START))
             root.padForSystemBars()

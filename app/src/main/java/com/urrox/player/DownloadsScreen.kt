@@ -61,6 +61,7 @@ class DownloadsScreen(private val a: MainActivity) : Screen {
         val head = a.listRow(R.drawable.ic_chev_right, "التحميلات", chevron = false) { a.show("settings") }
         (head.getChildAt(2) as? LinearLayout)?.let { (it.getChildAt(0) as? TextView)?.apply { textSize = 20f; typeface = Fonts.bold } }
         col.addView(head); first = head
+        if (a.tv) col.addView(a.text("OK = تشغيل · ضغطة طويلة على أي تحميل = خيارات (إيقاف، حذف…)", 13f, C.MUTED).apply { setPadding(a.dp(16), a.dp(2), a.dp(16), a.dp(10)) })
 
         val all = items()
         val active = all.count { it.active }
@@ -153,6 +154,13 @@ class DownloadsScreen(private val a: MainActivity) : Screen {
         r.addView(c, lp(0, WRAP, 1f))
         val btns = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         r.addView(btns, lp(WRAP, WRAP).apply { marginStart = a.dp(6) })
+        if (a.tv) {
+            // التلفزيون: بدون أزرار داخل الصف (دليل Google) — OK = تشغيل (أو الخيارات)، ضغطة طويلة = الخيارات
+            btns.visibility = View.GONE
+            r.isFocusable = true; r.isClickable = true; r.background = a.focusBg(radius = 0); r.tag = "row:${d.id}"
+            r.setOnClickListener { if (d.status == "completed") play(d) else tvMenu(d.title, btns) }
+            r.setOnLongClickListener { tvMenu(d.title, btns); true }
+        }
         rows[d.id] = RowRefs(b, st, sz, btns, "")
         fill(d)
         val wrap = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL }
@@ -220,6 +228,7 @@ class DownloadsScreen(private val a: MainActivity) : Screen {
         h.addView(c, lp(0, WRAP, 1f))
         val btns = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         h.addView(btns, lp(WRAP, WRAP).apply { marginStart = a.dp(6) })
+        if (a.tv) { btns.visibility = View.GONE; h.setOnLongClickListener { tvMenu("${d0.group} — الموسم ${d0.season}", btns); true } }
         h.addView(a.icon(if (open) R.drawable.ic_chev_left else R.drawable.ic_chev_right, C.FAINT, 18).apply { rotation = if (open) -90f else 0f })
         card.addView(h)
         groups[key] = GroupRefs(key, b, meta, st, btns, "")
@@ -287,6 +296,16 @@ class DownloadsScreen(private val a: MainActivity) : Screen {
             .putExtra("sub", if (ep) "الموسم ${d.season} · الحلقة ${d.epNum}" else "")
             .putExtra("image", d.poster).putExtra("type", if (ep) "episode" else "movie")
             .putExtra("seriesId", d.seriesId).putExtra("start", Store.resumePoint(d.key)))
+    }
+
+    /** التلفزيون: خيارات الصف (نفس أزراره المخفية) بقائمة */
+    private fun tvMenu(title: String, btns: LinearLayout) {
+        val acts = (0 until btns.childCount).map { btns.getChildAt(it) }.filter { it.contentDescription != null }
+        if (acts.isEmpty()) return
+        AlertDialog.Builder(a, android.R.style.Theme_Material_Dialog_Alert)
+            .setTitle(title)
+            .setItems(acts.map { it.contentDescription.toString() }.toTypedArray()) { _, w -> acts[w].performClick() }
+            .show()
     }
 
     private fun confirm(msg: String, ok: () -> Unit) {
