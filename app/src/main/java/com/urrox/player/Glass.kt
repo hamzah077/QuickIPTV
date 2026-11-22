@@ -136,6 +136,30 @@ object Glass {
         addState(intArrayOf(), Pane(host, radiusPx, backdrop = backdrop))
     }
 
+    /**
+     * تحديد البطاقات (بوستر/متابعة) بليكود جلاس: بدون خلفية رمادية خلف البطاقة —
+     * الصورة نفسها تاخذ حافة زجاج بيضاء وتوهّج ناعم، والبطاقة تكبر وتطلع فوق جيرانها، والاسم يبقى أبيض.
+     */
+    fun focusCard(root: View, box: android.widget.FrameLayout, radiusPx: Float, scale: Float = 1.08f) {
+        root.background = null
+        root.setTag(R.id.own_focus_anim, true)
+        box.isDuplicateParentStateEnabled = true
+        box.foreground = android.graphics.drawable.StateListDrawable().apply {
+            setEnterFadeDuration(120); setExitFadeDuration(120)
+            addState(intArrayOf(android.R.attr.state_focused), android.graphics.drawable.GradientDrawable().apply {
+                cornerRadius = radiusPx; setColor(0x14FFFFFF); setStroke((root.resources.displayMetrics.density * 2.5f).toInt(), 0xF2FFFFFF.toInt())
+            })
+            addState(intArrayOf(), android.graphics.drawable.ColorDrawable(0))
+        }
+        val d = root.resources.displayMetrics.density
+        root.setOnFocusChangeListener { v, has ->
+            v.raiseOnFocus(has)                       // فوق اللي جنبه
+            if (android.os.Build.VERSION.SDK_INT >= 28) { box.outlineSpotShadowColor = 0xE6FFFFFF.toInt(); box.outlineAmbientShadowColor = 0x99FFFFFF.toInt() }
+            box.animate().translationZ(if (has) 12 * d else 0f).setDuration(140).start()      // توهّج أبيض حول الصورة
+            v.animate().scaleX(if (has) scale else 1f).scaleY(if (has) scale else 1f).setDuration(140).start()
+        }
+    }
+
     /** المحدد: «عدسة زجاج» مضيئة — أبيض ونصّها الفوق أفتح، بحافة بيضاء. */
     fun lens(radiusPx: Float): Drawable = android.graphics.drawable.GradientDrawable(
         android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0xFFFFFFFF.toInt(), 0xEBE6EAF4.toInt())).apply {

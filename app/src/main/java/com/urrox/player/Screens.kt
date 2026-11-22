@@ -458,6 +458,7 @@ class HomeScreen(private val a: MainActivity) : Screen, EpgAware {
         if (h.dur > 0) box.addView(progressLine((h.pos.toFloat() / h.dur).coerceIn(0f, 1f), C.ACCENT),
             FrameLayout.LayoutParams(MATCH, a.dp(3), Gravity.BOTTOM))
         card.addView(box, lp(MATCH, ih))
+        if (Glass.on && a.tv) Glass.focusCard(card, box, a.dpf(9f))
         card.addView(a.text(h.title, 13.5f, C.TEXT, bold = true).apply { setPadding(a.dp(2), a.dp(7), a.dp(2), 0); textDirection = View.TEXT_DIRECTION_FIRST_STRONG })
         val sub = listOfNotNull(
             h.sub.replace("الموسم ", "م").replace(" · الحلقة ", " ح").takeIf { it.isNotEmpty() },

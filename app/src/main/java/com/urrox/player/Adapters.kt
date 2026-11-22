@@ -152,6 +152,7 @@ class PosterAdapter(
         box.addView(img); box.addView(badge)
         val title = text("", 12.5f, C.TEXT, lines = 2).apply { setPadding(dp(2), dp(6), dp(2), 0); textDirection = View.TEXT_DIRECTION_FIRST_STRONG }
         root.addView(box); root.addView(title)
+        if (Glass.on && isTv()) { box.background = rounded(C.SURFACE2, dpf(12f)); Glass.focusCard(root, box, dpf(12f)) }
         if (viewType < 0) {
             // «المزيد»: نفس مقاس البوستر، دائرة + بالنص
             box.background = rounded(0x1FFFFFFF, dpf(9f))
