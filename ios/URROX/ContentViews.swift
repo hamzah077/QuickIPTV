@@ -233,20 +233,15 @@ struct DetailsView: View {
 
     private var key: String { vod.isSeries ? "series:\(vod.id)" : "movie:\(vod.id)" }
     /// المشغّل داخل الصفحة: الآيباد بس (الجوال: صفحة التشغيل فوق تعرضه)
-    private var showInline: Bool { !PlayerController.phone && playingHere }
+    /// الجوال (زي الأندرويد): الفيديو يشتغل مكان الصورة فوق بنفس الصفحة — داخل اللوحة الفيديو تبع اللوحة نفسها
+    private var showInline: Bool { playingHere && !inPanel }
 
     /// الجوال: التشغيل يفتح صفحة التشغيل فوق كل شي (تنسحب لتحت وتصير مشغّل صغير)، وهالصفحة تسكّر تحتها
     private func openWatch() {
         guard PlayerController.phone, !inPanel else { return }
-        // المشغّل يشتغل مكان الصورة فوق على طول — بدون لوحة تطلع من تحت
+        // الفيديو يشتغل مكان الصورة بنفس الصفحة (الصفحة ما تتغيّر) — لو كان بالنافذة العائمة يرجع هنا
         var t = Transaction(); t.disablesAnimations = true
-        withTransaction(t) { pc.watchVod = vod; pc.mini = false }
-        // الصفحة اللي تحت (نفس الصفحة) تتقفل بدون حركة لأن المشغّل صار فوقها بنفس الشكل
-        Task {
-            try? await Task.sleep(for: .milliseconds(200))
-            var t2 = Transaction(); t2.disablesAnimations = true
-            withTransaction(t2) { dismiss() }
-        }
+        withTransaction(t) { pc.watchVod = nil; pc.mini = false }
     }
     private var playingHere: Bool {
         guard let r = pc.req else { return false }
@@ -280,6 +275,18 @@ struct DetailsView: View {
         // (الجوال: التشغيل بصفحته الخاصة فوق كل شي، تسحبها لتحت تصير مشغّل صغير)
         .onDisappear {
             if !PlayerController.phone, playingHere { pc.leftHost() }
+            // الجوال: رجعت من الصفحة وهو شغّال = يصير نافذة عائمة (زي الأندرويد)، وتكبيرها يفتح صفحته
+            else if PlayerController.phone, !inPanel, playingHere, !pc.mini, !pc.fullscreen {
+                pc.watchVod = vod
+                withAnimation(PanelHost.ease(1)) { pc.mini = true }
+            }
+        }
+        // سحبت الفيديو لتحت وصار نافذة عائمة: الصفحة تتقفل والنافذة تكمل فوق التطبيق
+        .onChange(of: pc.mini) { _, m in
+            guard m, PlayerController.phone, !inPanel, playingHere, pc.watchVod == nil else { return }
+            var t = Transaction(); t.disablesAnimations = true
+            withTransaction(t) { pc.watchVod = vod }
+            withTransaction(t) { dismiss() }
         }
     }
 
