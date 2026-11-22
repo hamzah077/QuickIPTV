@@ -118,7 +118,7 @@ fun Context.focusBg(
             addState(intArrayOf(android.R.attr.state_selected), rounded(0x2EFFFFFF, r, 0x59FFFFFF, dp(2)))
             addState(intArrayOf(android.R.attr.state_activated), rounded(0x2EFFFFFF, r, 0x59FFFFFF, dp(2)))
             addState(intArrayOf(), if (normal == Color.TRANSPARENT) rounded(Color.TRANSPARENT, r) else rounded(0x1AFFFFFF, r, 0x26FFFFFF, (resources.displayMetrics.density * 1.5f).toInt()))
-            return states
+            return@apply
         }
         if (tv) addState(intArrayOf(android.R.attr.state_focused), rounded(C.FOCUS, r))
         else addState(intArrayOf(android.R.attr.state_focused), rounded(0x2EFFFFFF, r, 0x8CFFFFFF.toInt(), sw))
