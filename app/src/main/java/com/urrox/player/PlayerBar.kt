@@ -708,7 +708,7 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
         val p = player ?: return
         val speed = p.playbackParameters.speed
         val items = arrayOf("سرعة التشغيل  (${fmtSpeed(speed)})", "الصوت", "الترجمة")
-        AlertDialog.Builder(act, android.R.style.Theme_Material_Dialog_Alert).setTitle("الإعدادات").setItems(items) { _, w ->
+        AlertDialog.Builder(act, dialogTheme).setTitle("الإعدادات").setItems(items) { _, w ->
             when (w) { 0 -> speedDialog(); 1 -> tracksDialog(MC.TRACK_TYPE_AUDIO); 2 -> tracksDialog(MC.TRACK_TYPE_TEXT) }
         }.show()
     }
@@ -719,7 +719,7 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
         val p = player ?: return
         val speeds = floatArrayOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f)
         val cur = speeds.indexOfFirst { it == p.playbackParameters.speed }
-        AlertDialog.Builder(act, android.R.style.Theme_Material_Dialog_Alert).setTitle("سرعة التشغيل")
+        AlertDialog.Builder(act, dialogTheme).setTitle("سرعة التشغيل")
             .setSingleChoiceItems(speeds.map { fmtSpeed(it) }.toTypedArray(), cur) { d, i -> p.setPlaybackSpeed(speeds[i]); d.dismiss() }
             .show()
     }
@@ -748,7 +748,7 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
             android.widget.Toast.makeText(act, if (type == MC.TRACK_TYPE_AUDIO) "ما فيه أكثر من صوت" else "ما فيه ترجمة", android.widget.Toast.LENGTH_SHORT).show()
             return
         }
-        AlertDialog.Builder(act, android.R.style.Theme_Material_Dialog_Alert).setTitle(if (type == MC.TRACK_TYPE_AUDIO) "الصوت" else "الترجمة")
+        AlertDialog.Builder(act, dialogTheme).setTitle(if (type == MC.TRACK_TYPE_AUDIO) "الصوت" else "الترجمة")
             .setSingleChoiceItems(names.toTypedArray(), checked) { d, i ->
                 val pick = picks[i]
                 val b = p.trackSelectionParameters.buildUpon()
@@ -1152,7 +1152,7 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
     private val nfSpeed = nfSpeedPair.first
 
     private fun audioSubs() {
-        AlertDialog.Builder(act, android.R.style.Theme_Material_Dialog_Alert).setTitle("الصوت والترجمة")
+        AlertDialog.Builder(act, dialogTheme).setTitle("الصوت والترجمة")
             .setItems(arrayOf("الصوت", "الترجمة")) { _, w -> tracksDialog(if (w == 0) MC.TRACK_TYPE_AUDIO else MC.TRACK_TYPE_TEXT) }
             .show()
     }
@@ -1179,6 +1179,13 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
             panel.setPadding(act.dp(26), act.dp(16), act.dp(26), act.dp(16))
             (panel.layoutParams as? LayoutParams)?.let { it.setMargins(act.dp(40), 0, act.dp(40), act.dp(22)); panel.layoutParams = it }
             for (b in listOf<View>(nfNext, nfEps, nfAudio, nfSpeed)) b.background = Glass.button(b, act.dpf(21f), backdrop = false)
+            // «تخطي المقدمة» و«الحلقة التالية»: كبسولة فاتحة، والمحددة عدسة بيضاء بحافة (نفس لغة التحديد)
+            for (f in listOf<View>(introFloat, nextFloat)) f.background = android.graphics.drawable.StateListDrawable().apply {
+                setEnterFadeDuration(110); setExitFadeDuration(110)
+                addState(intArrayOf(android.R.attr.state_pressed), Glass.pressedLens(act.dpf(22f)))
+                addState(intArrayOf(android.R.attr.state_focused), Glass.lens(act.dpf(22f)))
+                addState(intArrayOf(), rounded(0xD9EEF0F4.toInt(), act.dpf(22f)))
+            }
         }
         panel.addView(nfBtns, LinearLayout.LayoutParams(WRAP, WRAP).apply { topMargin = act.dp(16); gravity = Gravity.CENTER_HORIZONTAL })
         if (epsView.parent == null) addView(epsView, LayoutParams(MATCH, MATCH))

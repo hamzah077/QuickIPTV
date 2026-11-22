@@ -64,6 +64,7 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Glass.tv = isTv()
         window.decorView.layoutDirection = View.LAYOUT_DIRECTION_RTL
         edgeToEdge()
         installFocusMotion()
@@ -648,7 +649,7 @@ class MainActivity : Activity() {
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (event.action == KeyEvent.ACTION_DOWN && !tv && Store.uiMode == "auto" && !Store.tvAsked && event.keyCode in DPAD_KEYS) {
             Store.tvAsked = true
-            android.app.AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+            android.app.AlertDialog.Builder(this, dialogTheme)
                 .setTitle("واجهة التلفزيون")
                 .setMessage("شكلك تستخدم ريموت. تبغى واجهة التلفزيون؟ (خط أكبر وتنقّل بالأسهم)\nتقدر تغيّرها بعدين من الإعدادات ← شكل الواجهة.")
                 .setPositiveButton("نعم") { _, _ -> setUiMode("tv") }

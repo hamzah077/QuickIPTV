@@ -77,6 +77,7 @@ class PlayerActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Glass.tv = isTv()
         installFocusMotion()
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         // ملء الشاشة لشي جديد: المشغّل الصغير يتقفل (اتصال واحد بالسيرفر)

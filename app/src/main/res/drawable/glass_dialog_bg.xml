@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- ليكود جلاس: نافذة منبثقة = زجاج كثيف (غامق شبه شفاف) بزوايا 28 وحافة واضحة -->
+<inset xmlns:android="http://schemas.android.com/apk/res/android" android:inset="16dp">
+    <shape android:shape="rectangle">
+        <solid android:color="#EB14161C" />
+        <corners android:radius="28dp" />
+        <stroke android:width="2dp" android:color="#47FFFFFF" />
+    </shape>
+</inset>

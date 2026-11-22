@@ -21,8 +21,13 @@ import java.lang.ref.WeakReference
  * عشان ما يثقّل أجهزة التلفزيون: الضبابية تنحسب مرة وحدة لكل صورة خلفية (نسخة صغيرة 96×54 ممَوّهة)،
  * وكل لوح زجاج يرسم بس الجزء اللي وراه منها + لون أبيض شفاف + حافة لامعة. بدون صورة = زجاج شفاف عادي.
  */
+/** ثيم النوافذ المنبثقة: ليكود جلاس = لوحة زجاج كثيف، وإلا نوافذ أندرويد الغامقة. */
+val dialogTheme: Int get() = if (Glass.on) R.style.GlassDialog else android.R.style.Theme_Material_Dialog_Alert
+
 object Glass {
-    val on get() = Store.tvTheme == "glass"
+    /** الجهاز تلفزيون (يتحدد مع فتح كل صفحة): الثيم للتلفزيون بس. */
+    var tv = false
+    val on get() = tv && Store.tvTheme == "glass"
 
     /** الصورة الممَوّهة الحالية (بحجم الشاشة كلها). */
     var blurred: Bitmap? = null

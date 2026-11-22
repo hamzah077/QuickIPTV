@@ -302,21 +302,21 @@ class DownloadsScreen(private val a: MainActivity) : Screen {
     private fun tvMenu(title: String, btns: LinearLayout) {
         val acts = (0 until btns.childCount).map { btns.getChildAt(it) }.filter { it.contentDescription != null }
         if (acts.isEmpty()) return
-        AlertDialog.Builder(a, android.R.style.Theme_Material_Dialog_Alert)
+        AlertDialog.Builder(a, dialogTheme)
             .setTitle(title)
             .setItems(acts.map { it.contentDescription.toString() }.toTypedArray()) { _, w -> acts[w].performClick() }
             .show()
     }
 
     private fun confirm(msg: String, ok: () -> Unit) {
-        AlertDialog.Builder(a, android.R.style.Theme_Material_Dialog_Alert)
+        AlertDialog.Builder(a, dialogTheme)
             .setMessage(msg).setPositiveButton("نعم") { _, _ -> ok() }.setNegativeButton("لا", null).show()
     }
 
     private fun chooseConnections() {
         val opts = arrayOf(1, 2, 4, 6, 8)
         val labels = opts.map { if (it == 1) "متوقف (اتصال واحد)" else "$it اتصالات" }.toTypedArray()
-        AlertDialog.Builder(a, android.R.style.Theme_Material_Dialog_Alert)
+        AlertDialog.Builder(a, dialogTheme)
             .setTitle("مسرّع التحميل")
             .setSingleChoiceItems(labels, opts.indexOf(Downloads.connections).coerceAtLeast(0)) { dlg, w -> Downloads.connections = opts[w]; dlg.dismiss(); rebuild() }
             .show()
@@ -324,7 +324,7 @@ class DownloadsScreen(private val a: MainActivity) : Screen {
 
     private fun chooseParallel() {
         val opts = arrayOf("1", "2", "3", "4")
-        AlertDialog.Builder(a, android.R.style.Theme_Material_Dialog_Alert)
+        AlertDialog.Builder(a, dialogTheme)
             .setTitle("كم ملف يتحمّل بنفس الوقت؟")
             .setSingleChoiceItems(opts, Downloads.maxParallel - 1) { dlg, w -> Downloads.maxParallel = w + 1; dlg.dismiss(); rebuild() }
             .show()

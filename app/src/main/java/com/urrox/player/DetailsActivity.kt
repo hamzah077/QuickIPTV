@@ -67,6 +67,7 @@ class DetailsActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Glass.tv = isTv()
         window.decorView.layoutDirection = View.LAYOUT_DIRECTION_RTL
         edgeToEdge()
         installFocusMotion()
@@ -880,6 +881,8 @@ class DetailsActivity : Activity() {
             }
             val sub = text("", 11.5f, C.MUTED, lines = 1).apply { setPadding(dp(2), dp(2), dp(2), 0) }
             card.addView(title, lp(MATCH, WRAP)); card.addView(sub, lp(MATCH, WRAP))
+            // ليكود جلاس: التحديد إطار أبيض على الصورة (والبطاقة تكبر) — والاسم تحت على زجاج
+            if (Glass.on) Glass.focusCard(card, frame, dpf(8f), scale = 1.06f)
             return VH(card, thumb, title, sub, bar, dl)
         }
 
@@ -900,7 +903,8 @@ class DetailsActivity : Activity() {
             holder.row.tag = "ep:${e.id}"
             // الحلقة الحالية (شغّالة الحين أو آخر وحدة شفتها): خلفية مميّزة وإطار
             // الحلقة الحالية: رمادي خفيف بنفس ستايل التطبيق (والتحديد بالريموت يبقى تحديد التطبيق العادي)
-            holder.row.background = if (isTv()) focusBg(radius = 12, normal = if (current) 0x1FFFFFFF else 0)      // التلفزيون: نفس تحديد القائمة الجانبية
+            holder.row.background = if (isTv() && Glass.on && tvCards) rounded(if (current) 0x2EFFFFFF else 0x14FFFFFF, dpf(14f), if (current) 0x59FFFFFF else 0x26FFFFFF, dp(2))
+            else if (isTv()) focusBg(radius = 12, normal = if (current) 0x1FFFFFFF else 0)      // التلفزيون: نفس تحديد القائمة الجانبية
             else if (current) android.graphics.drawable.LayerDrawable(arrayOf(
                 focusBg(radius = 10, normal = 0x1FFFFFFF),
                 rounded(0x00000000, dpf(10f), 0x38FFFFFF, dp(1))))
@@ -1004,7 +1008,7 @@ class DetailsActivity : Activity() {
             d == null -> { addEpisode(e); askNotify() }
             d.status == "downloading" || d.status == "queued" -> Downloads.pause(d.id)
             d.status == "paused" -> Downloads.resume(d.id)
-            d.status == "completed" -> AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+            d.status == "completed" -> AlertDialog.Builder(this, dialogTheme)
                 .setMessage("الحلقة محمّلة وتشتغل بدون إنترنت.\nحذفها من الجهاز؟")
                 .setPositiveButton("حذف") { _, _ -> Downloads.remove(d.id) }
                 .setNegativeButton("إلغاء", null).show()

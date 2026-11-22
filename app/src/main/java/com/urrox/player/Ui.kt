@@ -117,7 +117,14 @@ fun Context.focusBg(
             addState(intArrayOf(android.R.attr.state_focused), Glass.lens(r))
             addState(intArrayOf(android.R.attr.state_selected), rounded(0x2EFFFFFF, r, 0x59FFFFFF, dp(2)))
             addState(intArrayOf(android.R.attr.state_activated), rounded(0x2EFFFFFF, r, 0x59FFFFFF, dp(2)))
-            addState(intArrayOf(), if (normal == Color.TRANSPARENT) rounded(Color.TRANSPARENT, r) else rounded(0x1AFFFFFF, r, 0x26FFFFFF, (resources.displayMetrics.density * 1.5f).toInt()))
+            // العادي: شفاف يبقى شفاف — والملوّن ينقسم: «مختار» (أبيض قوي/لون أساسي) = زجاج أوضح، والباقي زجاج خفيف
+            val a8 = normal ushr 24
+            val strong = normal == C.PRIMARY || ((normal and 0xFFFFFF) == 0xFFFFFF && a8 >= 0x26)
+            addState(intArrayOf(), when {
+                normal == Color.TRANSPARENT -> rounded(Color.TRANSPARENT, r)
+                strong -> rounded(0x2EFFFFFF, r, 0x59FFFFFF, dp(2))
+                else -> rounded(0x1AFFFFFF, r, 0x26FFFFFF, (resources.displayMetrics.density * 1.5f).toInt())
+            })
             return@apply
         }
         if (tv) addState(intArrayOf(android.R.attr.state_focused), rounded(C.FOCUS, r))
@@ -213,6 +220,8 @@ fun Context.sectionHeader(t: String): TextView = text(t, 12.5f, C.MUTED).apply {
 
 /** خط فاصل رفيع. */
 fun Context.divider(): View = View(this).apply {
+    // ليكود جلاس (التلفزيون): بدل الخط مسافة بين الصفوف الزجاج
+    if (isTv() && Glass.on) { layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(8)); return@apply }
     setBackgroundColor(C.BORDER)
     layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1)
 }
@@ -248,7 +257,8 @@ fun Context.listRow(
     if (onClick != null) {
         isFocusable = true
         isClickable = true
-        background = focusBg(radius = if (isTv()) 12 else 0)        // التلفزيون: صف مدوّر بنفس تحديد القائمة الجانبية
+        // التلفزيون: صف مدوّر بنفس تحديد القائمة الجانبية — ليكود جلاس: كل صف زجاج خفيف بحافة، والمحدد عدسة
+        background = if (isTv() && Glass.on) focusBg(normal = 0x1AFFFFFF, radius = 16) else focusBg(radius = if (isTv()) 12 else 0)
         setOnClickListener { onClick() }
         pressScale(0.985f)
     }

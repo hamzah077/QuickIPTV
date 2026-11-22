@@ -43,7 +43,8 @@ class ChannelAdapter(
             layoutParams = RecyclerView.LayoutParams(MATCH, dp(62)).apply { bottomMargin = dp(2) }
             pressScale(0.98f)
             setPadding(dp(10), 0, dp(10), 0)
-            background = focusBg()
+            // ليكود جلاس (التلفزيون): كل قناة صف زجاج خفيف (المحددة عدسة)
+            background = if (isTv() && Glass.on) focusBg(normal = 0x14FFFFFF, radius = 16) else focusBg()
             isFocusable = true
             isClickable = true
             isLongClickable = true

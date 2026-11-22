@@ -246,17 +246,30 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
         root.addView(shade, FrameLayout.LayoutParams((sw * 0.62f).toInt(), MATCH, Gravity.START))
         shadeV = shade
         val p = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL; setPadding(a.dp(14), a.dp(27), a.dp(10), a.dp(27)) }
+        if (Glass.on) {
+            // ليكود جلاس: لوحة القنوات زجاج كثيف عائم فوق البث (والتظليل أخف)
+            p.background = Glass.Pane(p, a.dpf(28f), tint = 0x14FFFFFF, backdrop = false, frost = 0xD914161C.toInt())
+            p.setPadding(a.dp(14), a.dp(18), a.dp(14), a.dp(18))
+            shade.alpha = 0.55f
+        }
         // التصنيفات كبسولات بسطر واحد فوق القنوات
         catList.layoutManager = SmoothLM(a, LinearLayoutManager.HORIZONTAL)
         catList.clipToPadding = false
         p.addView(catList, lp(MATCH, a.dp(44)).apply { bottomMargin = a.dp(8) })
         p.addView(chList, lp(MATCH, 0, 1f))
-        root.addView(p, FrameLayout.LayoutParams((sw * 0.36f).toInt(), MATCH, Gravity.START))
+        root.addView(p, FrameLayout.LayoutParams((sw * 0.36f).toInt(), MATCH, Gravity.START).apply {
+            if (Glass.on) setMargins(a.dp(16), a.dp(20), a.dp(16), a.dp(20))
+        })
         panel = p
         val info = LinearLayout(a).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(a.dp(14), a.dp(10), a.dp(14), a.dp(10))
             background = rounded(bg or 0xCC000000.toInt(), a.dpf(12f))
+        }
+        if (Glass.on) {
+            // شريط البرنامج الحالي: زجاج داكن عائم
+            info.background = Glass.Pane(info, a.dpf(22f), dark = true)
+            info.setPadding(a.dp(20), a.dp(12), a.dp(20), a.dp(12))
         }
         info.addView(title.apply { setPadding(0, 0, 0, a.dp(2)); textDirection = View.TEXT_DIRECTION_FIRST_STRONG })
         info.addView(nowText.apply { setPadding(0, 0, 0, 0) })
@@ -617,7 +630,7 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
     private fun channelMenu(ch: Channel) {
         val fav = Store.isFav("live", ch.id)
         val items = arrayOf("تشغيل ملء الشاشة", if (fav) "إزالة من المفضلة" else "إضافة للمفضلة", "ربط دليل البرامج…")
-        AlertDialog.Builder(a, android.R.style.Theme_Material_Dialog_Alert)
+        AlertDialog.Builder(a, dialogTheme)
             .setTitle(ch.name)
             .setItems(items) { _, w ->
                 when (w) {
@@ -754,7 +767,7 @@ fun remapDialog(a: MainActivity, ch: Channel, done: () -> Unit) {
     val ad = ArrayAdapter(a, android.R.layout.simple_list_item_1, shown.map { label(it) }.toMutableList())
     val list = ListView(a).apply { adapter = ad }
     col.addView(list, lp(MATCH, a.dp(320)))
-    val dlg = AlertDialog.Builder(a, android.R.style.Theme_Material_Dialog_Alert)
+    val dlg = AlertDialog.Builder(a, dialogTheme)
         .setTitle("ربط دليل البرامج: ${ch.name}")
         .setView(col)
         .setPositiveButton("رجوع للتلقائي") { _, _ -> Store.setEpgMap(ch.id, null); done() }

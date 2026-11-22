@@ -742,7 +742,7 @@ class SettingsScreen(private val a: MainActivity) : Screen {
         col.addView(a.sectionHeader("عن التطبيق"))
         add(a.listRow(R.drawable.ic_info, "URROX PLAYER", "1.0", chevron = false))
         add(a.listRow(R.drawable.ic_logout, "تسجيل خروج", chevron = false, danger = true) {
-            AlertDialog.Builder(a, android.R.style.Theme_Material_Dialog_Alert)
+            AlertDialog.Builder(a, dialogTheme)
                 .setMessage("حذف الحساب من الجهاز؟")
                 .setPositiveButton("حذف") { _, _ -> acc?.let { Store.removeAccount(it.id) }; Store.current?.let { a.enter(it, true) } ?: a.showLogin() }
                 .setNegativeButton("إلغاء", null).show()
@@ -752,7 +752,7 @@ class SettingsScreen(private val a: MainActivity) : Screen {
     private fun chooseUiMode() {
         val keys = arrayOf("auto", "phone", "tv")
         val opts = arrayOf("تلقائي (موصى به)", "جوال", "تلفزيون")
-        AlertDialog.Builder(a, android.R.style.Theme_Material_Dialog_Alert)
+        AlertDialog.Builder(a, dialogTheme)
             .setTitle("شكل الواجهة")
             .setSingleChoiceItems(opts, keys.indexOf(Store.uiMode).coerceAtLeast(0)) { d, w ->
                 d.dismiss()
@@ -764,7 +764,7 @@ class SettingsScreen(private val a: MainActivity) : Screen {
 
     private fun chooseAutoUpdate() {
         val days = intArrayOf(0, 1, 2, 3, 7, 30)
-        AlertDialog.Builder(a, android.R.style.Theme_Material_Dialog_Alert)
+        AlertDialog.Builder(a, dialogTheme)
             .setTitle("التحديث التلقائي للقوائم")
             .setSingleChoiceItems(days.map { autoName(it) }.toTypedArray(), days.indexOf(Store.autoUpdateDays).coerceAtLeast(0)) { d, w ->
                 d.dismiss()
@@ -777,7 +777,7 @@ class SettingsScreen(private val a: MainActivity) : Screen {
     private fun chooseTvTheme() {
         val keys = listOf("netflix", "glass")
         val opts = arrayOf("نتفلكس (الافتراضي)", "ليكود جلاس")
-        AlertDialog.Builder(a, android.R.style.Theme_Material_Dialog_Alert)
+        AlertDialog.Builder(a, dialogTheme)
             .setTitle("ثيم التلفزيون")
             .setSingleChoiceItems(opts, keys.indexOf(Store.tvTheme).coerceAtLeast(0)) { d, w ->
                 d.dismiss()
@@ -790,7 +790,7 @@ class SettingsScreen(private val a: MainActivity) : Screen {
     private fun chooseLiveStyle() {
         val keys = arrayOf("a", "c", "z")
         val opts = keys.map { liveStyleName(it) + if (it == "a") " (الافتراضي)" else "" }.toTypedArray()
-        AlertDialog.Builder(a, android.R.style.Theme_Material_Dialog_Alert)
+        AlertDialog.Builder(a, dialogTheme)
             .setTitle("شكل صفحة المباشر")
             .setSingleChoiceItems(opts, keys.indexOf(Store.liveStyle).coerceAtLeast(0)) { d, w ->
                 d.dismiss()
@@ -800,7 +800,7 @@ class SettingsScreen(private val a: MainActivity) : Screen {
 
     private fun chooseFormat() {
         val opts = arrayOf("HLS (موصى به)", "MPEG-TS")
-        AlertDialog.Builder(a, android.R.style.Theme_Material_Dialog_Alert)
+        AlertDialog.Builder(a, dialogTheme)
             .setTitle("صيغة البث المباشر")
             .setSingleChoiceItems(opts, if (Store.liveFormat == "ts") 1 else 0) { d, w ->
                 Store.liveFormat = if (w == 1) "ts" else "m3u8"; d.dismiss(); onShow()
@@ -831,7 +831,7 @@ class EpgScreen(private val a: MainActivity) : Screen {
         col.addView(a.sectionHeader("روابط الدليل (XMLTV)"))
         Store.epgUrls.forEach { u ->
             val row = a.listRow(R.drawable.ic_link, u.removePrefix("https://").removePrefix("http://"), chevron = false) {
-                AlertDialog.Builder(a, android.R.style.Theme_Material_Dialog_Alert)
+                AlertDialog.Builder(a, dialogTheme)
                     .setMessage("حذف هذا الرابط؟\n$u")
                     .setPositiveButton("حذف") { _, _ -> Store.epgUrls = Store.epgUrls - u; onShow() }
                     .setNegativeButton("إلغاء", null).show()
@@ -854,7 +854,7 @@ class EpgScreen(private val a: MainActivity) : Screen {
 
     private fun addUrl() {
         val input = a.field("https://…/epg.xml.gz")
-        AlertDialog.Builder(a, android.R.style.Theme_Material_Dialog_Alert)
+        AlertDialog.Builder(a, dialogTheme)
             .setTitle("إضافة رابط دليل")
             .setView(input)
             .setPositiveButton("إضافة") { _, _ ->
@@ -929,7 +929,7 @@ fun pickDialog(a: MainActivity, title: String, items: List<Pair<String, String>>
         shown.map { (id, n) -> if (id == selected) "✓  $n" else n }.toMutableList())
     val list = android.widget.ListView(a).apply { adapter = ad }
     col.addView(list, lp(MATCH, a.dp(380)))
-    val dlg = AlertDialog.Builder(a, android.R.style.Theme_Material_Dialog_Alert).setTitle(title).setView(col)
+    val dlg = AlertDialog.Builder(a, dialogTheme).setTitle(title).setView(col)
         .setNegativeButton("إغلاق", null).create()
     list.setOnItemClickListener { _, _, pos, _ -> onPick(shown[pos].first); dlg.dismiss() }
     q.addTextChangedListener(object : android.text.TextWatcher {
