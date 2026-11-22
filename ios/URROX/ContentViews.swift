@@ -514,7 +514,7 @@ struct TopBar: ViewModifier {
                 }
                 .sheet(isPresented: $showSettings) {
                     NavigationStack {
-                        SettingsView().toolbar {
+                        SettingsView(inSheet: true).toolbar {
                             ToolbarItem(placement: .confirmationAction) { Button("تم") { showSettings = false } }
                         }
                     }
@@ -579,35 +579,40 @@ struct HistoryView: View {
 struct SettingsView: View {
     @Environment(AppModel.self) private var model
     @State private var adding = false
+    /// مفتوحة كنافذة من تحت (الجوال): نافذة التحديث لازم تطلع داخلها عشان تبان فوقها
+    var inSheet = false
 
     var body: some View {
         List {
             SwiftUI.Section("الحسابات") {
                 ForEach(model.accounts) { a in
                     Button { model.open(a); Task { await model.loadAll(force: true) } } label: {
-                        HStack { Text(a.name); Spacer(); if a.id == model.currentId { Image(systemName: "checkmark") } }
+                        HStack { Label(a.name, systemImage: "person.crop.circle"); Spacer(); if a.id == model.currentId { Image(systemName: "checkmark") } }
                     }
                     .swipeActions { Button("حذف", role: .destructive) { model.removeAccount(a) } }
                 }
-                Button("إضافة حساب") { adding = true }
+                Button { adding = true } label: { Label("إضافة حساب", systemImage: "person.badge.plus") }
             }
             SwiftUI.Section {
                 NavigationLink { DownloadsView() } label: { Label("التحميلات", systemImage: "arrow.down.circle") }
                 NavigationLink { HistoryView() } label: { Label("سجل المشاهدة", systemImage: "clock.arrow.circlepath") }
-                Button("تحديث المحتوى") { model.popupUpdate() }
-                Picker("التحديث التلقائي للقوائم", selection: Bindable(model).autoUpdateDays) {
+                Button { model.popupUpdate() } label: { Label("تحديث القوائم", systemImage: "arrow.clockwise") }
+                Picker(selection: Bindable(model).autoUpdateDays) {
                     Text("إيقاف").tag(0)
                     Text("كل يوم").tag(1)
                     Text("كل يومين").tag(2)
                     Text("كل 3 أيام").tag(3)
                     Text("كل أسبوع").tag(7)
                     Text("كل شهر").tag(30)
-                }
+                } label: { Label("التحديث التلقائي للقوائم", systemImage: "clock.arrow.2.circlepath") }
             }
             SwiftUI.Section { LabeledContent("URROX PLAYER", value: "1.0") }
         }
         .scrollContentBackground(.hidden)
         .navigationTitle("الإعدادات")
         .sheet(isPresented: $adding) { LoginView() }
+        // نافذة تحديث القوائم فوق الإعدادات
+        .overlay { if inSheet && model.updPopup { UpdatePopup().transition(.opacity) } }
+        .animation(.easeOut(duration: 0.2), value: model.updPopup)
     }
 }
