@@ -95,6 +95,7 @@ struct WatchPanel: View {
             }
             .frame(width: fullW, height: fullH)
             .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
+            .scaleEffect(1 + pc.fsPull * 0.12)              // سحب لفوق: يكبر شوي مع إصبعك (زي يوتيوب)
             .scaleEffect(s, anchor: .topLeading)
             .frame(width: v.width, height: v.height, alignment: .topLeading)
             .overlay { if t >= 1 { floatingOverlay } }           // أزرار النافذة بمقاسها الحقيقي (مو مصغّرة)

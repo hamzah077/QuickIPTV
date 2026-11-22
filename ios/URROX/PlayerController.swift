@@ -264,6 +264,8 @@ final class PlayerController {
     var rate: Float = 1
     /// السحب لفوق للتكبير: 0…1 وأنت تسحب (nil = ما فيه سحب)
     var fsDrag: CGFloat?
+    /// سحب لفوق (زي يوتيوب): الفيديو يكبر شوي مع إصبعك، وتتركه = ملء الشاشة
+    var fsPull: CGFloat = 0
     var playRate: Float { isLive ? 1 : rate }
     func setRate(_ r: Float) {
         rate = r

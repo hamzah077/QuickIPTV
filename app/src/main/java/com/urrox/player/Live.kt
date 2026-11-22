@@ -456,48 +456,20 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
 
     /** ملء الشاشة بدون انقطاع: نفس المشغّل ينتقل للشاشة الكبيرة (ما يعيد الاتصال). */
     // ---------- السحب لفوق: تكبير ولف مع الإصبع ثم ملء الشاشة ----------
-    private var fsG: FloatArray? = null          // [المسافة لنص الشاشة، التكبير النهائي]
-    private var fsClipped: List<ViewGroup> = emptyList()
 
     private fun liveFsDrag(up: Float, ended: Boolean) {
         val sc = screenBox
-        if (fsG == null) {
-            if (ended) return
-            val dec = a.window.decorView
-            if (sc.width == 0 || dec.width == 0) return
-            val loc = IntArray(2); sc.getLocationInWindow(loc)
-            val cy = loc[1] + sc.height / 2f
-            fsG = floatArrayOf(dec.height / 2f - cy, minOf(dec.height.toFloat() / sc.width, dec.width.toFloat() / sc.height))
-            // الشاشة تطلع فوق كل شي وهي تكبر
-            val ps = mutableListOf<ViewGroup>(); var v = sc.parent
-            while (v is ViewGroup) { if (v.clipChildren) { v.clipChildren = false; ps.add(v) }; v = v.parent }
-            fsClipped = ps
-            sc.translationZ = a.dp(24).toFloat()
+        // زي يوتيوب: الشاشة تكبر شوي مع إصبعك، وتتركها بعد سحبة واضحة = ملء الشاشة
+        if (!ended) {
+            sc.animate().cancel()
+            sc.pivotX = sc.width / 2f; sc.pivotY = sc.height / 2f
+            val s = 1f + 0.12f * (up / (up + a.dp(160)))
+            sc.scaleX = s; sc.scaleY = s
+            return
         }
-        val g = fsG ?: return
-        val p = (up / (a.window.decorView.height * 0.42f)).coerceIn(0f, 1f)
-        fun apply(x: Float) {
-            sc.translationY = g[0] * x; sc.rotation = 90f * x
-            val s = 1f + (g[1] - 1f) * x; sc.scaleX = s; sc.scaleY = s
-        }
-        if (!ended) { apply(p); return }
-        fsG = null
-        val commit = p > 0.33f
-        val anim = android.animation.ValueAnimator.ofFloat(p, if (commit) 1f else 0f).apply {
-            duration = if (commit) (420 * (1f - p) + 120).toLong() else (300 * p + 160).toLong()
-            interpolator = android.view.animation.PathInterpolator(0.2f, 0.8f, 0.2f, 1f)
-            addUpdateListener { apply(it.animatedValue as Float) }
-        }
-        anim.addListener(object : android.animation.AnimatorListenerAdapter() {
-            override fun onAnimationEnd(x: android.animation.Animator) {
-                val reset = {
-                    sc.translationY = 0f; sc.rotation = 0f; sc.scaleX = 1f; sc.scaleY = 1f; sc.translationZ = 0f
-                    fsClipped.forEach { it.clipChildren = true }; fsClipped = emptyList()
-                }
-                if (commit) { current?.let { openFull(it) }; sc.postDelayed({ reset() }, 400) } else reset()
-            }
-        })
-        anim.start()
+        sc.animate().scaleX(1f).scaleY(1f).setDuration(if (up > a.dp(60)) 160 else 320)
+            .setInterpolator(if (up > a.dp(60)) android.view.animation.DecelerateInterpolator() else android.view.animation.OvershootInterpolator(1.6f)).start()
+        if (up > a.dp(60)) current?.let { openFull(it) }
     }
 
     private fun openFull(ch: Channel) {

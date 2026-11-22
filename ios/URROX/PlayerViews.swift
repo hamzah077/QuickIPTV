@@ -108,9 +108,10 @@ struct PlayerOverlay: View {
                 // سحب لفوق = الفيديو يكبر ويلف مع إصبعك لين يملى الشاشة (نفس زر التكبير)
                 if !draggingDown && !draggingUp && PlayerController.phone && dy < 0 && -dy > abs(dx) { draggingUp = true }
                 if draggingUp {
-                    let p = min(1, max(0, -dy / (UIScreen.main.bounds.height * 0.42)))
+                    // زي يوتيوب: الفيديو يكبر شوي مع إصبعك (بمقاومة، يثقل كل ما سحبت أكثر)
+                    let up = max(0, -dy)
                     var t = Transaction(); t.disablesAnimations = true
-                    withTransaction(t) { pc.fsDrag = p; if !pc.fullscreen { pc.fullscreen = true } }
+                    withTransaction(t) { pc.fsPull = min(1, up / (up + 160)) }
                     return
                 }
                 // المشغّل فوق الصفحة: سحب لتحت = الصفحة تتبع إصبعك وتصغر (زي يوتيوب)
@@ -121,18 +122,16 @@ struct PlayerOverlay: View {
             .onEnded { d in
                 let dx = d.translation.width, dy = d.translation.height
                 if draggingUp {
-                    // تركته بعد ثلث المسافة = يكمل لملء الشاشة، قبلها = يرجع مكانه
+                    // زي يوتيوب: سحبة واضحة لفوق (أو سريعة) = ملء الشاشة، خفيفة = يرجع مكانه
                     draggingUp = false
-                    let p = pc.fsDrag ?? 0
-                    let commit = p > 0.33
-                    withAnimation(.timingCurve(0.2, 0.8, 0.2, 1, duration: commit ? 0.12 + 0.42 * (1 - p) : 0.16 + 0.3 * p)) {
-                        pc.fsDrag = commit ? 1 : 0
-                    } completion: {
+                    let fast = d.predictedEndTranslation.height < -220
+                    if -dy > 60 || fast {
                         var t = Transaction(); t.disablesAnimations = true
-                        withTransaction(t) {
-                            pc.fsDrag = nil
-                            if !commit { pc.fullscreen = false }
-                        }
+                        withTransaction(t) { pc.fsPull = 0 }
+                        pc.autoFullscreen = false
+                        pc.fullscreen = true                         // نفس حركة زر التكبير (يكبر ويلف)
+                    } else {
+                        withAnimation(.spring(duration: 0.35, bounce: 0.3)) { pc.fsPull = 0 }
                     }
                     return
                 }
@@ -513,6 +512,7 @@ struct InlinePlayer: View {
         }
         .aspectRatio(16 / 9, contentMode: .fit)
         .clipShape(RoundedRectangle(cornerRadius: r, style: .continuous))
+        .scaleEffect(1 + pc.fsPull * 0.12)              // سحب لفوق: يكبر شوي مع إصبعك (زي يوتيوب)
         .scaleEffect(s, anchor: .topLeading)
         .offset(x: (to.minX - from.minX) * t, y: (to.minY - from.minY) * t)
         .zIndex(t > 0 ? 10 : 0)

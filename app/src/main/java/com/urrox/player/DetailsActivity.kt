@@ -222,7 +222,7 @@ class DetailsActivity : Activity() {
     }
 
     // ---------- التكبير مع الإصبع: تسحب المشغّل لفوق = يكبر ويلف شوي شوي، وتتركه = يكمل أو يرجع ----------
-    private class FsDrag(val box: View, val dim: View, val ty: Float, val scale: Float)
+    private class FsDrag(val box: View, val dim: View, val ty: Float, val scale: Float, val s0: Float)
     private var fsDrag: FsDrag? = null
     private var fsAnim: android.animation.ValueAnimator? = null
 
@@ -244,14 +244,14 @@ class DetailsActivity : Activity() {
         root.addView(d, FrameLayout.LayoutParams(MATCH, MATCH)); dim = d
         slot.bringToFront()
         miniBar?.visibility = View.INVISIBLE; slotBack?.visibility = View.INVISIBLE
-        return FsDrag(box, d, H / 2f - cy, scale)
+        return FsDrag(box, d, H / 2f - cy, scale, box.scaleX)
     }
 
     /** 0 = مكانه عمودي، 1 = يملى الشاشة بالعرض */
     private fun fsApply(g: FsDrag, p: Float) {
         g.box.translationY = g.ty * p
         g.box.rotation = 90f * p
-        val sc = 1f + (g.scale - 1f) * p
+        val sc = g.s0 + (g.scale - g.s0) * p          // يبدأ من حجمه الحالي (لو كبّر شوي وأنت تسحب)
         g.box.scaleX = sc; g.box.scaleY = sc
         g.dim.alpha = minOf(1f, p * 1.3f)
     }
@@ -295,13 +295,19 @@ class DetailsActivity : Activity() {
         }
     }
 
+    /** زي يوتيوب: تسحب لفوق = الفيديو يكبر شوي مع إصبعك (بمقاومة)، تتركه بعد سحبة واضحة = ملء الشاشة بنفس حركة زر التكبير */
     private fun onFsDrag(up: Float, ended: Boolean) {
-        if (fsDrag == null) { if (ended) return; fsDrag = fsBegin() ?: return }
-        val g = fsDrag ?: return
-        val p = (up / (root.height * 0.42f)).coerceIn(0f, 1f)
-        if (!ended) { fsApply(g, p); return }
-        fsDrag = null
-        if (p > 0.33f) fsCommit(g, p) else fsCancel(g, p)
+        val box = miniBox ?: return
+        if (!ended) {
+            box.animate().cancel()
+            box.pivotX = box.width / 2f; box.pivotY = box.height / 2f
+            val s = 1f + 0.12f * (up / (up + dp(160)))
+            box.scaleX = s; box.scaleY = s
+            return
+        }
+        if (up > dp(60)) { enterFs(); return }
+        box.animate().scaleX(1f).scaleY(1f).setDuration(320)
+            .setInterpolator(android.view.animation.OvershootInterpolator(1.6f)).start()
     }
 
     /** يرجع عمودي: الشاشة تلف فوراً والفيديو يبدأ بنفس شكله الأفقي ثم يلف ويصغر لمكانه. */
