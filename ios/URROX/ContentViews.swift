@@ -487,7 +487,9 @@ struct TopBar: ViewModifier {
                 content.toolbar {
                     ToolbarItemGroup(placement: .topBarTrailing) {
                         NavigationLink { DownloadsView() } label: { Image(systemName: "arrow.down.circle") }
+                            .accessibilityLabel("التحميلات")
                         NavigationLink { SettingsView() } label: { Image(systemName: "gearshape") }
+                            .accessibilityLabel("الإعدادات")
                     }
                 }
             } else {
@@ -533,6 +535,7 @@ struct TopBar: ViewModifier {
                 .onSubmit { focused = false }
             if !query.isEmpty {
                 Button { query = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(Theme.muted) }
+                    .accessibilityLabel("مسح البحث")
                     .buttonStyle(.plain)
             }
         }

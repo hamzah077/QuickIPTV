@@ -124,6 +124,10 @@ struct WatchPanel: View {
             Color.black.opacity(showBtns ? 0.32 : 0.001)        // التظليل (شبه شفاف لما يختفي عشان يستقبل اللمس)
                 .contentShape(Rectangle())
                 .onTapGesture { onExpand() }
+                .accessibilityElement()
+                .accessibilityLabel("تكبير المشغّل")
+                .accessibilityAddTraits(.isButton)
+                .accessibilityAction { onExpand() }
             HStack {
                 smallButton(pc.isPlaying ? "pause.fill" : "play.fill", pc.isPlaying ? "إيقاف مؤقت" : "تشغيل") { pc.togglePlay(); flashButtons() }
                 Spacer()
@@ -132,7 +136,7 @@ struct WatchPanel: View {
             .padding(5)
             .environment(\.layoutDirection, .leftToRight)
             if !pc.isLive, pc.duration > 0 {
-                VStack { Spacer(); ProgressLine(value: pc.position / pc.duration, height: 2) }
+                VStack { Spacer(); PlaybackLine(height: 2) }
                     .allowsHitTesting(false)
             }
         }
@@ -145,6 +149,7 @@ struct WatchPanel: View {
             Image(systemName: sym).font(.system(size: 13, weight: .bold)).foregroundStyle(.white)
                 .frame(width: 28, height: 28)
                 .background(.black.opacity(0.5), in: Circle())
+                .frame(width: 44, height: 44).contentShape(Rectangle())      // الشكل صغير، واللمس 44 (نصيحة آبل)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(label)

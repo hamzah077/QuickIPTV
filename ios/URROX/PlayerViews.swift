@@ -164,7 +164,7 @@ struct PlayerOverlay: View {
 
             // الخط الأحمر لما الأزرار مخفية
             if !visible && !pc.isLive && pc.duration > 0 {
-                VStack { Spacer(); ProgressLine(value: pc.position / pc.duration, height: 3) }
+                VStack { Spacer(); PlaybackLine(height: 3) }
             }
 
             if pc.buffering && pc.failed == nil { ProgressView().controlSize(.large).tint(.white) }
@@ -216,7 +216,8 @@ struct PlayerOverlay: View {
                         iconButton("gearshape") { menu = .main }
                     }
                     if !compact, pc.engine == .av, PiP.shared.available { iconButton("pip.enter") { PiP.shared.start() } }
-                    AirPlayButton().frame(width: 30, height: 30)
+                    AirPlayButton().frame(width: 30, height: 30).frame(width: 44, height: 44)
+                        .accessibilityLabel("AirPlay")
                 }
                 .padding(.horizontal, compact ? 8 : 20)
                 .padding(.top, compact ? 6 : 14)
@@ -253,7 +254,7 @@ struct PlayerOverlay: View {
                                     .padding(.horizontal, 10).padding(.vertical, 6)
                             }.glass()
                         } else {
-                            Text("\(fmtTime(scrub ?? pc.position)) / \(fmtTime(pc.duration))").font(.caption.monospacedDigit())
+                            PlaybackTime(scrub: scrub)
                         }
                         Spacer()
                         if pc.isLive && !compact && !pc.channels.isEmpty {
@@ -283,30 +284,10 @@ struct PlayerOverlay: View {
     }
 
     private var scrubber: some View {
-        GeometryReader { g in
-            let w = g.size.width
-            let v = (scrub ?? pc.position) / max(pc.duration, 1)
-            ZStack(alignment: .leading) {
-                Capsule().fill(.white.opacity(0.3)).frame(height: scrub == nil ? 4 : 7)
-                Capsule().fill(Theme.red).frame(width: w * v, height: scrub == nil ? 4 : 7)
-                Circle().fill(.white).frame(width: scrub == nil ? 14 : 20).offset(x: w * v - (scrub == nil ? 7 : 10))
-                if let s = scrub {
-                    Text(fmtTime(s)).font(.caption.weight(.semibold)).foregroundStyle(.black)
-                        .padding(.horizontal, 8).padding(.vertical, 3).background(.white, in: Capsule())
-                        .offset(x: min(max(0, w * v - 28), w - 56), y: -26)
-                }
-            }
-            .frame(height: 24)
-            .contentShape(Rectangle())
-            .gesture(DragGesture(minimumDistance: 0)
-                .onChanged { d in hideTask?.cancel(); scrub = max(0, min(1, d.location.x / w)) * pc.duration }
-                .onEnded { _ in
-                    if let s = scrub { pc.learnFromSeek(from: pc.position, to: s); pc.seek(to: s) }
-                    scrub = nil; scheduleHide()
-                })
-        }
-        .frame(height: 24)
+        PlaybackScrubber(scrub: $scrub, onBegin: { hideTask?.cancel() }, onEnd: { scheduleHide() })
     }
+
+    // MARK: عناصر صغيرة
 
     private func tapZone(_ side: Int) -> some View {
         Color.clear.contentShape(Rectangle())
@@ -354,8 +335,6 @@ struct PlayerOverlay: View {
         .transition(.opacity)
     }
 
-    // MARK: عناصر صغيرة
-
     private func roundButton(_ sym: String, size: CGFloat, _ action: @escaping () -> Void) -> some View {
         Button { action(); scheduleHide() } label: {
             Image(systemName: sym).font(.system(size: size * 0.42, weight: .semibold)).frame(width: size, height: size)
@@ -363,14 +342,37 @@ struct PlayerOverlay: View {
         .buttonStyle(.plain)
         .glassCircle()
         .accessibilityIdentifier(sym)
+        .accessibilityLabel(Self.label(sym))
     }
 
+    /// الشكل 36، بس منطقة اللمس 44 (نصيحة آبل)
     private func iconButton(_ sym: String, _ action: @escaping () -> Void) -> some View {
         Button { action(); scheduleHide() } label: {
             Image(systemName: sym).font(.system(size: 17, weight: .semibold)).frame(width: 36, height: 36)
+                .frame(width: 44, height: 44).contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier(sym)
+        .accessibilityLabel(Self.label(sym))
+    }
+
+    /// قارئ الشاشة يقرا اسم الزر بالعربي بدل اسم الأيقونة
+    static func label(_ sym: String) -> String {
+        switch sym {
+        case "chevron.down": "تصغير"
+        case "captions.bubble": "الترجمة"
+        case "gearshape": "الإعدادات"
+        case "pip.enter": "صورة داخل صورة"
+        case "arrow.up.left.and.arrow.down.right": "ملء الشاشة"
+        case "arrow.down.right.and.arrow.up.left": "خروج من ملء الشاشة"
+        case "backward.end.fill": "الحلقة السابقة"
+        case "forward.end.fill": "الحلقة التالية"
+        case "gobackward.10": "رجوع 10 ثواني"
+        case "goforward.10": "تقديم 10 ثواني"
+        case "play.fill": "تشغيل"
+        case "pause.fill": "إيقاف مؤقت"
+        default: sym
+        }
     }
 
     private func floatButton(_ t: String, icon: String, count: Int? = nil, _ action: @escaping () -> Void) -> some View {
@@ -445,7 +447,8 @@ struct PlayerOverlay: View {
             HStack {
                 Text("القنوات  ·  \(pc.channels.count)").font(.headline)
                 Spacer()
-                Button { showChannels = false } label: { Image(systemName: "xmark").frame(width: 34, height: 34) }.buttonStyle(.plain)
+                Button { showChannels = false } label: { Image(systemName: "xmark").frame(width: 44, height: 44).contentShape(Rectangle()) }
+                    .buttonStyle(.plain).accessibilityLabel("إغلاق القنوات")
             }
             .padding(.horizontal, 14).padding(.vertical, 10)
             ScrollViewReader { proxy in
@@ -608,5 +611,62 @@ struct FullscreenPlayer: View {
             if PlayerController.phone, let r = pc.req, pc.watchVod == nil, !pc.hostVisible(r), !pc.mini { pc.mini = true }
             Orientation.unlockWhenPortrait()            // يرجع يلف عادي بس لما تمسك الجوال عمودي
         }
+    }
+}
+
+
+// MARK: - أجزاء صغيرة تقرا وقت التشغيل (يتغيّر كل نص ثانية) — عشان ما ينعاد رسم المشغّل كله ولا الصفحة معه
+
+/// الخط الأحمر الرفيع (لما الأزرار مخفية، وتحت النافذة العائمة)
+struct PlaybackLine: View {
+    @Environment(PlayerController.self) private var pc
+    var height: CGFloat = 3
+    var body: some View { ProgressLine(value: pc.duration > 0 ? pc.position / pc.duration : 0, height: height) }
+}
+
+/// "0:00 / 1:00:00"
+struct PlaybackTime: View {
+    @Environment(PlayerController.self) private var pc
+    let scrub: Double?
+    var body: some View { Text("\(fmtTime(scrub ?? pc.position)) / \(fmtTime(pc.duration))").font(.caption.monospacedDigit()) }
+}
+
+/// شريط التقديم (تسحبه وتطلع فقاعة الوقت)
+struct PlaybackScrubber: View {
+    @Environment(PlayerController.self) private var pc
+    @Binding var scrub: Double?
+    var onBegin: () -> Void
+    var onEnd: () -> Void
+
+    var body: some View {
+        GeometryReader { g in
+            let w = g.size.width
+            let v = (scrub ?? pc.position) / max(pc.duration, 1)
+            ZStack(alignment: .leading) {
+                Capsule().fill(.white.opacity(0.3)).frame(height: scrub == nil ? 4 : 7)
+                Capsule().fill(Theme.red).frame(width: w * v, height: scrub == nil ? 4 : 7)
+                Circle().fill(.white).frame(width: scrub == nil ? 14 : 20).offset(x: w * v - (scrub == nil ? 7 : 10))
+                if let s = scrub {
+                    Text(fmtTime(s)).font(.caption.weight(.semibold)).foregroundStyle(.black)
+                        .padding(.horizontal, 8).padding(.vertical, 3).background(.white, in: Capsule())
+                        .offset(x: min(max(0, w * v - 28), w - 56), y: -26)
+                }
+            }
+            .frame(height: 24)
+            .contentShape(Rectangle())
+            .gesture(DragGesture(minimumDistance: 0)
+                .onChanged { d in onBegin(); scrub = max(0, min(1, d.location.x / w)) * pc.duration }
+                .onEnded { _ in
+                    if let s = scrub { pc.learnFromSeek(from: pc.position, to: s); pc.seek(to: s) }
+                    scrub = nil; onEnd()
+                })
+            .accessibilityElement()
+            .accessibilityLabel("شريط التقديم")
+            .accessibilityValue("\(fmtTime(pc.position)) من \(fmtTime(pc.duration))")
+            .accessibilityAdjustableAction { dir in
+                if dir == .increment { pc.seek(by: 10) } else if dir == .decrement { pc.seek(by: -10) }
+            }
+        }
+        .frame(height: 24)
     }
 }
