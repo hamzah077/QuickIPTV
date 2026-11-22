@@ -12,6 +12,7 @@ import android.graphics.RectF
 import android.graphics.Shader
 import android.graphics.drawable.Drawable
 import android.view.View
+import android.view.ViewGroup
 import java.lang.ref.WeakReference
 
 /**
@@ -143,19 +144,16 @@ object Glass {
     fun focusCard(root: View, box: android.widget.FrameLayout, radiusPx: Float, scale: Float = 1.08f) {
         root.background = null
         root.setTag(R.id.own_focus_anim, true)
-        box.isDuplicateParentStateEnabled = true
-        box.foreground = android.graphics.drawable.StateListDrawable().apply {
-            setEnterFadeDuration(120); setExitFadeDuration(120)
-            addState(intArrayOf(android.R.attr.state_focused), android.graphics.drawable.GradientDrawable().apply {
-                cornerRadius = radiusPx; setColor(0x14FFFFFF); setStroke((root.resources.displayMetrics.density * 2.5f).toInt(), 0xF2FFFFFF.toInt())
-            })
-            addState(intArrayOf(), android.graphics.drawable.ColorDrawable(0))
-        }
+        // الإطار ينحط مباشرة مع التحديد (قبل: كان مربوط بحالة ما توصل للصورة = ما يطلع أبداً)
         val d = root.resources.displayMetrics.density
+        val ring = android.graphics.drawable.GradientDrawable().apply {
+            cornerRadius = radiusPx; setColor(0); setStroke((d * 3f).toInt(), 0xFFFFFFFF.toInt())
+        }
         root.setOnFocusChangeListener { v, has ->
-            v.raiseOnFocus(has)                       // فوق اللي جنبه
-            if (android.os.Build.VERSION.SDK_INT >= 28) { box.outlineSpotShadowColor = 0xE6FFFFFF.toInt(); box.outlineAmbientShadowColor = 0x99FFFFFF.toInt() }
-            box.animate().translationZ(if (has) 12 * d else 0f).setDuration(140).start()      // توهّج أبيض حول الصورة
+            v.raiseOnFocus(has)                       // فوق اللي جنبه (بدون ظل/توهّج)
+            box.foreground = if (has) ring else null
+            ((v as? ViewGroup)?.let { g -> (0 until g.childCount).map { g.getChildAt(it) }.firstOrNull { it is android.widget.TextView } } as? android.widget.TextView)
+                ?.let { tv -> if (tv.typeface != Fonts.bold || tv.getTag(R.id.keep_clip) == true) { tv.setTag(R.id.keep_clip, true); tv.typeface = if (has) Fonts.bold else Fonts.regular } }      // الاسم عريض وهو محدد
             v.animate().scaleX(if (has) scale else 1f).scaleY(if (has) scale else 1f).setDuration(140).start()
         }
     }
