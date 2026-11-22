@@ -501,7 +501,11 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
     }
 
     /** يحط التركيز على زر التشغيل (الريموت). */
-    fun focusPlay() { endPeek(); show(); btnPlay.requestFocus() }
+    /**
+     * requestFocusFromTouch: لو الجهاز بوضع اللمس (ماوس/ريموت هوائي — والوضع ينتقل من الصفحة اللي قبل)
+     * requestFocus العادي يفشل بصمت = أول ما تشغّل الحلقة ما تقدر تتحكم لين تختفي الأزرار وترجع.
+     */
+    fun focusPlay() { endPeek(); show(); btnPlay.requestFocusFromTouch() }
 
     /** التحديد على أزرار الشريط (الظاهر). أزرار «تخطي المقدمة/الحلقة التالية» لحالها: floatFocused. */
     fun hasFocusInside() = panel.visibility == View.VISIBLE && !hiding && panel.hasFocus()
@@ -520,7 +524,7 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
     }
     private fun parkFocus() {
         if (focusSink.parent == null) addView(focusSink, LayoutParams(1, 1))
-        focusSink.isFocusable = true; focusSink.requestFocus()
+        focusSink.isFocusable = true; focusSink.requestFocusFromTouch()
     }
 
     /** الريموت: رجوع وقت العدّاد = نلغي التشغيل التلقائي (يرجّع true لو استهلكها). */
@@ -585,7 +589,11 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
         override fun run() { refresh(); postDelayed(this, 500) }
     }
 
-    override fun onAttachedToWindow() { super.onAttachedToWindow(); post(tick); if (autoHide) poke() else show() }
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow(); post(tick); if (autoHide) poke() else show()
+        // التلفزيون: نطلع من وضع اللمس من أول لحظة عشان أول ضغطة بالريموت تشتغل على طول
+        if (act.isTv() && autoHide) post { if (!hasFocus()) parkFocus() }
+    }
     override fun onDetachedFromWindow() { removeCallbacks(tick); removeCallbacks(hideRun); super.onDetachedFromWindow() }
 
     fun refresh() {
@@ -637,7 +645,7 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
         if (show) {
             if (introFloat.visibility != View.VISIBLE) {
                 introFloat.visibility = View.VISIBLE
-                if (!introShownOnce && act.isTv()) introFloat.requestFocus()      // الريموت: OK = تخطي
+                if (!introShownOnce && act.isTv()) introFloat.requestFocusFromTouch()      // الريموت: OK = تخطي
                 introShownOnce = true
             }
         } else {
@@ -673,7 +681,7 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
             }
             if (nextFloat.visibility != View.VISIBLE) {
                 nextFloat.visibility = View.VISIBLE
-                if (!nextShownOnce && act.isTv()) nextFloat.requestFocus()      // الريموت: OK = الحلقة التالية
+                if (!nextShownOnce && act.isTv()) nextFloat.requestFocusFromTouch()      // الريموت: OK = الحلقة التالية
                 nextShownOnce = true
             }
         } else {
@@ -1354,7 +1362,7 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
             cardRow.addView(cell, LinearLayout.LayoutParams(w, WRAP).apply { marginEnd = act.dp(18) })
             if (e.current) cur = cell
         }
-        if (focusCard) (cur ?: cardRow.getChildAt(0))?.let { t -> t.post { t.requestFocus() } }
+        if (focusCard) (cur ?: cardRow.getChildAt(0))?.let { t -> t.post { t.requestFocusFromTouch() } }
     }
 
     /** يقفل قائمة الحلقات (رجوع). */
@@ -1363,7 +1371,7 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
         epsOpen = false
         epsView.animate().cancel()
         epsView.visibility = View.GONE
-        if (showBar) { show(); nfEps.requestFocus() } else poke()
+        if (showBar) { show(); nfEps.requestFocusFromTouch() } else poke()
     }
 
     // ---------- "أنت تشاهد": وقفت الفيديو وتركته شوي ----------
