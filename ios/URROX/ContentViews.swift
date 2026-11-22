@@ -52,6 +52,9 @@ struct LiveView: View {
                             screen
                             info.padding(.horizontal, 16).padding(.vertical, 8)
                         }
+                        // سحبت القناة للنافذة العائمة: مكان الشاشة يختفي فوراً بنفس اللحظة (بدون مربع أسود)
+                        // وبعدها القنوات تطلع لفوق بنعومة
+                        .opacity(pc.mini && pc.isLive ? 0 : 1)
                         .transition(.opacity)
                     }
                     list
@@ -87,6 +90,8 @@ struct LiveView: View {
     @ViewBuilder private var screen: some View {
         if current != nil, pc.req?.type == "live", !pc.mini {
             InlinePlayer()
+        } else if current != nil, pc.isLive, pc.mini {
+            Color.clear.aspectRatio(16 / 9, contentMode: .fit)        // مكانه فاضي وهو يتقلّص (مو مربع)
         } else {
             Rectangle().fill(Theme.surface).aspectRatio(16 / 9, contentMode: .fit)
                 .overlay(Text("اختر قناة").foregroundStyle(Theme.muted))
@@ -230,18 +235,35 @@ struct DetailsView: View {
     @State private var seasons: [Int: [Episode]] = [:]
     @State private var season = 1
     @State private var loaded = false
+    @State private var didLoad = false
 
     private var key: String { vod.isSeries ? "series:\(vod.id)" : "movie:\(vod.id)" }
     /// المشغّل داخل الصفحة: الآيباد بس (الجوال: صفحة التشغيل فوق تعرضه)
     /// الجوال (زي الأندرويد): الفيديو يشتغل مكان الصورة فوق بنفس الصفحة — داخل اللوحة الفيديو تبع اللوحة نفسها
-    private var showInline: Bool { playingHere && !inPanel }
+    private var showInline: Bool { !PlayerController.phone && playingHere }
+
+    /// التفاصيل اللي تحمّلت: صفحة التشغيل تفتح فيها على طول (بدون ما تنعاد وترمش)
+    @MainActor static var cache: [String: (plot: String, meta: String, seasons: [Int: [Episode]], season: Int)] = [:]
+
+    init(vod: Vod, autoplayKey: String? = nil, inPanel: Bool = false) {
+        self.vod = vod; self.autoplayKey = autoplayKey; self.inPanel = inPanel
+        if let c = Self.cache[vod.isSeries ? "series:\(vod.id)" : "movie:\(vod.id)"] {
+            _plot = State(initialValue: c.plot); _meta = State(initialValue: c.meta)
+            _seasons = State(initialValue: c.seasons); _season = State(initialValue: c.season)
+            _loaded = State(initialValue: true)
+        }
+    }
+    private func saveCache() { Self.cache[key] = (plot, meta, seasons, season) }
 
     /// الجوال: التشغيل يفتح صفحة التشغيل فوق كل شي (تنسحب لتحت وتصير مشغّل صغير)، وهالصفحة تسكّر تحتها
     private func openWatch() {
         guard PlayerController.phone, !inPanel else { return }
-        // الفيديو يشتغل مكان الصورة بنفس الصفحة (الصفحة ما تتغيّر) — لو كان بالنافذة العائمة يرجع هنا
+        // صفحة التشغيل تطلع مكانها على طول (بدون حركة من تحت، وبنفس التفاصيل) — وتقدر تسحبها كاملة لتحت
+        saveCache()
         var t = Transaction(); t.disablesAnimations = true
-        withTransaction(t) { pc.watchVod = nil; pc.mini = false }
+        withTransaction(t) { pc.watchVod = vod; pc.mini = false }
+        // الصفحة اللي تحتها تتسكّر بهدوء (مخفية تحت صفحة التشغيل) عشان السحب لتحت يبيّن اللي قبلها
+        Task { try? await Task.sleep(for: .milliseconds(300)); withTransaction(t) { dismiss() } }
     }
     private var playingHere: Bool {
         guard let r = pc.req else { return false }
@@ -276,27 +298,26 @@ struct DetailsView: View {
         .onDisappear {
             if !PlayerController.phone, playingHere { pc.leftHost() }
             // الجوال: رجعت من الصفحة وهو شغّال = يصير نافذة عائمة (زي الأندرويد)، وتكبيرها يفتح صفحته
-            else if PlayerController.phone, !inPanel, playingHere, !pc.mini, !pc.fullscreen {
+            else if PlayerController.phone, !inPanel, playingHere, !pc.mini, !pc.fullscreen, pc.watchVod == nil {
                 pc.watchVod = vod
                 withAnimation(PanelHost.ease(1)) { pc.mini = true }
             }
         }
         // سحبت الفيديو لتحت وصار نافذة عائمة: الصفحة تتقفل والنافذة تكمل فوق التطبيق
-        .onChange(of: pc.mini) { _, m in
-            guard m, PlayerController.phone, !inPanel, playingHere, pc.watchVod == nil else { return }
-            var t = Transaction(); t.disablesAnimations = true
-            withTransaction(t) { pc.watchVod = vod }
-            withTransaction(t) { dismiss() }
-        }
+        .onChange(of: season) { _, _ in if loaded { saveCache() } }
     }
 
     private var actions: some View {
         HStack(spacing: 10) {
-            Button { primary() } label: {
+            Button {
+                var t = Transaction(); t.disablesAnimations = true      // بدون حركة: الزر ما يطلع من تحت
+                withTransaction(t) { primary() }
+            } label: {
                 Label(primaryTitle, systemImage: "play.fill").font(.headline)
                     .frame(maxWidth: .infinity).frame(height: 50)
-                    .background(.white, in: Capsule()).foregroundStyle(.black)
+                    .foregroundStyle(.black)
             }
+            .buttonStyle(PressGray())
             if !vod.isSeries {
                 DownloadButton(req: { movieRequest() }, key: "movie:\(vod.id)").glassCircle()
             }
@@ -409,7 +430,9 @@ struct DetailsView: View {
     }
 
     private func load() async {
-        guard let api = model.api, !loaded else { return }
+        guard let api = model.api, !didLoad else { return }
+        didLoad = true
+        if loaded { autoplay(); return }          // من الذاكرة (فتحت الصفحة قبل شوي): بدون تحميل ثاني
         if vod.isSeries {
             if let res = try? await api.seriesInfo(vod.id) {
                 let info = res.info, s = res.seasons
@@ -425,7 +448,12 @@ struct DetailsView: View {
                 .filter { !$0.isEmpty }.joined(separator: " · ")
         }
         loaded = true
-        // "متابعة المشاهدة": يشتغل على طول
+        if !plot.isEmpty || !meta.isEmpty || !seasons.isEmpty { saveCache() }
+        autoplay()
+    }
+
+    /// "متابعة المشاهدة": يشتغل على طول
+    private func autoplay() {
         if let k = autoplayKey, !playingHere {
             if vod.isSeries {
                 if let f = model.seriesFrontier(vod.id), f.finished, let r = resumeEpisode() { playEpisode(r.0) }
@@ -636,5 +664,16 @@ struct SettingsView: View {
         // نافذة تحديث القوائم فوق الإعدادات
         .overlay { if inSheet && model.updPopup { UpdatePopup().transition(.opacity) } }
         .animation(.easeOut(duration: 0.2), value: model.updPopup)
+    }
+}
+
+
+/// زر أبيض: وأنت ضاغط عليه يصير رمادي (بدون حركة ولا تكبير)
+struct PressGray: ButtonStyle {
+    func makeBody(configuration c: Configuration) -> some View {
+        c.label
+            .background(c.isPressed ? Color(white: 0.7) : .white, in: Capsule())
+            .contentShape(Capsule())
+            .transaction { $0.animation = nil }
     }
 }

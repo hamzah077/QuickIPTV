@@ -725,7 +725,13 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
     private val tvTimeSpacer = View(act)
     private val rowTitle = act.text("", 14f, 0xFFFFFFFF.toInt(), bold = true).apply { layoutDirection = View.LAYOUT_DIRECTION_RTL; textDirection = View.TEXT_DIRECTION_RTL }
     private val rowList = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
-    private val rowScroll = android.widget.HorizontalScrollView(act).apply {
+    private val rowScroll = object : android.widget.HorizontalScrollView(act) {
+        // السكرول الافتراضي يلصق الحلقة المحددة بطرف الصف فينقص تكبيرها وإطارها — نخلي هامش حولها
+        override fun computeScrollDeltaToGetChildRectOnScreen(rect: android.graphics.Rect): Int {
+            val r = android.graphics.Rect(rect); r.inset(-act.dp(24), 0)
+            return super.computeScrollDeltaToGetChildRectOnScreen(r)
+        }
+    }.apply {
         isHorizontalScrollBarEnabled = false; clipToPadding = false; layoutDirection = View.LAYOUT_DIRECTION_RTL
         // مساحة حول الصف من البداية تكفي لتكبير الحلقة المحددة وإطارها (ما ينقص من الأطراف ولا يتزحزح)
         setPadding(act.dp(14), act.dp(10), act.dp(14), act.dp(10))
@@ -734,6 +740,7 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
     }
     private val rowBox = LinearLayout(act).apply {
         orientation = LinearLayout.VERTICAL; visibility = View.GONE
+        clipChildren = false; clipToPadding = false
         addView(rowTitle, LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = act.dp(8) })
         addView(rowScroll, LinearLayout.LayoutParams(MATCH, WRAP))
     }
@@ -774,7 +781,8 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
         panel.background = android.graphics.drawable.GradientDrawable(
             android.graphics.drawable.GradientDrawable.Orientation.BOTTOM_TOP,
             intArrayOf(0xF0000000.toInt(), 0xB3000000.toInt(), 0x00000000))
-        panel.setPadding(act.dp(48), act.dp(90), act.dp(48), act.dp(24))
+        panel.setPadding(act.dp(48), act.dp(90), act.dp(48), act.dp(30))
+        panel.clipChildren = false; panel.clipToPadding = false
         // العنوان كبير
         tvTitleBox.addView(tvTitle); tvTitleBox.addView(tvSub)
         panel.addView(tvTitleBox, LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = act.dp(14) })

@@ -52,6 +52,7 @@ final class PlayerController {
 
     private var timeObs: Any?
     @ObservationIgnored private var waitTask: Task<Void, Never>?
+    @ObservationIgnored private var avStartTask: Task<Void, Never>?
     // VLC: نعرف إنه شغّال فعلاً من تقدّم الوقت (حالة VLC تقول "buffering" حتى وهو شغّال)
     @ObservationIgnored private var lastVlcT: Double = -1
     @ObservationIgnored private var vlcStallTicks = 0
@@ -163,19 +164,37 @@ final class PlayerController {
             player.seek(to: CMTime(seconds: r.start, preferredTimescale: 600), toleranceBefore: tol, toleranceAfter: tol)
         }
         player.playImmediately(atRate: playRate)        // يبدأ أول ما يقدر، وإذا خلص البفر بعدين ينتظر ويكمل لحاله
+        // مشغّل آبل أحياناً يعلّق دقيقة كاملة قبل ما يقول "فشل" (خصوصاً بث HLS من سيرفرات IPTV)
+        // = بداية بطيئة. لو ما بدأ خلال ثواني قليلة نحوّل على طول لـ VLC (يبدأ أسرع مع هالسيرفرات)
+        avStartTask?.cancel()
+        let started = item
+        avStartTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(r.type == "live" ? 3.5 : 6))
+            guard !Task.isCancelled, let self, self.engine == .av, self.player.currentItem === started,
+                  self.player.timeControlStatus != .playing, !self.userPaused, var rr = self.req else { return }
+            if rr.type == "live", rr.url.pathExtension.lowercased() == "m3u8" {
+                rr.url = rr.url.deletingPathExtension().appendingPathExtension("ts")
+                self.req = rr
+            }
+            self.playVLC(rr)
+        }
     }
 
     // MARK: VLC
 
     private func playVLC(_ r: PlayRequest) {
+        avStartTask?.cancel()
         stopVLC()
         engine = .vlc
         clearTracks()
         player.pause(); player.replaceCurrentItem(with: nil)
         let m = VLCMedia(url: r.url)
         // بفر: كافي يمنع التقطيع، وصغير يخلي البداية سريعة
-        m.addOption(r.type == "live" ? ":network-caching=2000" : ":network-caching=1500")
-        m.addOption(":live-caching=2000")
+        // بفر أصغر = يبدأ أسرع (ثانية تكفي مع إعادة الاتصال التلقائي)
+        m.addOption(r.type == "live" ? ":network-caching=1000" : ":network-caching=1200")
+        m.addOption(":live-caching=1000")
+        m.addOption(":clock-jitter=0")
+        m.addOption(":clock-synchro=0")
         m.addOption(":http-reconnect")                                                    // ينقطع السيرفر؟ يرجع يتصل
         m.addOption(":http-user-agent=IPTVSmartersPro")
         if r.start > 0 { m.addOption(":start-time=\(Int(r.start))") }
@@ -250,7 +269,7 @@ final class PlayerController {
         player.replaceCurrentItem(with: nil)
         req = nil
         fullscreen = false
-        waitTask?.cancel()
+        waitTask?.cancel(); avStartTask?.cancel()
         isPlaying = false; buffering = false
     }
 

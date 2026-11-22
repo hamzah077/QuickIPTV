@@ -688,12 +688,29 @@ class DetailsActivity : Activity() {
             similarRow(bottom)
         }
         root.addView(bottom, FrameLayout.LayoutParams(MATCH, WRAP, Gravity.BOTTOM))
+        // ما نخلي الكلام فوق يركب على الصف اللي تحت (مثل "أفلام مشابهة" فوق زر التشغيل):
+        // لو تداخلوا نقلل سطور القصة، بعدها نخفيها، بعدها نخفي السطر الصغير اللي فوق الاسم
+        val kickerV = hero.getChildAt(0)
+        val fit = View.OnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+            if (hero.height == 0 || bottom.height == 0) return@OnLayoutChangeListener
+            val gap = dp(12)
+            if (hero.bottom + gap <= bottom.top) return@OnLayoutChangeListener
+            val plotV = heroPlotT
+            when {
+                plotV != null && plotV.visibility == View.VISIBLE && plotV.maxLines > 1 -> plotV.maxLines = plotV.maxLines - 1
+                plotV != null && plotV.visibility == View.VISIBLE -> plotV.visibility = View.GONE
+                kickerV.visibility == View.VISIBLE -> kickerV.visibility = View.GONE
+                else -> return@OnLayoutChangeListener
+            }
+            hero.post { hero.requestLayout() }
+        }
+        hero.addOnLayoutChangeListener(fit); bottom.addOnLayoutChangeListener(fit)
     }
 
     /** الفيلم: أفلام من نفس التصنيف (زي "مشابهة" بنتفليكس) */
     private fun similarRow(into: LinearLayout) {
         val title = text("أفلام مشابهة", 16f, C.TEXT, bold = true).apply { setPadding(0, 0, 0, dp(6)); visibility = View.GONE }
-        val pw = dp(112)
+        val pw = dp(100)
         val ad = PosterAdapter(this, pw) { v ->
             startActivity(android.content.Intent(this, DetailsActivity::class.java)
                 .putExtra("id", v.id).putExtra("series", v.isSeries).putExtra("name", v.name)
