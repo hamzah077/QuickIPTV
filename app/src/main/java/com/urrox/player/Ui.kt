@@ -455,6 +455,7 @@ fun android.app.Activity.installFocusMotion() {
         true
     }
     window.decorView.viewTreeObserver.addOnGlobalFocusChangeListener { old, new ->
+        if (isTv() && new != null) roomForFocus(new, window.decorView)       // التحديد (والتكبير) ما ينقص من الأطراف
         if (old != null && old === inked) { ink(old, false); inked = null }
         if (new != null && new.background is TvFocusDrawable) { inked = new; ink(new, true) }
         if (eligible(old)) old!!.animate().scaleX(1f).scaleY(1f).setDuration(120).setInterpolator(interp).start()
@@ -466,6 +467,30 @@ fun android.app.Activity.installFocusMotion() {
         }
         marquee(old, false)
         marquee(new, true)
+    }
+}
+
+/**
+ * التلفزيون: العنصر المحدد يكبر شوي وحوله إطار — كان ينقص من الأطراف لأن الحاويات اللي فوقه تقص الرسم على حدودها.
+ * - الحاويات العادية: نسمح ترسم برا حدودها (clipChildren/clipToPadding = false).
+ * - القوائم اللي تتمرّر (أفقي/عمودي): تبقى تقص على حدودها (عشان العناصر المخفية ما تطلع فوق غيرها)،
+ *   بس نعطيها هامش داخلي يكفي للتكبير والإطار، والمحتوى يتمرّر داخل الهامش.
+ */
+private fun roomForFocus(v: View, top: View) {
+    val room = (12 * v.resources.displayMetrics.density).toInt()
+    var p = v.parent
+    while (p is ViewGroup && p !== top) {
+        if (p is RecyclerView || p is android.widget.ScrollView || p is android.widget.HorizontalScrollView) {
+            if (p.getTag(R.id.focus_room) != true) {
+                p.setTag(R.id.focus_room, true)
+                p.setPaddingRelative(maxOf(p.paddingStart, room), maxOf(p.paddingTop, room), maxOf(p.paddingEnd, room), maxOf(p.paddingBottom, room))
+            }
+            p.clipToPadding = false
+        } else {
+            p.clipChildren = false
+            p.clipToPadding = false
+        }
+        p = p.parent
     }
 }
 

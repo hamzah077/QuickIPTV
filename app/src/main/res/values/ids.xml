@@ -2,6 +2,7 @@
 <resources>
     <item name="dl_state" type="id" />
     <item name="own_focus_anim" type="id" />
+    <item name="focus_room" type="id" />
     <item name="pending_player" type="id"/>
     <item name="ink_orig" type="id" />
 </resources>
