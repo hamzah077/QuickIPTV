@@ -494,8 +494,9 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
     /** يحط التركيز على زر التشغيل (الريموت). */
     fun focusPlay() { show(); btnPlay.requestFocus() }
 
-    fun hasFocusInside() = (panel.visibility == View.VISIBLE && panel.alpha > 0.5f && panel.hasFocus()) ||
-        (nextFloat.visibility == View.VISIBLE && nextFloat.hasFocus()) || (introFloat.visibility == View.VISIBLE && introFloat.hasFocus())
+    /** التحديد على أزرار الشريط (الظاهر). أزرار «تخطي المقدمة/الحلقة التالية» لحالها: floatFocused. */
+    fun hasFocusInside() = panel.visibility == View.VISIBLE && panel.alpha > 0.5f && panel.hasFocus()
+    fun floatFocused() = (nextFloat.visibility == View.VISIBLE && nextFloat.hasFocus()) || (introFloat.visibility == View.VISIBLE && introFloat.hasFocus())
 
     /** نقطة تحديد مخفية: لما الأزرار تختفي التحديد يجلس هنا والأسهم ترجع للمشغّل (تقديم/ترجيع). */
     private val focusSink = View(act).apply {
@@ -625,7 +626,7 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
                 introShownOnce = true
             }
         } else {
-            if (introFloat.visibility == View.VISIBLE && introFloat.hasFocus()) btnPlay.requestFocus()
+            if (introFloat.visibility == View.VISIBLE && introFloat.hasFocus()) { if (barVisible) btnPlay.requestFocus() else parkFocus() }
             introFloat.visibility = View.GONE
         }
     }
@@ -661,7 +662,7 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
                 nextShownOnce = true
             }
         } else {
-            if (nextFloat.visibility == View.VISIBLE && nextFloat.hasFocus()) btnPlay.requestFocus()
+            if (nextFloat.visibility == View.VISIBLE && nextFloat.hasFocus()) { if (barVisible) btnPlay.requestFocus() else parkFocus() }
             nextFloat.visibility = View.GONE
             if (left > threshold + 5_000) { countdownEnd = 0L; autoCancelled = false; autoFired = false; nextShownOnce = false }
         }

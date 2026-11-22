@@ -604,11 +604,29 @@ class MainActivity : Activity() {
                 .setNegativeButton("لا", null).show()
         }
         if (event.action == KeyEvent.ACTION_DOWN && screens[current]?.onKey(event.keyCode, event) == true) return true
+        // التلفزيون: سهم يمين من آخر شي على اليمين بالصفحة = القائمة الجانبية على طول (مو ينزل تحت)
+        if (tv && event.action == KeyEvent.ACTION_DOWN && event.keyCode == KeyEvent.KEYCODE_DPAD_RIGHT && !nav.hasFocus()) {
+            val f = currentFocus
+            if (f != null && TvHero.isIn(content, f) && !canGoRight(f)) { (navButtons[current] ?: nav).requestFocus(); return true }
+        }
         // التلفزيون: من القائمة الجانبية يسار = تدخل القسم من أوله (أو من اللي اخترته فيه)
         if (tv && event.action == KeyEvent.ACTION_DOWN && event.keyCode == KeyEvent.KEYCODE_DPAD_LEFT && nav.hasFocus()) {
             screens[current]?.focusDefault(); return true
         }
         return super.dispatchKeyEvent(event)
+    }
+
+    /** فيه شي على يمين العنصر المحدد داخل الصفحة؟ (صف يقدر يتمرّر لليمين، أو عنصر فعلاً على يمينه) */
+    private fun canGoRight(f: View): Boolean {
+        var p: View? = f.parent as? View
+        while (p != null && p !== content) {
+            if ((p is androidx.recyclerview.widget.RecyclerView || p is android.widget.HorizontalScrollView) && p.canScrollHorizontally(1)) return true
+            p = p.parent as? View
+        }
+        val next = android.view.FocusFinder.getInstance().findNextFocus(content, f, View.FOCUS_RIGHT) ?: return false
+        val a = IntArray(2); val b = IntArray(2)
+        f.getLocationOnScreen(a); next.getLocationOnScreen(b)
+        return b[0] >= a[0] + f.width / 2
     }
 
     @Deprecated("Deprecated in Java")

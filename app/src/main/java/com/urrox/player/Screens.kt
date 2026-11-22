@@ -251,7 +251,7 @@ class HomeScreen(private val a: MainActivity) : Screen, EpgAware {
     }
 
     override fun onShow() {
-        if (a.tv) heroShown?.let { applyHero(it) }        // رجعت للرئيسية: صورة الخلفية ترجع
+        heroBox?.restore()        // رجعت للرئيسية: صورة الخلفية ترجع
         refresh()
         if (live == null || movieMap.isEmpty() || seriesMap.isEmpty()) loadLists()
     }
@@ -473,7 +473,7 @@ class HomeScreen(private val a: MainActivity) : Screen, EpgAware {
     }
 
     override fun focusDefault() {
-        if (a.tv && featured != null) { setRows(false); heroPlay.requestFocus(); return }
+        heroBox?.let { h -> if (h.hasFeatured) { setRows(false); h.play.requestFocus(); return } }
         firstItem()?.requestFocus() ?: view.requestFocus()
     }
 
@@ -490,119 +490,51 @@ class HomeScreen(private val a: MainActivity) : Screen, EpgAware {
     }
 
     // =================================================================================
-    // التلفزيون — نمط نتفلكس: إعلان كبير فوق (اسم، تفاصيل، قصة، تشغيل/معلومات) وخلفه صورة العمل
-    // بكامل الشاشة. تنزل للصفوف: الإعلان يتحوّل لتفاصيل اللي واقف عليه والصف يطلع لأول الشاشة.
+    // التلفزيون — نمط نتفلكس: إعلان كبير فوق (TvHero) وخلفه صورة العمل بكامل الشاشة.
+    // تنزل للصفوف: الإعلان يتحوّل لتفاصيل اللي واقف عليه والصف يطلع لأول الشاشة.
     // =================================================================================
-    private class HeroItem(
-        val key: String, val title: String, val meta: String, val plot: String, val image: String,
-        val vod: Vod? = null, val hist: HistoryItem? = null, val infoId: String = "", val infoSeries: Boolean = false,
-    )
-    private class Info(val plot: String, val meta: String, val backdrop: String)
-    private val infoCache = HashMap<String, Info>()
-    private var featured: HeroItem? = null
-    private var heroShown: HeroItem? = null
-    private var rowsMode = false
-    private var infoJob: Job? = null
-    private val heroW = (a.resources.displayMetrics.widthPixels * 0.5f).toInt()
-
-    private val heroTitle = a.text("", 30f, C.TEXT, bold = true).apply {
-        maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END; textDirection = View.TEXT_DIRECTION_FIRST_STRONG
-    }
-    private val heroMeta = a.text("", 13.5f, 0xFFC4C8CE.toInt()).apply { maxLines = 1; setPadding(0, a.dp(6), 0, 0) }
-    private val heroPlot = a.text("", 14.5f, 0xFFE2E4E8.toInt(), lines = 3).apply {
-        textDirection = View.TEXT_DIRECTION_FIRST_STRONG; setLineSpacing(0f, 1.25f); setPadding(0, a.dp(8), 0, 0)
-    }
-
-    /** زر الإعلان: رمادي شفاف، ولما يتحدد أبيض والكلام داكن. */
-    private fun heroBtn(icon: Int, label: String, onClick: () -> Unit): LinearLayout = LinearLayout(a).apply {
-        orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
-        layoutDirection = View.LAYOUT_DIRECTION_RTL
-        setPadding(a.dp(22), 0, a.dp(22), 0)
-        isFocusable = true; isClickable = true
-        contentDescription = label
-        setTag(R.id.own_focus_anim, true)
-        background = android.graphics.drawable.StateListDrawable().apply {
-            setEnterFadeDuration(110); setExitFadeDuration(110)
-            addState(intArrayOf(android.R.attr.state_focused), rounded(0xFFFFFFFF.toInt(), a.dpf(6f)))
-            addState(intArrayOf(), rounded(0x4DFFFFFF, a.dpf(6f)))
-        }
-        val ic = a.icon(icon, 0xFFFFFFFF.toInt(), 20)
-        val tx = a.text(label, 15f, 0xFFFFFFFF.toInt(), bold = true).apply { maxLines = 1; includeFontPadding = false; setPaddingRelative(a.dp(10), 0, 0, 0) }
-        addView(ic, LinearLayout.LayoutParams(a.dp(20), a.dp(20))); addView(tx)
-        setOnClickListener { onClick() }
-        setOnFocusChangeListener { v, has ->
-            val c = if (has) 0xFF111214.toInt() else 0xFFFFFFFF.toInt()
-            ic.imageTintList = android.content.res.ColorStateList.valueOf(c); tx.setTextColor(c)
-            v.raiseOnFocus(has)
-            v.animate().scaleX(if (has) 1.05f else 1f).scaleY(if (has) 1.05f else 1f).setDuration(120).start()
-        }
-    }
-    private val heroPlay = heroBtn(R.drawable.ic_play, "تشغيل") { heroAct(play = true) }
-    private val heroInfo = heroBtn(R.drawable.ic_info, "معلومات") { heroAct(play = false) }
-    private val heroBtns = LinearLayout(a).apply {
-        orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
-        clipChildren = false; clipToPadding = false
-        addView(heroPlay, LinearLayout.LayoutParams(WRAP, a.dp(42)))
-        addView(heroInfo, LinearLayout.LayoutParams(WRAP, a.dp(42)).apply { marginStart = a.dp(12) })
-    }
-    private val hero = LinearLayout(a).apply {
-        orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
-        clipChildren = false; clipToPadding = false
-        setPaddingRelative(a.dp(28), a.dp(22), 0, a.dp(8))
-        addView(heroTitle, LinearLayout.LayoutParams(heroW, WRAP))
-        addView(heroMeta, LinearLayout.LayoutParams(heroW, WRAP))
-        addView(heroPlot, LinearLayout.LayoutParams(heroW, WRAP))
-        addView(heroBtns, LinearLayout.LayoutParams(WRAP, WRAP).apply { topMargin = a.dp(18) })
-    }
+    private val heroBox: TvHero? = if (a.tv) TvHero(a, "home") else null
 
     init {
+        val h = heroBox
         tvRoot?.let { r ->
-            r.addView(hero, LinearLayout.LayoutParams(MATCH, WRAP))
+            r.addView(h!!.view, LinearLayout.LayoutParams(MATCH, WRAP))
             r.addView(scroll, LinearLayout.LayoutParams(MATCH, 0, 1f))
-            hero.visibility = View.GONE              // يطلع أول ما نعرف العمل المميّز
-            a.window.decorView.viewTreeObserver.addOnGlobalFocusChangeListener { _, nv -> onTvFocus(nv) }
+            TvHero.watchFocus(r) { nv -> onTvFocus(nv) }
         }
-    }
-
-    private fun isIn(parent: View, v: View): Boolean {
-        var p: View? = v
-        while (p != null) { if (p === parent) return true; p = p.parent as? View }
-        return false
     }
 
     private fun slots(): List<LinearLayout> = listOfNotNull(contSlot, liveSlot, movSlot, serSlot, favSlot).filter { it.childCount > 0 }
 
     private fun onTvFocus(nv: View?) {
+        val h = heroBox ?: return
         if (nv == null || a.current != "home" || tvRoot?.isAttachedToWindow != true) return
-        if (isIn(hero, nv)) { setRows(false); return }
-        if (!isIn(scroll, nv)) return
+        if (h.contains(nv)) { setRows(false); return }
+        if (!TvHero.isIn(scroll, nv)) return
         setRows(true)
-        var p: View? = nv
-        while (p != null && p.getTag(R.id.hero_item) == null) p = p.parent as? View
-        p?.getTag(R.id.hero_item)?.let { showItem(it) }
+        h.showFocused(nv)
         // الصف اللي نزلت له يطلع لأول الشاشة
-        slots().firstOrNull { isIn(it, nv) }?.let { sl -> scroll.post { scroll.smoothScrollTo(0, sl.top) } }
+        slots().firstOrNull { TvHero.isIn(it, nv) }?.let { sl -> scroll.post { scroll.smoothScrollTo(0, sl.top) } }
     }
 
     private fun setRows(on: Boolean) {
-        if (!a.tv || rowsMode == on) return
-        rowsMode = on
-        tvRoot?.let { android.transition.TransitionManager.beginDelayedTransition(it, android.transition.ChangeBounds().setDuration(200)) }
-        heroBtns.visibility = if (on) View.GONE else View.VISIBLE
-        heroPlot.maxLines = if (on) 2 else 3
-        if (!on) { featured?.let { applyHero(it) }; scroll.smoothScrollTo(0, 0) }
+        val h = heroBox ?: return
+        if (h.rows == on) return
+        h.setRows(on, tvRoot)
+        if (!on) scroll.smoothScrollTo(0, 0)
     }
 
     override fun onKey(keyCode: Int, event: android.view.KeyEvent): Boolean {
-        if (!a.tv || featured == null) return false
+        val h = heroBox ?: return false
+        if (!h.hasFeatured) return false
         val f = a.currentFocus ?: return false
         // أول صف + سهم فوق = يرجع للإعلان (أزرار تشغيل/معلومات)
-        if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_UP && isIn(scroll, f)) {
+        if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_UP && TvHero.isIn(scroll, f)) {
             val top = slots().firstOrNull()
-            if (top != null && isIn(top, f)) { setRows(false); heroPlay.requestFocus(); return true }
+            if (top != null && TvHero.isIn(top, f)) { setRows(false); h.play.requestFocus(); return true }
         }
         // من الإعلان تحت = أول عنصر بأول صف
-        if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_DOWN && isIn(hero, f)) {
+        if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_DOWN && h.contains(f)) {
             firstItem()?.let { it.requestFocus(); return true }
         }
         return false
@@ -610,89 +542,10 @@ class HomeScreen(private val a: MainActivity) : Screen, EpgAware {
 
     /** العمل المميّز: آخر شي كنت تتابعه، وإلا أحدث فيلم. */
     private fun pickFeatured(cont: List<HistoryItem>) {
-        val old = featured
-        if (old != null && (old.hist == null || cont.any { it.key == old.key })) return
-        featured = cont.firstOrNull()?.let { heroOf(it) } ?: newMovies?.firstOrNull()?.let { heroOf(it) } ?: newSeries?.firstOrNull()?.let { heroOf(it) }
-        featured?.let { if (!rowsMode) applyHero(it) }
-        hero.visibility = if (featured != null) View.VISIBLE else View.GONE
-    }
-
-    private fun heroOf(v: Vod) = HeroItem("v:${v.id}", v.name,
-        listOfNotNull(if (v.isSeries) "مسلسل" else "فيلم", v.rating.toDoubleOrNull()?.takeIf { it > 0 }?.let { "★ %.1f".format(java.util.Locale.US, it) }).joinToString("  ·  "),
-        "", v.icon, vod = v, infoId = v.id, infoSeries = v.isSeries)
-
-    private fun heroOf(h: HistoryItem): HeroItem {
-        val left = if (h.dur > 0 && h.pos < h.dur - 60) "متبقي ${fmtTime(h.dur - h.pos)}" else if (h.type == "episode" && h.finished) "الحلقة التالية" else null
-        val meta = listOfNotNull(h.sub.lineSequence().firstOrNull()?.takeIf { it.isNotBlank() }, left).joinToString("  ·  ")
-        val id = if (h.type == "episode") h.seriesId else h.key.substringAfter("movie:", "")
-        return HeroItem(h.key, h.title, meta, "", h.image, hist = h, infoId = id, infoSeries = h.type == "episode")
-    }
-
-    private fun showItem(o: Any) {
-        val item = when (o) {
-            is Vod -> heroOf(o)
-            is HistoryItem -> heroOf(o)
-            is Channel -> {
-                val now = Epg.nowFor(o) ?: Live.nowCache[o.id]?.takeIf { it.isNow }
-                HeroItem("c:${o.id}", o.name, listOfNotNull("مباشر", now?.title).joinToString("  ·  "), now?.desc.orEmpty(), "")
-            }
-            else -> return
-        }
-        if (heroShown?.key == item.key) return
-        applyHero(item)
-    }
-
-    private fun applyHero(item: HeroItem) {
-        heroShown = item
-        heroTitle.text = item.title
-        val cached = if (item.infoId.isNotEmpty()) infoCache[(if (item.infoSeries) "s:" else "m:") + item.infoId] else null
-        heroMeta.text = listOf(item.meta, cached?.meta.orEmpty()).filter { it.isNotBlank() }.joinToString("  ·  ")
-        heroPlot.text = item.plot.ifBlank { cached?.plot.orEmpty() }
-        heroPlot.visibility = if (heroPlot.text.isNullOrBlank()) View.GONE else View.VISIBLE
-        if (a.current == "home") (cached?.backdrop?.takeIf { it.isNotBlank() } ?: item.image.takeIf { it.isNotBlank() })?.let { a.setBackdrop(it) }
-        infoJob?.cancel()
-        if (item.infoId.isEmpty() || cached != null) return
-        infoJob = a.scope.launch {
-            delay(350)          // تتنقل بسرعة بين البوسترات؟ ما نطلب تفاصيل كل واحد
-            val ck = (if (item.infoSeries) "s:" else "m:") + item.infoId
-            val info = withContext(Bg.io) { runCatching { fetchInfo(item.infoId, item.infoSeries) }.getOrNull() } ?: return@launch
-            infoCache[ck] = info
-            if (heroShown !== item) return@launch
-            heroMeta.text = listOf(item.meta, info.meta).filter { it.isNotBlank() }.joinToString("  ·  ")
-            if (item.plot.isBlank()) { heroPlot.text = info.plot; heroPlot.visibility = if (info.plot.isBlank()) View.GONE else View.VISIBLE }
-            if (info.backdrop.isNotBlank() && a.current == "home") a.setBackdrop(info.backdrop)
-        }
-    }
-
-    private fun fetchInfo(id: String, series: Boolean): Info? {
-        val api = Session.api ?: return null
-        val o = if (series) api.seriesInfo(id).first else api.vodInfo(id)
-        val plot = o.optString("plot").ifBlank { o.optString("description") }
-        val year = (if (series) o.optString("releaseDate") else o.optString("releasedate")).take(4)
-        val genre = o.optString("genre").split(',', '/').firstOrNull()?.trim().orEmpty()
-        val dur = if (series) "" else o.optString("duration").take(5)
-        val meta = listOf(year, genre, dur).filter { it.isNotBlank() && it != "null" }.joinToString("  ·  ")
-        val bd = o.optJSONArray("backdrop_path")?.optString(0).orEmpty().ifBlank { o.optString("cover_big") }
-        return Info(plot.takeIf { it != "null" }.orEmpty(), meta, bd.takeIf { it != "null" }.orEmpty())
-    }
-
-    /** تشغيل/معلومات للعمل المميّز. */
-    private fun heroAct(play: Boolean) {
-        val f = featured ?: return
-        val h = f.hist
-        if (h != null) {
-            if (play) { a.playHistory(h); return }
-            if (f.infoId.isEmpty()) return
-            a.openDetails(Vod(f.infoId, h.title, h.image, "", h.url.substringAfterLast('.', "mp4").substringBefore('?'), "", 0, h.type == "episode"))
-            return
-        }
-        val v = f.vod ?: return
-        if (!play) { a.openDetails(v); return }
-        val i = android.content.Intent(a, DetailsActivity::class.java)
-            .putExtra("id", v.id).putExtra("series", v.isSeries).putExtra("name", v.name).putExtra("icon", v.icon).putExtra("ext", v.ext)
-        if (v.isSeries) i.putExtra("autoResume", true)
-        else Session.api?.let { api -> i.putExtra("autoUrl", api.vodUrl(v.id, v.ext.ifEmpty { "mp4" })).putExtra("autoKey", "movie:${v.id}").putExtra("autoSub", "").putExtra("autoType", "movie") }
-        a.startActivity(i)
+        val h = heroBox ?: return
+        val k = h.featuredKey()
+        if (k != null && (!k.startsWith("v:") || cont.isEmpty()) && (k.startsWith("v:") || cont.any { it.key == k })) return
+        h.setFeatured(cont.firstOrNull() ?: newMovies?.firstOrNull() ?: newSeries?.firstOrNull())
     }
 }
 

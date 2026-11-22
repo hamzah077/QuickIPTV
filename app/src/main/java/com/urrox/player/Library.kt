@@ -43,14 +43,52 @@ class LibraryScreen(private val a: MainActivity, private val series: Boolean) : 
     private var sort = "new"
     private var lastRowFocus = 0
     private val rowScroll = HashMap<String, Pair<Int, Int>>()     // وين وقفت في كل صف
+    /** التلفزيون: إعلان نتفلكس فوق الصفوف. */
+    private val hero: TvHero? = if (a.tv) TvHero(a, if (series) "series" else "movie") else null
+    private var mainBox: LinearLayout? = null
+
+    private fun onTvFocus(nv: View?) {
+        val h = hero ?: return
+        if (nv == null || a.current != kind || !view.isAttachedToWindow || gridBox.visibility == View.VISIBLE) return
+        if (h.contains(nv)) { h.setRows(false, mainBox); return }
+        if (!TvHero.isIn(rows, nv)) return
+        h.setRows(true, mainBox)
+        h.showFocused(nv)
+    }
+
+    override fun onKey(keyCode: Int, event: android.view.KeyEvent): Boolean {
+        val h = hero ?: return false
+        if (!h.hasFeatured || gridBox.visibility == View.VISIBLE) return false
+        val f = a.currentFocus ?: return false
+        if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_UP && TvHero.isIn(rows, f)) {
+            // أول صف: من «الكل» (أو أول صف بدون «الكل») سهم فوق = الإعلان
+            val vh = rows.findContainingViewHolder(f) as? ShelfAdapter.VH ?: return false
+            if (vh.bindingAdapterPosition == 0 && (f === vh.more || !vh.more.isShown)) {
+                h.setRows(false, mainBox); rows.scrollToPosition(0); h.play.requestFocus(); return true
+            }
+        }
+        if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_DOWN && h.contains(f)) {
+            val vh = rows.findViewHolderForAdapterPosition(0) as? ShelfAdapter.VH ?: return false
+            firstOf(vh.strip); return true
+        }
+        return false
+    }
 
     init {
         val root = FrameLayout(a)
-        val main = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL }
-        val head = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(a.dp(16), a.dp(12), a.dp(8), a.dp(4)) }
-        head.addView(a.text(title, 20f, C.TEXT, bold = true), lp(0, WRAP, 1f))
-        head.addView(a.iconButton(R.drawable.ic_search, "بحث", 42) { a.openExtra("search") })
-        main.addView(head)
+        val main = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+        mainBox = main
+        val hb = hero
+        if (hb != null) {
+            // التلفزيون (نتفلكس): الإعلان فوق بدل العنوان — والبحث في القائمة الجانبية
+            main.addView(hb.view, lp(MATCH, WRAP))
+            TvHero.watchFocus(main) { nv -> onTvFocus(nv) }
+        } else {
+            val head = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(a.dp(16), a.dp(12), a.dp(8), a.dp(4)) }
+            head.addView(a.text(title, 20f, C.TEXT, bold = true), lp(0, WRAP, 1f))
+            head.addView(a.iconButton(R.drawable.ic_search, "بحث", 42) { a.openExtra("search") })
+            main.addView(head)
+        }
         rows.layoutManager = SmoothLM(a).apply { initialPrefetchItemCount = 3 }
         rows.adapter = shelfAdapter
         rows.setHasFixedSize(true)
@@ -120,6 +158,7 @@ class LibraryScreen(private val a: MainActivity, private val series: Boolean) : 
         list.add(Shelf(NEW, "أُضيف مؤخراً", all.sortedByDescending { it.added }.take(30)))
         cats.forEach { c -> byCat[c.id]?.takeIf { it.isNotEmpty() }?.let { list.add(Shelf(c.id, c.name, it)) } }
         shelfAdapter.items = list.filter { it.items.isNotEmpty() }
+        hero?.setFeatured(all.maxByOrNull { it.added })
         empty.text = "ما فيه $title"
         empty.visibility = if (all.isEmpty()) View.VISIBLE else View.GONE
     }
@@ -176,12 +215,14 @@ class LibraryScreen(private val a: MainActivity, private val series: Boolean) : 
     /** نعيد بناء الصفوف بس لو المفضلة تغيّرت (غير كذا الصفحة تبقى زي ما هي: نفس المكان ونفس الصور). */
     private var builtFavs: List<String>? = null
     override fun onShow() {
+        hero?.restore()
         if (all.isNotEmpty() && Store.favs(kind) != builtFavs) buildShelves()
     }
 
     override fun focusDefault() {
         // التلفزيون: من القائمة الجانبية = أول بوستر (مو زر «الكل»)، والصف يرجع لأوله
         if (gridBox.visibility == View.VISIBLE) { firstOf(grid); return }
+        hero?.let { h -> if (h.hasFeatured) { h.setRows(false, mainBox); rows.scrollToPosition(0); h.play.requestFocus(); return } }
         rows.scrollToPosition(0)
         rows.post {
             val h = rows.findViewHolderForAdapterPosition(0) as? ShelfAdapter.VH

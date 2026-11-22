@@ -498,7 +498,7 @@ class PlayerActivity : Activity() {
         }
         when (k) {
             KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
-                if (bar.hasFocusInside()) { bar.poke(); return false }      // زر بالشريط (أو "الحلقة التالية"): ضغطته العادية
+                if (bar.hasFocusInside() || bar.floatFocused()) { bar.poke(); return false }      // زر بالشريط (أو "الحلقة التالية"/"تخطي المقدمة"): ضغطته العادية
                 if (live) openPanel() else bar.focusPlay()                   // المباشر: OK = قائمة القنوات (زي الرسيفر)
                 return true
             }
