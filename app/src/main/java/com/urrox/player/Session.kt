@@ -155,6 +155,28 @@ object LivePlayer {
 
     fun get(ctx: Context): ExoPlayer = player ?: buildPlayer(ctx.applicationContext, live = true).also { player = it }
 
+    /**
+     * انقطع البث (شبكة/سيرفر)؟ نعيد الاتصال بنفس القناة تلقائياً: 3 محاولات (1.5، 3، 4.5 ثانية).
+     * true = بنحاول، false = خلصت المحاولات (تطلع رسالة الخطأ).
+     */
+    fun recover(ctx: Context, error: androidx.media3.common.PlaybackException): Boolean {
+        val p = player ?: return false
+        // متأخر عن البث المباشر (HLS): نرجع للحظة الحالية بدون إعادة اتصال
+        if (error.errorCode == androidx.media3.common.PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW) {
+            p.seekToDefaultPosition(); p.prepare(); return true
+        }
+        if (url != retryUrl) { retryUrl = url; retries = 0 }
+        if (retries >= 3 || url.isEmpty()) return false
+        retries++
+        val u = url; val app = ctx.applicationContext
+        main.postDelayed({ if (player === p && url == u) play(app, u, force = true) }, 1500L * retries)
+        return true
+    }
+    /** البث اشتغل وثبت: المحاولات ترجع من الصفر */
+    fun recovered() { retries = 0 }
+    private var retries = 0
+    private var retryUrl = ""
+
     /** يشغّل الرابط، إلا لو هو نفسه شغّال (ما نعيد الاتصال). */
     fun play(ctx: Context, u: String, force: Boolean = false) {
         val p = get(ctx)
@@ -226,18 +248,22 @@ object LivePlayer {
             main.postDelayed(this, 1500)
             if (url != fixedUrl) { fixedUrl = url; fixes = 0 }
             // نراقب بس وهو فعلاً يشتغل (مو موقّف ولا يحمّل) وفيه فيديو
-            if (!p.isPlaying || p.videoFormat == null || !pv.isShown) { lastFrames = -1; stuckChecks = 0; return }
+            if (!p.isPlaying || p.playbackState != androidx.media3.common.Player.STATE_READY || p.videoFormat == null || !pv.isShown) {
+                lastFrames = -1; stuckChecks = 0; return
+            }
             val c = p.videoDecoderCounters ?: return
             c.ensureUpdated()
-            val n = c.renderedOutputBufferCount
+            // أي حركة بالفيديو (صور ظهرت أو انتخطت أو سقطت) = الفك شغّال، مو واقف
+            val n = c.renderedOutputBufferCount + c.skippedOutputBufferCount + c.droppedBufferCount
             if (n != lastFrames) { lastFrames = n; stuckChecks = 0; return }
-            if (++stuckChecks < 2 || fixes >= 3) return          // ~3 ثواني بدون صور جديدة
+            // نصبر أكثر قبل ما نتدخل (كان يتدخل بسرعة ويقطع البث بدون داعي على بعض الشاشات)
+            if (++stuckChecks < 3 || fixes >= 2) return           // ~4.5 ثانية بدون أي صورة
             stuckChecks = 0; fixes++
             if (fixes == 1) {
                 // أول محاولة: نعيد ربط الشاشة (بدون ما ينقطع الصوت)
                 pv.player = null; pv.player = p
             } else {
-                // ما نفع: نعيد الاتصال بنفس القناة
+                // ما نفع: نعيد الاتصال بنفس القناة (مرة وحدة بس)
                 val u = url
                 if (u.isNotEmpty()) play(pv.context, u, force = true)
             }

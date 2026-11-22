@@ -196,6 +196,7 @@ class PlayerActivity : Activity() {
                     loading.visibility = if (state == Player.STATE_BUFFERING) View.VISIBLE else View.GONE
                     if (state == Player.STATE_READY) {
                         status.visibility = View.GONE
+                        if (live) LivePlayer.recovered()
                         if (live && triedTs) Session.preferTs = true     // TS اشتغلت بعد فشل HLS
                     }
                     if (state == Player.STATE_ENDED && !live) {
@@ -213,6 +214,10 @@ class PlayerActivity : Activity() {
                     if (live && !triedTs && Store.liveFormat == "m3u8" && !Session.preferTs) {
                         triedTs = true
                         Session.playlist.getOrNull(Session.playIndex)?.let { c -> Session.api?.let { LivePlayer.play(this@PlayerActivity, it.liveUrl(c.id, "ts"), force = true) } }
+                        return
+                    }
+                    if (live && LivePlayer.recover(this@PlayerActivity, error)) {
+                        loading.visibility = View.VISIBLE       // انقطاع مؤقت: نعيد الاتصال تلقائياً
                         return
                     }
                     loading.visibility = View.GONE

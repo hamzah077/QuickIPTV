@@ -397,6 +397,7 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
             loading.visibility = if (state == Player.STATE_BUFFERING) View.VISIBLE else View.GONE
             if (state == Player.STATE_READY) {
                 status.visibility = View.GONE
+                LivePlayer.recovered()
                 if (triedTs) Session.preferTs = true      // TS اشتغلت بعد فشل HLS: القنوات الجاية TS على طول
             }
             syncPause()
@@ -409,6 +410,8 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
             if (!triedTs && Store.liveFormat == "m3u8" && !Session.preferTs) {     // HLS ما اشتغل؟ نجرب TS مرة وحدة
                 triedTs = true
                 Session.api?.let { playUrl(it.liveUrl(ch.id, "ts"), force = true) }
+            } else if (LivePlayer.recover(a, error)) {
+                showStatus("انقطع البث — نعيد الاتصال…")            // انقطاع مؤقت: يرجع لحاله
             } else showStatus("القناة ما اشتغلت (${error.errorCodeName}). جرّب مرة ثانية أو قناة ثانية.")
         }
     }
@@ -562,6 +565,11 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
     private fun showPreview(on: Boolean) {
         if (a.tv || a.landscape) return
         val v = if (on) View.VISIBLE else View.GONE
+        // الشاشة تختفي/ترجع بحركة: القنوات تطلع لفوق بنعومة بدل ما تقفز (المشغّل راح للنافذة العائمة)
+        if (screenBox.visibility != v && root.isLaidOut)
+            android.transition.TransitionManager.beginDelayedTransition(root, android.transition.AutoTransition().apply {
+                duration = 280; interpolator = android.view.animation.PathInterpolator(0.2f, 0f, 0f, 1f)
+            })
         screenBox.visibility = v; title.visibility = v; nowText.visibility = v
     }
 

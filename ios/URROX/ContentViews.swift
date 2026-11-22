@@ -21,6 +21,7 @@ enum SearchNorm {
 // MARK: - المباشر: شاشة صغيرة فوق + التصنيفات + القنوات
 
 struct LiveView: View {
+    @State private var screenHidden = false
     @Environment(AppModel.self) private var model
     @Environment(PlayerController.self) private var pc
     @Environment(\.horizontalSizeClass) private var hsize
@@ -46,13 +47,20 @@ struct LiveView: View {
             } else {
                 VStack(spacing: 0) {                            // آيفون: الشاشة ثابتة فوق والقنوات تتحرك تحت
                     // القناة بالنافذة العائمة: الشاشة تختفي والقنوات تاخذ المكان كله (نفس الأندرويد)
-                    if !(pc.mini && pc.isLive) {
-                        screen
-                        info.padding(.horizontal, 16).padding(.vertical, 8)
+                    if !screenHidden {
+                        VStack(spacing: 0) {
+                            screen
+                            info.padding(.horizontal, 16).padding(.vertical, 8)
+                        }
+                        .transition(.opacity)
                     }
                     list
                 }
-                .animation(.easeOut(duration: 0.22), value: pc.mini)
+                // القناة راحت للنافذة العائمة: الشاشة تختفي بحركة والقنوات تطلع لفوق بنعومة (بدل ما تقفز)
+                .onChange(of: pc.mini && pc.isLive) { _, v in
+                    withAnimation(.timingCurve(0.2, 0, 0, 1, duration: 0.32)) { screenHidden = v }
+                }
+                .onAppear { screenHidden = pc.mini && pc.isLive }
             }
         }
         .navigationTitle("المباشر")
@@ -230,8 +238,15 @@ struct DetailsView: View {
     /// الجوال: التشغيل يفتح صفحة التشغيل فوق كل شي (تنسحب لتحت وتصير مشغّل صغير)، وهالصفحة تسكّر تحتها
     private func openWatch() {
         guard PlayerController.phone, !inPanel else { return }
-        withAnimation(.spring(duration: 0.38, bounce: 0.04)) { pc.watchVod = vod; pc.mini = false }
-        Task { try? await Task.sleep(for: .milliseconds(350)); dismiss() }
+        // المشغّل يشتغل مكان الصورة فوق على طول — بدون لوحة تطلع من تحت
+        var t = Transaction(); t.disablesAnimations = true
+        withTransaction(t) { pc.watchVod = vod; pc.mini = false }
+        // الصفحة اللي تحت (نفس الصفحة) تتقفل بدون حركة لأن المشغّل صار فوقها بنفس الشكل
+        Task {
+            try? await Task.sleep(for: .milliseconds(200))
+            var t2 = Transaction(); t2.disablesAnimations = true
+            withTransaction(t2) { dismiss() }
+        }
     }
     private var playingHere: Bool {
         guard let r = pc.req else { return false }

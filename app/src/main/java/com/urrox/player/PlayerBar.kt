@@ -727,6 +727,9 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
     private val rowList = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
     private val rowScroll = android.widget.HorizontalScrollView(act).apply {
         isHorizontalScrollBarEnabled = false; clipToPadding = false; layoutDirection = View.LAYOUT_DIRECTION_RTL
+        // مساحة حول الصف من البداية تكفي لتكبير الحلقة المحددة وإطارها (ما ينقص من الأطراف ولا يتزحزح)
+        setPadding(act.dp(14), act.dp(10), act.dp(14), act.dp(10))
+        setTag(R.id.focus_room, true)
         addView(rowList)
     }
     private val rowBox = LinearLayout(act).apply {
@@ -828,7 +831,7 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
             val frame = FrameLayout(act).apply {
                 setPadding(act.dp(3), act.dp(3), act.dp(3), act.dp(3))
                 background = android.graphics.drawable.StateListDrawable().apply {
-                    addState(intArrayOf(android.R.attr.state_focused), rounded(0x00000000, act.dpf(11f), 0xFFFFFFFF.toInt(), act.dp(3)))
+                    addState(intArrayOf(android.R.attr.state_focused), rounded(0x00000000, act.dpf(11f), 0xFFCDD2DA.toInt(), act.dp(3)))     // نفس لون التحديد بباقي التطبيق
                     addState(intArrayOf(), rounded(0x00000000, act.dpf(11f)))
                 }
                 addView(img, LayoutParams(MATCH, MATCH))
