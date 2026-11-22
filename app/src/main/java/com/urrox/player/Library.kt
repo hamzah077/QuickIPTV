@@ -221,6 +221,14 @@ class LibraryScreen(private val a: MainActivity, private val series: Boolean) : 
 
     private fun closeGrid() {
         gridBox.fadeOut(a.dp(24)) { gridBox.visibility = View.GONE }
+        if (a.tv) {
+            // نرجع لخانة «المزيد» بنفس الصف
+            rows.post {
+                val vh = rows.findViewHolderForAdapterPosition(lastRowFocus) as? ShelfAdapter.VH
+                if (vh != null) TvHero.focusItem(vh.strip, vh.posters.itemCount - 1) else rows.requestFocus()
+            }
+            return
+        }
         rows.post { (rows.findViewHolderForAdapterPosition(lastRowFocus)?.itemView ?: rows).requestFocus() }
     }
 
@@ -324,6 +332,8 @@ class LibraryScreen(private val a: MainActivity, private val series: Boolean) : 
             val (p, off) = rowScroll[s.id] ?: (0 to 0)
             (h.strip.layoutManager as LinearLayoutManager).scrollToPositionWithOffset(p, off)
             h.more.setOnClickListener { lastRowFocus = h.bindingAdapterPosition; openGrid(s) }
+            // التلفزيون: «المزيد» بآخر الصف = كل التصنيف بصفحة (نتفلكس) — بدل زر بين الصفوف
+            if (a.tv) h.posters.onMore = { lastRowFocus = h.bindingAdapterPosition; openGrid(s) }
         }
     }
 

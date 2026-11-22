@@ -114,12 +114,16 @@ class PosterAdapter(
     var items: List<Vod> = emptyList()
         set(v) { field = v; notifyDataSetChanged() }
 
+    /** خانة «المزيد» بآخر الصف (التلفزيون): تفتح التصنيف كامل بصفحة. null = بدونها. */
+    var onMore: (() -> Unit)? = null
+        set(v) { if ((field == null) != (v == null)) { field = v; notifyDataSetChanged() } else field = v }
+
     class VH(val root: LinearLayout, val img: ImageView, val title: TextView, val badge: TextView) : RecyclerView.ViewHolder(root)
 
-    override fun getItemCount() = items.size
+    override fun getItemCount() = items.size + if (onMore != null && items.isNotEmpty()) 1 else 0
 
-    /** نوع الخانة = عرضها: المخزن المشترك ما يخلط بين بوسترات بأحجام مختلفة. */
-    override fun getItemViewType(position: Int) = posterW
+    /** نوع الخانة = عرضها: المخزن المشترك ما يخلط بين بوسترات بأحجام مختلفة. (سالب = «المزيد») */
+    override fun getItemViewType(position: Int) = if (position >= items.size) -posterW else posterW
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH = with(ctx) {
         val root = LinearLayout(this).apply {
@@ -148,10 +152,25 @@ class PosterAdapter(
         box.addView(img); box.addView(badge)
         val title = text("", 12.5f, C.TEXT, lines = 2).apply { setPadding(dp(2), dp(6), dp(2), 0); textDirection = View.TEXT_DIRECTION_FIRST_STRONG }
         root.addView(box); root.addView(title)
+        if (viewType < 0) {
+            // «المزيد»: نفس مقاس البوستر، دائرة + بالنص
+            box.background = rounded(0x1FFFFFFF, dpf(9f))
+            img.scaleType = ImageView.ScaleType.CENTER
+            img.setImageResource(R.drawable.ic_plus)
+            img.imageTintList = android.content.res.ColorStateList.valueOf(C.TEXT)
+            badge.visibility = View.GONE
+            title.text = "المزيد"; title.gravity = Gravity.CENTER
+            root.contentDescription = "المزيد"
+        }
         VH(root, img, title, badge)
     }
 
     override fun onBindViewHolder(h: VH, pos: Int) {
+        if (pos >= items.size) {
+            h.root.setOnClickListener { onMore?.invoke() }
+            h.root.setTag(R.id.hero_item, null)
+            return
+        }
         val v = items[pos]
         h.title.text = v.name
         h.img.load(v.icon.ifEmpty { null }) {
