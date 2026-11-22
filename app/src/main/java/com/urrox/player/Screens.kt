@@ -51,7 +51,7 @@ fun MainActivity.sectionTitle(t: String): TextView = text(t, 17f, C.TEXT, bold =
 /** صف أفقي من البوسترات (للرئيسية). */
 fun MainActivity.posterRow(items: List<Vod>, posterW: Int, onClick: (Vod) -> Unit): RecyclerView =
     RecyclerView(this).apply {
-        layoutManager = SmoothLM(this@posterRow, LinearLayoutManager.HORIZONTAL).apply { initialPrefetchItemCount = 5 }
+        layoutManager = SmoothLM(this@posterRow, LinearLayoutManager.HORIZONTAL).apply { initialPrefetchItemCount = 5; alignStart = tv }
         setRecycledViewPool(posterPool(posterW))
         adapter = PosterAdapter(this@posterRow, posterW, onClick).also { it.items = items }
         setHasFixedSize(true)
@@ -220,7 +220,11 @@ class LoginScreen(private val a: MainActivity, edit: Account?) : Screen {
 class HomeScreen(private val a: MainActivity) : Screen, EpgAware {
     // التلفزيون: مسافة كبيرة تحت عشان آخر صف يقدر يطلع لفوق (كل صف تنزل له يصير أول الشاشة — نمط نتفلكس)
     private val col = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL; setPadding(0, a.dp(6), 0, a.dp(if (a.tv) 220 else 24)) }
-    private val scroll = ScrollView(a).apply { addView(col); isFillViewport = true; isVerticalScrollBarEnabled = false; clipToPadding = false }
+    // التلفزيون: التمرير الرأسي كله منّا (الصف المحدد يطلع لأول الشاشة) — نوقف تمرير ScrollView التلقائي عشان ما يتعاركون
+    private val scroll = object : ScrollView(a) {
+        override fun computeScrollDeltaToGetChildRectOnScreen(rect: android.graphics.Rect): Int =
+            if (a.tv) 0 else super.computeScrollDeltaToGetChildRectOnScreen(rect)
+    }.apply { addView(col); isFillViewport = true; isVerticalScrollBarEnabled = false; clipToPadding = false }
     private val tvRoot: LinearLayout? = if (a.tv) LinearLayout(a).apply {
         orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
         clipChildren = false; clipToPadding = false
@@ -377,7 +381,15 @@ class HomeScreen(private val a: MainActivity) : Screen, EpgAware {
 
     private fun hRow(): Pair<HorizontalScrollView, LinearLayout> {
         val row = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL; setPadding(padH - a.dp(4), a.dp(6), padH - a.dp(4), a.dp(6)) }
-        return HorizontalScrollView(a).apply { addView(row); isHorizontalScrollBarEnabled = false; overScrollMode = View.OVER_SCROLL_NEVER; clipToPadding = false } to row
+        // التلفزيون (نتفلكس): المحدد يبقى أول الصف والصف يتحرك
+        val sc = object : HorizontalScrollView(a) {
+            override fun computeScrollDeltaToGetChildRectOnScreen(rect: android.graphics.Rect): Int {
+                if (!a.tv) return super.computeScrollDeltaToGetChildRectOnScreen(rect)
+                return if (layoutDirection == View.LAYOUT_DIRECTION_RTL) rect.right + a.dp(6) - (scrollX + width - paddingRight)
+                else rect.left - a.dp(6) - (scrollX + paddingLeft)
+            }
+        }
+        return sc.apply { addView(row); isHorizontalScrollBarEnabled = false; overScrollMode = View.OVER_SCROLL_NEVER; clipToPadding = false } to row
     }
 
     /** المباشر: المفضلة ثم آخر القنوات اللي شاهدتها ثم أول قنوات القائمة. */
@@ -504,6 +516,7 @@ class HomeScreen(private val a: MainActivity) : Screen, EpgAware {
         }
     }
 
+    private val lastPos = HashMap<View, Int>()       // آخر مكان بكل صف
     private fun slots(): List<LinearLayout> = listOfNotNull(contSlot, liveSlot, movSlot, serSlot, favSlot).filter { it.childCount > 0 }
 
     private fun onTvFocus(nv: View?) {
@@ -513,6 +526,7 @@ class HomeScreen(private val a: MainActivity) : Screen, EpgAware {
         if (!TvHero.isIn(scroll, nv)) return
         setRows(true)
         h.showFocused(nv)
+        slots().firstOrNull { TvHero.isIn(it, nv) }?.let { sl -> TvHero.rowIn(sl)?.let { r -> TvHero.indexIn(r, nv)?.let { lastPos[sl] = it } } }
         // الصف اللي نزلت له يطلع لأول الشاشة
         slots().firstOrNull { TvHero.isIn(it, nv) }?.let { sl -> scroll.post { scroll.smoothScrollTo(0, sl.top) } }
     }
@@ -528,10 +542,17 @@ class HomeScreen(private val a: MainActivity) : Screen, EpgAware {
         val h = heroBox ?: return false
         if (!h.hasFeatured) return false
         val f = a.currentFocus ?: return false
-        // أول صف + سهم فوق = يرجع للإعلان (أزرار تشغيل/معلومات)
-        if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_UP && TvHero.isIn(scroll, f)) {
-            val top = slots().firstOrNull()
-            if (top != null && TvHero.isIn(top, f)) { setRows(false); h.play.requestFocus(); return true }
+        // فوق/تحت بين الصفوف: نروح للصف اللي فوق/تحت مباشرة، لأقرب عنصر لمكانك (بدون قفزات ولا تمرير بدل التنقل)
+        if ((keyCode == android.view.KeyEvent.KEYCODE_DPAD_UP || keyCode == android.view.KeyEvent.KEYCODE_DPAD_DOWN) && TvHero.isIn(scroll, f)) {
+            val sl = slots()
+            val i = sl.indexOfFirst { TvHero.isIn(it, f) }
+            if (i < 0) return false
+            val j = if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_UP) i - 1 else i + 1
+            if (j < 0) { setRows(false); h.play.requestFocus(); return true }       // أول صف + فوق = الإعلان
+            if (j >= sl.size) return true                                             // آخر صف: نبقى مكاننا
+            // كل صف يتذكر وين وقفت فيه آخر مرة (نتفلكس)، وأول مرة = أول بوستر
+            TvHero.rowIn(sl[j])?.let { TvHero.focusItem(it, lastPos[sl[j]] ?: 0) }
+            return true
         }
         // من الإعلان تحت = أول عنصر بأول صف
         if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_DOWN && h.contains(f)) {

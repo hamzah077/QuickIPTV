@@ -439,6 +439,7 @@ class MainActivity : Activity() {
     private var backdropScrim: View? = null
     private var railScrim: View? = null
     private var backdropUrl: String? = null
+    private var lastContentFocus: java.lang.ref.WeakReference<View>? = null
 
     /** التلفزيون: الصورة الكبيرة خلف الشاشة (null = تختفي). تتبدّل بتلاشي ناعم. */
     fun setBackdrop(url: String?) {
@@ -607,10 +608,14 @@ class MainActivity : Activity() {
         // التلفزيون: سهم يمين من آخر شي على اليمين بالصفحة = القائمة الجانبية على طول (مو ينزل تحت)
         if (tv && event.action == KeyEvent.ACTION_DOWN && event.keyCode == KeyEvent.KEYCODE_DPAD_RIGHT && !nav.hasFocus()) {
             val f = currentFocus
-            if (f != null && TvHero.isIn(content, f) && !canGoRight(f)) { (navButtons[current] ?: nav).requestFocus(); return true }
+            if (f != null && TvHero.isIn(content, f) && !canGoRight(f)) { lastContentFocus = java.lang.ref.WeakReference(f); (navButtons[current] ?: nav).requestFocus(); return true }
         }
         // التلفزيون: من القائمة الجانبية يسار = تدخل القسم من أوله (أو من اللي اخترته فيه)
         if (tv && event.action == KeyEvent.ACTION_DOWN && event.keyCode == KeyEvent.KEYCODE_DPAD_LEFT && nav.hasFocus()) {
+            // يرجعك لنفس المكان اللي طلعت منه للقائمة (لو لسه بنفس القسم)، وإلا أول القسم
+            val back = lastContentFocus?.get()
+            lastContentFocus = null
+            if (back != null && back.isAttachedToWindow && back.isShown && TvHero.isIn(content, back) && back.requestFocus()) return true
             screens[current]?.focusDefault(); return true
         }
         return super.dispatchKeyEvent(event)

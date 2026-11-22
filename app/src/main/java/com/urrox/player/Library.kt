@@ -54,23 +54,32 @@ class LibraryScreen(private val a: MainActivity, private val series: Boolean) : 
         if (!TvHero.isIn(rows, nv)) return
         h.setRows(true, mainBox)
         h.showFocused(nv)
+        (rows.findContainingViewHolder(nv) as? ShelfAdapter.VH)?.let { vh -> TvHero.indexIn(vh.strip, nv)?.let { shelfPos[vh.boundId] = it } }
+    }
+    private val shelfPos = HashMap<String, Int>()      // آخر مكان بكل صف (نتفلكس)
+
+    /** ينقل التحديد لصف [pos] على آخر مكان كنت فيه (أول مرة = أول بوستر). */
+    private fun focusShelf(pos: Int) {
+        val vh = rows.findViewHolderForAdapterPosition(pos) as? ShelfAdapter.VH
+        if (vh != null) { TvHero.focusItem(vh.strip, shelfPos[vh.boundId] ?: 0); return }
+        rows.scrollToPosition(pos)
+        rows.post { (rows.findViewHolderForAdapterPosition(pos) as? ShelfAdapter.VH)?.let { v -> TvHero.focusItem(v.strip, shelfPos[v.boundId] ?: 0) } }
     }
 
     override fun onKey(keyCode: Int, event: android.view.KeyEvent): Boolean {
         val h = hero ?: return false
         if (!h.hasFeatured || gridBox.visibility == View.VISIBLE) return false
         val f = a.currentFocus ?: return false
-        if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_UP && TvHero.isIn(rows, f)) {
-            // أول صف: من «الكل» (أو أول صف بدون «الكل») سهم فوق = الإعلان
+        val up = keyCode == android.view.KeyEvent.KEYCODE_DPAD_UP
+        if ((up || keyCode == android.view.KeyEvent.KEYCODE_DPAD_DOWN) && TvHero.isIn(rows, f)) {
+            // فوق/تحت بين الصفوف: للصف اللي فوق/تحت على آخر مكان كنت فيه — وأول صف + فوق = الإعلان
             val vh = rows.findContainingViewHolder(f) as? ShelfAdapter.VH ?: return false
-            if (vh.bindingAdapterPosition == 0 && (f === vh.more || !vh.more.isShown)) {
-                h.setRows(false, mainBox); rows.scrollToPosition(0); h.play.requestFocus(); return true
-            }
+            val j = vh.bindingAdapterPosition + if (up) -1 else 1
+            if (j < 0) { h.setRows(false, mainBox); rows.scrollToPosition(0); h.play.requestFocus(); return true }
+            if (j >= shelfAdapter.itemCount) return true
+            focusShelf(j); return true
         }
-        if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_DOWN && h.contains(f)) {
-            val vh = rows.findViewHolderForAdapterPosition(0) as? ShelfAdapter.VH ?: return false
-            firstOf(vh.strip); return true
-        }
+        if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_DOWN && h.contains(f)) { focusShelf(0); return true }
         return false
     }
 
@@ -89,7 +98,7 @@ class LibraryScreen(private val a: MainActivity, private val series: Boolean) : 
             head.addView(a.iconButton(R.drawable.ic_search, "بحث", 42) { a.openExtra("search") })
             main.addView(head)
         }
-        rows.layoutManager = SmoothLM(a).apply { initialPrefetchItemCount = 3 }
+        rows.layoutManager = SmoothLM(a).apply { initialPrefetchItemCount = 3; alignTop = a.tv }     // التلفزيون: الصف المحدد فوق
         rows.adapter = shelfAdapter
         rows.setHasFixedSize(true)
         rows.itemAnimator = null              // بدون حركات = سحب أنعم
@@ -276,12 +285,13 @@ class LibraryScreen(private val a: MainActivity, private val series: Boolean) : 
                 background = a.focusBg(radius = 8)
                 isFocusable = true; isClickable = true
             }
+            if (a.tv) more.visibility = View.GONE        // التلفزيون (نتفلكس): الصف فيه كل التصنيف — بدون زر بين الصفوف يلخبط التنقل
             head.addView(more)
             root.addView(head)
             val posters = PosterAdapter(a, posterW) { a.openDetails(it) }
             // صف أفقي بـ RecyclerView (يدعم الاتجاه من اليمين لليسار تلقائياً ويعيد استخدام الخانات)
             val strip = RecyclerView(a).apply {
-                layoutManager = SmoothLM(a, LinearLayoutManager.HORIZONTAL).apply { initialPrefetchItemCount = 5 }
+                layoutManager = SmoothLM(a, LinearLayoutManager.HORIZONTAL).apply { initialPrefetchItemCount = 5; alignStart = a.tv }
                 setRecycledViewPool(posterPool(posterW))      // خانات مشتركة بين كل الصفوف
                 adapter = posters
                 setHasFixedSize(true)

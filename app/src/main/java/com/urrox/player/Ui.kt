@@ -535,9 +535,19 @@ private fun centerDelta(parent: RecyclerView, child: View, vertical: Boolean): I
  */
 open class SmoothLM(ctx: Context, orientation: Int = VERTICAL, reverse: Boolean = false) : LinearLayoutManager(ctx, orientation, reverse) {
     private val tv = ctx.isTv()
+    /** التلفزيون (نمط نتفلكس): الصف المحدد يطلع لأول القائمة بدل النص. */
+    var alignTop = false
+    /** التلفزيون (نتفلكس): البوستر المحدد يبقى أول الصف (يمين بالعربي) والصف هو اللي يتحرك. */
+    var alignStart = false
     override fun requestChildRectangleOnScreen(parent: RecyclerView, child: View, rect: android.graphics.Rect, immediate: Boolean, focusedChildVisible: Boolean): Boolean {
         if (!tv) return super.requestChildRectangleOnScreen(parent, child, rect, immediate, focusedChildVisible)
-        val d = centerDelta(parent, child, orientation == VERTICAL)
+        val d = when {
+            alignTop && orientation == VERTICAL -> child.top - parent.paddingTop
+            alignStart && orientation == HORIZONTAL ->
+                if (parent.layoutDirection == View.LAYOUT_DIRECTION_RTL) child.right - (parent.width - parent.paddingRight)
+                else child.left - parent.paddingLeft
+            else -> centerDelta(parent, child, orientation == VERTICAL)
+        }
         if (d == 0) return false
         if (orientation == VERTICAL) { if (immediate) parent.scrollBy(0, d) else parent.smoothScrollBy(0, d) }
         else { if (immediate) parent.scrollBy(d, 0) else parent.smoothScrollBy(d, 0) }

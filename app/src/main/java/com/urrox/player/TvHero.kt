@@ -31,12 +31,14 @@ class TvHero(private val a: MainActivity, private val screenKey: String) {
     private var infoJob: Job? = null
     private val w = (a.resources.displayMetrics.widthPixels * 0.5f).toInt()
 
+    // مقاسات ثابتة (سطر للاسم، سطر للتفاصيل، 3 أسطر للقصة حتى لو فاضية): لما تتحمّل القصة ما يتزحزح المحتوى تحت
     private val title = a.text("", 30f, C.TEXT, bold = true).apply {
-        maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END; textDirection = View.TEXT_DIRECTION_FIRST_STRONG
+        setLines(1); ellipsize = android.text.TextUtils.TruncateAt.END; textDirection = View.TEXT_DIRECTION_FIRST_STRONG
     }
-    private val meta = a.text("", 13.5f, 0xFFC4C8CE.toInt()).apply { maxLines = 1; setPadding(0, a.dp(6), 0, 0) }
+    private val meta = a.text("", 13.5f, 0xFFC4C8CE.toInt()).apply { setLines(1); ellipsize = android.text.TextUtils.TruncateAt.END; setPadding(0, a.dp(6), 0, 0) }
     private val plot = a.text("", 14.5f, 0xFFE2E4E8.toInt(), lines = 3).apply {
         textDirection = View.TEXT_DIRECTION_FIRST_STRONG; setLineSpacing(0f, 1.25f); setPadding(0, a.dp(8), 0, 0)
+        setLines(3); ellipsize = android.text.TextUtils.TruncateAt.END
     }
 
     /** زر الإعلان: رمادي شفاف، ولما يتحدد أبيض والكلام داكن. */
@@ -79,7 +81,7 @@ class TvHero(private val a: MainActivity, private val screenKey: String) {
         addView(meta, LinearLayout.LayoutParams(w, ViewGroup.LayoutParams.WRAP_CONTENT))
         addView(plot, LinearLayout.LayoutParams(w, ViewGroup.LayoutParams.WRAP_CONTENT))
         addView(btns, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = a.dp(18) })
-        visibility = View.GONE              // يطلع أول ما نعرف العمل المميّز
+        visibility = View.INVISIBLE         // مكانه محجوز من البداية (ما يدف الصفوف لما يطلع)
     }
 
     val hasFeatured get() = featured != null
@@ -90,7 +92,7 @@ class TvHero(private val a: MainActivity, private val screenKey: String) {
         val it = o?.let { itemOf(it) }
         if (it?.key == featured?.key) return
         featured = it
-        view.visibility = if (it != null) View.VISIBLE else View.GONE
+        view.visibility = if (it != null) View.VISIBLE else View.INVISIBLE
         if (it != null && !rows) apply(it)
     }
     fun featuredKey(): String? = featured?.key
@@ -102,9 +104,10 @@ class TvHero(private val a: MainActivity, private val screenKey: String) {
     fun setRows(on: Boolean, root: ViewGroup?) {
         if (rows == on) return
         rows = on
-        root?.let { android.transition.TransitionManager.beginDelayedTransition(it, android.transition.ChangeBounds().setDuration(200)) }
-        btns.visibility = if (on) View.GONE else View.VISIBLE
-        plot.maxLines = if (on) 2 else 3
+        // الأزرار تختفي بس مكانها يبقى = ولا شي يتحرك
+        btns.animate().cancel()
+        if (on) btns.animate().alpha(0f).setDuration(120).withEndAction { if (rows) btns.visibility = View.INVISIBLE }.start()
+        else { btns.visibility = View.VISIBLE; btns.animate().alpha(1f).setDuration(120).start() }
         if (!on) featured?.let { apply(it) }
     }
 
@@ -144,7 +147,6 @@ class TvHero(private val a: MainActivity, private val screenKey: String) {
         val cached = if (item.infoId.isNotEmpty()) infoCache[ck(item)] else null
         meta.text = listOf(item.meta, cached?.meta.orEmpty()).filter { it.isNotBlank() }.joinToString("  ·  ")
         plot.text = item.plot.ifBlank { cached?.plot.orEmpty() }
-        plot.visibility = if (plot.text.isNullOrBlank()) View.GONE else View.VISIBLE
         if (a.current == screenKey) (cached?.backdrop?.takeIf { it.isNotBlank() } ?: item.image.takeIf { it.isNotBlank() })?.let { a.setBackdrop(it) }
         infoJob?.cancel()
         if (item.infoId.isEmpty() || cached != null) return
@@ -154,7 +156,7 @@ class TvHero(private val a: MainActivity, private val screenKey: String) {
             infoCache[ck(item)] = inf
             if (shown !== item) return@launch
             meta.text = listOf(item.meta, inf.meta).filter { it.isNotBlank() }.joinToString("  ·  ")
-            if (item.plot.isBlank()) { plot.text = inf.plot; plot.visibility = if (inf.plot.isBlank()) View.GONE else View.VISIBLE }
+            if (item.plot.isBlank()) plot.text = inf.plot
             if (inf.backdrop.isNotBlank() && a.current == screenKey) a.setBackdrop(inf.backdrop)
         }
     }
@@ -200,6 +202,54 @@ class TvHero(private val a: MainActivity, private val screenKey: String) {
                 override fun onViewAttachedToWindow(v: View) { v.viewTreeObserver.addOnGlobalFocusChangeListener(l) }
                 override fun onViewDetachedFromWindow(v: View) { v.viewTreeObserver.removeOnGlobalFocusChangeListener(l) }
             })
+        }
+
+        /** أقرب عنصر قابل للتحديد داخل [box] لمكان [from] أفقياً (للتنقل فوق/تحت بين الصفوف). */
+        fun nearest(box: View, from: View): View? {
+            val list = ArrayList<View>()
+            box.addFocusables(list, View.FOCUS_DOWN)
+            val r = android.graphics.Rect()
+            val loc = IntArray(2)
+            from.getLocationOnScreen(loc); val cx = loc[0] + from.width / 2
+            val sw = box.resources.displayMetrics.widthPixels
+            return list.filter { it.isShown && it.getGlobalVisibleRect(r) && r.width() > 0 && r.left < sw }
+                .minByOrNull { v -> v.getLocationOnScreen(loc); Math.abs(loc[0] + v.width / 2 - cx) }
+        }
+
+        /** الصف الأفقي داخل قسم (RecyclerView أو HorizontalScrollView). */
+        fun rowIn(box: View): View? {
+            if (box is androidx.recyclerview.widget.RecyclerView || box is android.widget.HorizontalScrollView) return box
+            if (box is ViewGroup) for (i in 0 until box.childCount) rowIn(box.getChildAt(i))?.let { return it }
+            return null
+        }
+
+        /** ترتيب العنصر المحدد داخل الصف. */
+        fun indexIn(row: View, focused: View): Int? {
+            var c: View = focused
+            while (true) {
+                val p = c.parent as? View ?: return null
+                if (row is androidx.recyclerview.widget.RecyclerView && p === row) return row.getChildAdapterPosition(c).takeIf { it >= 0 }
+                if (row is android.widget.HorizontalScrollView && p.parent === row) return (p as ViewGroup).indexOfChild(c)
+                if (p === row) return null
+                c = p
+            }
+        }
+
+        /** يحدد العنصر رقم [idx] بالصف (ولو مو ظاهر نمرّر له أول). */
+        fun focusItem(row: View, idx: Int) {
+            if (row is androidx.recyclerview.widget.RecyclerView) {
+                val n = row.adapter?.itemCount ?: 0
+                if (n == 0) return
+                val i = idx.coerceIn(0, n - 1)
+                val vh = row.findViewHolderForAdapterPosition(i)
+                if (vh != null) { vh.itemView.requestFocus(); return }
+                row.scrollToPosition(i)
+                row.post { (row.findViewHolderForAdapterPosition(i)?.itemView ?: row.getChildAt(0))?.requestFocus() }
+            } else if (row is android.widget.HorizontalScrollView) {
+                val l = row.getChildAt(0) as? ViewGroup ?: return
+                if (l.childCount == 0) return
+                l.getChildAt(idx.coerceIn(0, l.childCount - 1)).requestFocus()
+            }
         }
 
         fun isIn(parent: View, v: View): Boolean {
