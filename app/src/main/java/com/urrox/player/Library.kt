@@ -28,7 +28,15 @@ class LibraryScreen(private val a: MainActivity, private val series: Boolean) : 
     private val title = if (series) "المسلسلات" else "الأفلام"
     override val view: View
     private val posterW = a.dp(if (a.tv) 124 else 100)
-    private val rows = RecyclerView(a)
+    private val rows = object : RecyclerView(a) {
+        override fun getBottomFadingEdgeStrength(): Float = if (a.tv) 0f else super.getBottomFadingEdgeStrength()
+    }.apply {
+        if (a.tv) {
+            // الصفوف تقص على حدودها (ما تطلع فوق الإعلان) والصف اللي فوق يذوب بنعومة
+            clipToPadding = true; setTag(R.id.keep_clip, true)
+            isVerticalFadingEdgeEnabled = true; setFadingEdgeLength(a.dp(40))
+        }
+    }
     private val shelfAdapter = ShelfAdapter()
     private val gridBox = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE }
     private val grid = RecyclerView(a)
@@ -50,9 +58,9 @@ class LibraryScreen(private val a: MainActivity, private val series: Boolean) : 
     private fun onTvFocus(nv: View?) {
         val h = hero ?: return
         if (nv == null || a.current != kind || !view.isAttachedToWindow || gridBox.visibility == View.VISIBLE) return
-        if (h.contains(nv)) { h.setRows(false, mainBox); return }
+        if (h.contains(nv)) { h.setRows(false, mainBox, rows); return }
         if (!TvHero.isIn(rows, nv)) return
-        h.setRows(true, mainBox)
+        h.setRows(true, mainBox, rows)
         h.showFocused(nv)
         (rows.findContainingViewHolder(nv) as? ShelfAdapter.VH)?.let { vh -> TvHero.indexIn(vh.strip, nv)?.let { shelfPos[vh.boundId] = it } }
     }
@@ -75,7 +83,7 @@ class LibraryScreen(private val a: MainActivity, private val series: Boolean) : 
             // فوق/تحت بين الصفوف: للصف اللي فوق/تحت على آخر مكان كنت فيه — وأول صف + فوق = الإعلان
             val vh = rows.findContainingViewHolder(f) as? ShelfAdapter.VH ?: return false
             val j = vh.bindingAdapterPosition + if (up) -1 else 1
-            if (j < 0) { h.setRows(false, mainBox); rows.scrollToPosition(0); h.play.requestFocus(); return true }
+            if (j < 0) { h.setRows(false, mainBox, rows); rows.scrollToPosition(0); h.play.requestFocus(); return true }
             if (j >= shelfAdapter.itemCount) return true
             focusShelf(j); return true
         }
@@ -231,7 +239,7 @@ class LibraryScreen(private val a: MainActivity, private val series: Boolean) : 
     override fun focusDefault() {
         // التلفزيون: من القائمة الجانبية = أول بوستر (مو زر «الكل»)، والصف يرجع لأوله
         if (gridBox.visibility == View.VISIBLE) { firstOf(grid); return }
-        hero?.let { h -> if (h.hasFeatured) { h.setRows(false, mainBox); rows.scrollToPosition(0); h.play.requestFocus(); return } }
+        hero?.let { h -> if (h.hasFeatured) { h.setRows(false, mainBox, rows); rows.scrollToPosition(0); h.play.requestFocus(); return } }
         rows.scrollToPosition(0)
         rows.post {
             val h = rows.findViewHolderForAdapterPosition(0) as? ShelfAdapter.VH

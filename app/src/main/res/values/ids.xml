@@ -6,4 +6,5 @@
     <item name="pending_player" type="id"/>
     <item name="ink_orig" type="id" />
     <item name="hero_item" type="id" />
+    <item name="keep_clip" type="id" />
 </resources>

@@ -494,7 +494,7 @@ private fun roomForFocus(v: View, top: View) {
                 p.setTag(R.id.focus_room, true)
                 p.setPaddingRelative(maxOf(p.paddingStart, room), maxOf(p.paddingTop, room), maxOf(p.paddingEnd, room), maxOf(p.paddingBottom, room))
             }
-            p.clipToPadding = false
+            if (p.getTag(R.id.keep_clip) != true) p.clipToPadding = false     // (قائمة الصفوف تحت الإعلان: تقص عشان ما تطلع فوقه)
         } else {
             p.clipChildren = false
             p.clipToPadding = false

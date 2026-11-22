@@ -224,7 +224,15 @@ class HomeScreen(private val a: MainActivity) : Screen, EpgAware {
     private val scroll = object : ScrollView(a) {
         override fun computeScrollDeltaToGetChildRectOnScreen(rect: android.graphics.Rect): Int =
             if (a.tv) 0 else super.computeScrollDeltaToGetChildRectOnScreen(rect)
-    }.apply { addView(col); isFillViewport = true; isVerticalScrollBarEnabled = false; clipToPadding = false }
+        override fun getBottomFadingEdgeStrength(): Float = if (a.tv) 0f else super.getBottomFadingEdgeStrength()
+    }.apply {
+        addView(col); isFillViewport = true; isVerticalScrollBarEnabled = false
+        if (a.tv) {
+            // الصفوف تقص على حدودها (ما تطلع فوق الإعلان) والصف اللي فوق يذوب بنعومة
+            clipToPadding = true; setTag(R.id.keep_clip, true)
+            isVerticalFadingEdgeEnabled = true; setFadingEdgeLength(a.dp(40))
+        } else clipToPadding = false
+    }
     private val tvRoot: LinearLayout? = if (a.tv) LinearLayout(a).apply {
         orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
         clipChildren = false; clipToPadding = false
@@ -534,7 +542,7 @@ class HomeScreen(private val a: MainActivity) : Screen, EpgAware {
     private fun setRows(on: Boolean) {
         val h = heroBox ?: return
         if (h.rows == on) return
-        h.setRows(on, tvRoot)
+        h.setRows(on, tvRoot, scroll)
         if (!on) scroll.smoothScrollTo(0, 0)
     }
 

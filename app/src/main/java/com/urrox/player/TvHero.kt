@@ -101,13 +101,22 @@ class TvHero(private val a: MainActivity, private val screenKey: String) {
     fun restore() { (shown ?: featured)?.let { apply(it, force = true) } }
 
     /** true = التحديد بالصفوف (الإعلان مختصر بدون أزرار). */
-    fun setRows(on: Boolean, root: ViewGroup?) {
+    /**
+     * (ج) وأنت بالصفوف: الإعلان يصغر (الاسم + سطر التفاصيل بس) والصفوف تاخذ مساحة أكبر.
+     * ترجع للإعلان: يكبر مرة ثانية بالقصة والأزرار. [list] القائمة نفسها ما تدخل بالحركة (أنعم).
+     */
+    fun setRows(on: Boolean, root: ViewGroup?, list: View? = null) {
         if (rows == on) return
         rows = on
-        // الأزرار تختفي بس مكانها يبقى = ولا شي يتحرك
-        btns.animate().cancel()
-        if (on) btns.animate().alpha(0f).setDuration(120).withEndAction { if (rows) btns.visibility = View.INVISIBLE }.start()
-        else { btns.visibility = View.VISIBLE; btns.animate().alpha(1f).setDuration(120).start() }
+        root?.let {
+            val tr = android.transition.ChangeBounds().setDuration(220)
+            tr.interpolator = android.view.animation.DecelerateInterpolator()
+            if (list != null) tr.excludeChildren(list, true)
+            android.transition.TransitionManager.beginDelayedTransition(it, tr)
+        }
+        btns.animate().cancel(); btns.alpha = 1f
+        btns.visibility = if (on) View.GONE else View.VISIBLE
+        plot.visibility = if (on) View.GONE else View.VISIBLE
         if (!on) featured?.let { apply(it) }
     }
 
