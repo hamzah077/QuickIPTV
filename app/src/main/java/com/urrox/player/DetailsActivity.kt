@@ -641,7 +641,10 @@ class DetailsActivity : Activity() {
         val sw = resources.displayMetrics.widthPixels
         root.addView(ImageView(this).apply {
             scaleType = ImageView.ScaleType.CENTER_CROP; alpha = 0.6f
-            load(backdrop.ifEmpty { icon }.ifEmpty { null }) { size(1280, 720) }
+            load(backdrop.ifEmpty { icon }.ifEmpty { null }) {
+                size(1280, 720)
+                if (Glass.on) listener(onSuccess = { _, r -> Glass.setBackdrop(r.drawable) })     // زجاج البطاقة يعرض اللي وراه
+            }
         }, FrameLayout.LayoutParams(MATCH, MATCH))
         val bg = C.BG and 0x00FFFFFF
         // تظليل: غامق من جهة الكلام (يمين) ومن تحت عشان الكتابة تنقرى فوق أي صورة
@@ -669,6 +672,14 @@ class DetailsActivity : Activity() {
         }
         hero.addView(heroPlotT)
         hero.addView(tvActions(), lp(WRAP, WRAP).apply { topMargin = dp(16) })
+        if (Glass.on) {
+            // ليكود جلاس: المعلومات والأزرار داخل بطاقة زجاج
+            hero.background = Glass.Pane(hero, dpf(28f))
+            hero.setPaddingRelative(dp(26), dp(20), dp(26), dp(22))
+            root.addView(hero, FrameLayout.LayoutParams((sw * 0.52f).toInt(), WRAP, Gravity.TOP or Gravity.RIGHT).apply {
+                topMargin = inT + dp(24); rightMargin = inR + dp(40)
+            })
+        } else
         root.addView(hero, FrameLayout.LayoutParams((sw * 0.58f).toInt(), WRAP, Gravity.TOP or Gravity.RIGHT))      // الكلام يمين (عربي)
 
         // تحت: مثبّت بأسفل الشاشة

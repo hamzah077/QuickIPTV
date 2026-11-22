@@ -157,6 +157,13 @@ class MainActivity : Activity() {
             val bd = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; alpha = 0f }
             backdrop = bd
             root.addView(bd, FrameLayout.LayoutParams(MATCH, MATCH))
+            if (Glass.on) {
+                // ليكود جلاس: نسخة ممَوّهة من الصورة فوقها (تطلع بتلاشي) — Blur خفيف بدون ما يثقّل
+                val bl = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; alpha = 0f }
+                blurView = bl
+                root.addView(bl, FrameLayout.LayoutParams(MATCH, MATCH))
+                Glass.onBlurred = { b -> bl.setImageBitmap(b) }
+            }
             val bg = C.BG and 0x00FFFFFF
             backdropScrim = FrameLayout(this).apply {
                 alpha = 0f
@@ -444,6 +451,16 @@ class MainActivity : Activity() {
     private var backdropScrim: View? = null
     private var railScrim: View? = null
     private var backdropUrl: String? = null
+    private var blurView: ImageView? = null
+    private var blurLevel = 0f
+
+    /** ليكود جلاس: مقدار تمويه الخلفية (0 واضحة … 1 ممَوّهة). القائمة الجانبية المفتوحة = ممَوّهة كاملة. */
+    fun setBlur(level: Float) {
+        blurLevel = level
+        val bl = blurView ?: return
+        val v = if (railOpen) 1f else level
+        bl.animate().cancel(); bl.animate().alpha(v * 0.85f).setDuration(260).start()
+    }
     private var lastContentFocus: java.lang.ref.WeakReference<View>? = null
 
     /** التلفزيون: الصورة الكبيرة خلف الشاشة (null = تختفي). تتبدّل بتلاشي ناعم. */
@@ -485,6 +502,7 @@ class MainActivity : Activity() {
         }
         if (!Glass.on) nav.setBackgroundColor(if (open) 0xF20C0E11.toInt() else android.graphics.Color.TRANSPARENT)
         nav.elevation = if (open) dp(12).toFloat() else 0f
+        if (Glass.on) setBlur(blurLevel)
         railScrim?.let { sc ->
             sc.animate().cancel()
             if (open) { sc.visibility = View.VISIBLE; sc.animate().alpha(1f).setDuration(180).start() }
@@ -565,6 +583,7 @@ class MainActivity : Activity() {
         if (key == "live") MiniDock.undockLive()         // رجعت للمباشر: البث يرجع لشاشته
         current = key
         if (key != "home") setBackdrop(null)
+        setBlur(0f)
         val s = screen(key)
         content.removeAllViews()
         (s.view.parent as? FrameLayout)?.removeView(s.view)
@@ -594,6 +613,7 @@ class MainActivity : Activity() {
         screens[current]?.onHide()
         current = key
         if (key != "home") setBackdrop(null)
+        setBlur(0f)
         val s = screen(key)
         content.removeAllViews()
         (s.view.parent as? FrameLayout)?.removeView(s.view)
@@ -661,6 +681,8 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        // ليكود جلاس: صفحة الفيلم غيّرت الصورة الممَوّهة — نرجّع صورة هالشاشة
+        if (Glass.on && backdropUrl != null) backdrop?.drawable?.let { Glass.setBackdrop(it) }
         if (MiniDock.live) LivePlayer.player?.playWhenReady = true     // رجعت للتطبيق: البث الصغير يكمل
         refreshDock()
         val p = pendingOpen

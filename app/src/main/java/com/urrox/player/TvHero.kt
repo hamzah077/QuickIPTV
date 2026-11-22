@@ -32,10 +32,16 @@ class TvHero(private val a: MainActivity, private val screenKey: String) {
     private val w = (a.resources.displayMetrics.widthPixels * 0.5f).toInt()
 
     // مقاسات ثابتة (سطر للاسم، سطر للتفاصيل، 3 أسطر للقصة حتى لو فاضية): لما تتحمّل القصة ما يتزحزح المحتوى تحت
-    private val title = a.text("", 30f, C.TEXT, bold = true).apply {
+    // (د) بسيط وأنيق: اسم كبير بظل ناعم، تحته خط قصير، وتفاصيل صغيرة رمادية — كل سطر بمقاس ثابت (ما يتزحزح شي)
+    private val title = a.text("", 32f, C.TEXT, bold = true).apply {
         setLines(1); ellipsize = android.text.TextUtils.TruncateAt.END; textDirection = View.TEXT_DIRECTION_FIRST_STRONG
+        setShadowLayer(a.dpf(6f), 0f, a.dpf(2f), 0x8C000000.toInt())
     }
-    private val meta = a.text("", 13.5f, 0xFFC4C8CE.toInt()).apply { setLines(1); ellipsize = android.text.TextUtils.TruncateAt.END; setPadding(0, a.dp(6), 0, 0) }
+    private val accent = View(a).apply { background = rounded(if (Glass.on) 0xD9FFFFFF.toInt() else 0xFFE50914.toInt(), a.dpf(1.5f)) }
+    private val meta = a.text("", 12.5f, 0xFFA3A9B3.toInt()).apply {
+        setLines(1); ellipsize = android.text.TextUtils.TruncateAt.END; setPadding(0, a.dp(8), 0, 0)
+        setShadowLayer(a.dpf(4f), 0f, a.dpf(1f), 0x66000000)
+    }
     private val plot = a.text("", 14.5f, 0xFFE2E4E8.toInt(), lines = 3).apply {
         textDirection = View.TEXT_DIRECTION_FIRST_STRONG; setLineSpacing(0f, 1.25f); setPadding(0, a.dp(8), 0, 0)
         setLines(3); ellipsize = android.text.TextUtils.TruncateAt.END
@@ -79,6 +85,7 @@ class TvHero(private val a: MainActivity, private val screenKey: String) {
         clipChildren = false; clipToPadding = false
         setPaddingRelative(a.dp(28), a.dp(22), 0, a.dp(8))
         addView(title, LinearLayout.LayoutParams(w, ViewGroup.LayoutParams.WRAP_CONTENT))
+        addView(accent, LinearLayout.LayoutParams(a.dp(40), a.dp(3)).apply { topMargin = a.dp(6) })
         addView(meta, LinearLayout.LayoutParams(w, ViewGroup.LayoutParams.WRAP_CONTENT))
         addView(plot, LinearLayout.LayoutParams(w, ViewGroup.LayoutParams.WRAP_CONTENT))
         addView(btns, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = a.dp(18) })
@@ -89,10 +96,6 @@ class TvHero(private val a: MainActivity, private val screenKey: String) {
         if (glass) {
             // ليكود جلاس: كبسولات زجاج (المحدد أبيض)، والتفاصيل داخل شريط زجاج
             for (b in listOf(play, info)) b.background = Glass.button(b, a.dpf(21f))
-            meta.background = Glass.Pane(meta, a.dpf(14f))
-            meta.setPadding(a.dp(12), a.dp(4), a.dp(12), a.dp(5))
-            meta.layoutParams = (meta.layoutParams as LinearLayout.LayoutParams).apply { width = ViewGroup.LayoutParams.WRAP_CONTENT; topMargin = a.dp(6) }
-            meta.maxWidth = w
             view.setPaddingRelative(a.dp(28), a.dp(18), a.dp(20), a.dp(14))
         }
     }
@@ -133,7 +136,7 @@ class TvHero(private val a: MainActivity, private val screenKey: String) {
         // ليكود جلاس: وأنت بالصفوف الإعلان يصير بطاقة زجاج
         if (glass) {
             view.background = if (on) Glass.Pane(view, a.dpf(22f)) else null
-            meta.background = if (on) null else Glass.Pane(meta, a.dpf(14f))
+            a.setBlur(if (on) 0.6f else 0f)          // وأنت بالصفوف: الخلفية تتموّه خفيف (عمق)
         }
         if (!on) featured?.let { apply(it) }
     }
@@ -150,17 +153,17 @@ class TvHero(private val a: MainActivity, private val screenKey: String) {
 
     private fun itemOf(o: Any): Item? = when (o) {
         is Vod -> Item("v:${o.id}", o.name,
-            listOfNotNull(if (o.isSeries) "مسلسل" else "فيلم", o.rating.toDoubleOrNull()?.takeIf { it > 0 }?.let { "★ %.1f".format(java.util.Locale.US, it) }).joinToString("  ·  "),
+            listOfNotNull(if (o.isSeries) "مسلسل" else "فيلم", o.rating.toDoubleOrNull()?.takeIf { it > 0 }?.let { "★ %.1f".format(java.util.Locale.US, it) }).joinToString(SEP),
             "", o.icon, vod = o, infoId = o.id, infoSeries = o.isSeries)
         is HistoryItem -> {
             val left = if (o.dur > 0 && o.pos < o.dur - 60) "متبقي ${fmtTime(o.dur - o.pos)}" else if (o.type == "episode" && o.finished) "الحلقة التالية" else null
-            val m = listOfNotNull(o.sub.lineSequence().firstOrNull()?.takeIf { it.isNotBlank() }, left).joinToString("  ·  ")
+            val m = listOfNotNull(o.sub.lineSequence().firstOrNull()?.takeIf { it.isNotBlank() }, left).joinToString(SEP)
             val id = if (o.type == "episode") o.seriesId else o.key.substringAfter("movie:", "")
             Item(o.key, o.title, m, "", o.image, hist = o, infoId = id, infoSeries = o.type == "episode")
         }
         is Channel -> {
             val now = Epg.nowFor(o) ?: Live.nowCache[o.id]?.takeIf { it.isNow }
-            Item("c:${o.id}", o.name, listOfNotNull("مباشر", now?.title).joinToString("  ·  "), now?.desc.orEmpty(), "")
+            Item("c:${o.id}", o.name, listOfNotNull("مباشر", now?.title).joinToString(SEP), now?.desc.orEmpty(), "")
         }
         else -> null
     }
@@ -169,10 +172,13 @@ class TvHero(private val a: MainActivity, private val screenKey: String) {
 
     private fun apply(item: Item, force: Boolean = false) {
         if (!force && shown === item) return
+        val changed = shown?.key != item.key
         shown = item
-        title.text = item.title
+        title.text = shortTitle(item.title)
+        // يتبدّل بتلاشي سريع (بدون ما يتغير مقاسه)
+        if (changed) for (v in listOf<View>(title, meta)) { v.animate().cancel(); v.alpha = 0.15f; v.animate().alpha(1f).setDuration(180).start() }
         val cached = if (item.infoId.isNotEmpty()) infoCache[ck(item)] else null
-        meta.text = listOf(item.meta, cached?.meta.orEmpty()).filter { it.isNotBlank() }.joinToString("  ·  ")
+        meta.text = listOf(item.meta, cached?.meta.orEmpty()).filter { it.isNotBlank() }.joinToString(SEP)
         plot.text = item.plot.ifBlank { cached?.plot.orEmpty() }
         if (a.current == screenKey) (cached?.backdrop?.takeIf { it.isNotBlank() } ?: item.image.takeIf { it.isNotBlank() })?.let { a.setBackdrop(it) }
         infoJob?.cancel()
@@ -182,7 +188,7 @@ class TvHero(private val a: MainActivity, private val screenKey: String) {
             val inf = withContext(Bg.io) { runCatching { fetch(item.infoId, item.infoSeries) }.getOrNull() } ?: return@launch
             infoCache[ck(item)] = inf
             if (shown !== item) return@launch
-            meta.text = listOf(item.meta, inf.meta).filter { it.isNotBlank() }.joinToString("  ·  ")
+            meta.text = listOf(item.meta, inf.meta).filter { it.isNotBlank() }.joinToString(SEP)
             if (item.plot.isBlank()) plot.text = inf.plot
             if (inf.backdrop.isNotBlank() && a.current == screenKey) a.setBackdrop(inf.backdrop)
         }
@@ -196,7 +202,7 @@ class TvHero(private val a: MainActivity, private val screenKey: String) {
         val year = (if (series) s("releaseDate") else s("releasedate")).take(4)
         val genre = s("genre").split(',', '/').firstOrNull()?.trim().orEmpty()
         val dur = if (series) "" else s("duration").take(5)
-        val m = listOf(year, genre, dur).filter { it.isNotBlank() }.joinToString("  ·  ")
+        val m = listOf(year, genre, dur).filter { it.isNotBlank() }.joinToString(SEP)
         val bd = o.optJSONArray("backdrop_path")?.optString(0)?.takeIf { it != "null" }.orEmpty().ifBlank { s("cover_big") }
         return Info(pl, m, bd)
     }
@@ -220,7 +226,14 @@ class TvHero(private val a: MainActivity, private val screenKey: String) {
         a.startActivity(i)
     }
 
+    /** «اسم: عنوان فرعي طويل» = الاسم بس (ما ينقص). */
+    private fun shortTitle(t: String): String {
+        val s = t.substringBefore(':').substringBefore('：').trim()
+        return if (s.length >= 2 && s.length < t.trim().length) s else t
+    }
+
     companion object {
+        private const val SEP = "    "
         private val infoCache = HashMap<String, Info>()     // مشتركة بين الصفحات
         /** متابعة التحديد بالنافذة وهي ظاهرة بس: نضيف المراقب مع الظهور ونشيله مع الاختفاء (ما يتسرّب). */
         fun watchFocus(host: View, cb: (View?) -> Unit) {

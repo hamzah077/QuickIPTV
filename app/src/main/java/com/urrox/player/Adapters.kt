@@ -133,7 +133,7 @@ class PosterAdapter(
             background = focusBg(radius = 12)
             isFocusable = true
             isClickable = true
-            focusScale(1.06f)
+            focusScale(if (Glass.on && isTv()) 1.08f else 1.06f)
         }
         val box = FrameLayout(this).apply {
             layoutParams = LinearLayout.LayoutParams(MATCH, (posterW * 1.45f).toInt())

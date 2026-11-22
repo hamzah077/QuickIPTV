@@ -1183,6 +1183,20 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
         panel.addView(nfBtns, LinearLayout.LayoutParams(WRAP, WRAP).apply { topMargin = act.dp(16); gravity = Gravity.CENTER_HORIZONTAL })
         if (epsView.parent == null) addView(epsView, LayoutParams(MATCH, MATCH))
         if (pauseView.parent == null) addView(pauseView, LayoutParams(MATCH, MATCH))
+        if (Glass.on) {
+            // ليكود جلاس: قائمة الحلقات و«أنت تشاهد» داخل ألواح زجاج داكنة
+            epsView.setBackgroundColor(0x99000000.toInt())
+            (epsView.getChildAt(0) as? View)?.let { c ->
+                c.background = Glass.Pane(c, act.dpf(32f), dark = true)
+                (c.layoutParams as? LayoutParams)?.let { it.setMargins(act.dp(36), act.dp(28), act.dp(36), act.dp(28)); c.layoutParams = it }
+            }
+            pauseView.background = android.graphics.drawable.ColorDrawable(0x66000000)
+            (pauseView.getChildAt(0) as? View)?.let { c ->
+                c.background = Glass.Pane(c, act.dpf(30f), dark = true)
+                c.setPaddingRelative(act.dp(30), act.dp(26), act.dp(30), act.dp(26))
+                (c.layoutParams as? LayoutParams)?.let { it.marginEnd = act.dp(48); c.layoutParams = it }
+            }
+        }
         refresh()
     }
 

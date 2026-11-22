@@ -24,7 +24,10 @@ object Glass {
     val on get() = Store.tvTheme == "glass"
 
     /** الصورة الممَوّهة الحالية (بحجم الشاشة كلها). */
-    private var blurred: Bitmap? = null
+    var blurred: Bitmap? = null
+        private set
+    /** يتنادى لما تتغير الصورة الممَوّهة (الخلفية الممَوّهة بـ MainActivity). */
+    var onBlurred: ((Bitmap?) -> Unit)? = null
     private val hosts = ArrayList<WeakReference<View>>()
 
     fun register(v: View) { hosts.removeAll { it.get() == null || it.get() === v }; hosts.add(WeakReference(v)) }
@@ -32,6 +35,7 @@ object Glass {
     /** صورة خلفية جديدة: نصغّرها ونمَوّهها مرة وحدة، وكل ألواح الزجاج تعيد رسمها. */
     fun setBackdrop(d: Drawable?) {
         blurred = d?.let { runCatching { blur(it) }.getOrNull() }
+        onBlurred?.invoke(blurred)
         hosts.removeAll { it.get() == null }
         hosts.forEach { it.get()?.invalidate() }
     }
@@ -125,7 +129,13 @@ object Glass {
     /** زر زجاج: عادي = زجاج، محدد = أبيض (كبسولة). */
     fun button(host: View, radiusPx: Float, backdrop: Boolean = true): Drawable = android.graphics.drawable.StateListDrawable().apply {
         setEnterFadeDuration(120); setExitFadeDuration(120)
-        addState(intArrayOf(android.R.attr.state_focused), rounded(0xF2FFFFFF.toInt(), radiusPx))
+        addState(intArrayOf(android.R.attr.state_focused), lens(radiusPx))
         addState(intArrayOf(), Pane(host, radiusPx, backdrop = backdrop))
+    }
+
+    /** المحدد: «عدسة زجاج» مضيئة — أبيض ونصّها الفوق أفتح، بحافة بيضاء. */
+    fun lens(radiusPx: Float): Drawable = android.graphics.drawable.GradientDrawable(
+        android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0xFFFFFFFF.toInt(), 0xEBE6EAF4.toInt())).apply {
+        cornerRadius = radiusPx; setStroke(2, 0xFFFFFFFF.toInt())
     }
 }

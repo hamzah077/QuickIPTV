@@ -171,8 +171,13 @@ fun View.focusScale(scale: Float = 1.05f) {
 
 /** العنصر المحدد يترسم فوق اللي جنبه (كان تكبيره يطلع تحت الصورة المجاورة) — بدون ظل. */
 fun View.raiseOnFocus(has: Boolean) {
-    if (android.os.Build.VERSION.SDK_INT >= 28) { outlineAmbientShadowColor = 0; outlineSpotShadowColor = 0 }
-    translationZ = if (has) resources.displayMetrics.density * 4 else 0f
+    // ليكود جلاس: الظل أبيض = توهّج ناعم حول المحدد، وأعلى شوي (كأنه طاير)
+    val glow = Glass.on && context.isTv()
+    if (android.os.Build.VERSION.SDK_INT >= 28) {
+        val c = if (glow) 0xB3FFFFFF.toInt() else 0
+        outlineAmbientShadowColor = c; outlineSpotShadowColor = c
+    }
+    translationZ = if (has) resources.displayMetrics.density * (if (glow) 10 else 4) else 0f
 }
 
 fun Context.text(
