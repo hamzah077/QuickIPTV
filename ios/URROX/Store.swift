@@ -61,7 +61,7 @@ final class AppModel {
     func popupUpdate() { updPopup = true; if !updating { Task { await runUpdate() } } }
 
     func runUpdate() async {
-        guard let api, let acc = current, !updating else { return }
+        guard let api, let acc = current, !updating else { updFull = false; return }
         updating = true
         for i in updSteps.indices { updSteps[i].state = 0; updSteps[i].frac = 0; updSteps[i].bytes = 0; updSteps[i].count = 0 }
         await step(0) { p in

@@ -71,6 +71,12 @@ struct UpdateFullView: View {
             Text(model.updating ? "نجهّز قوائمك…" : "جاهز").foregroundStyle(Theme.muted).padding(.top, 4).padding(.bottom, 28)
             UpdateRows(big: true)
             Spacer()
+            // السيرفر بطيء؟ تقدر تدخل والتحديث يكمل بالخلفية
+            Button("تخطّي — كمّل بالخلفية") { model.updFull = false }
+                .font(.subheadline.weight(.semibold)).foregroundStyle(.white)
+                .padding(.horizontal, 18).padding(.vertical, 10)
+                .background(.white.opacity(0.1), in: Capsule())
+                .padding(.bottom, 10)
             Text("أول مرة بس — بعدها يفتح على طول").font(.footnote).foregroundStyle(Theme.muted).padding(.bottom, 24)
         }
         .padding(.horizontal, 20)

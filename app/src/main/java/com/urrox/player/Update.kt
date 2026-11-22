@@ -147,13 +147,26 @@ fun MainActivity.showFirstUpdate(acc: Account) {
         root.addView(text("أول مرة بس — بعدها يفتح على طول", 12.5f, C.MUTED).apply { gravity = Gravity.CENTER },
             FrameLayout.LayoutParams(MATCH, WRAP, Gravity.BOTTOM).apply { bottomMargin = dp(28) })
     }
+    // السيرفر بطيء؟ تخطّي = تدخل التطبيق والتحديث يكمل بالخلفية
+    var entered = false
+    val skip = button("تخطّي — كمّل بالخلفية") {
+        if (entered) return@button
+        entered = true; ListsUpdate.listen(null); enter(acc, checkLogin = false)
+    }
+    root.addView(skip, FrameLayout.LayoutParams(WRAP, WRAP, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply { bottomMargin = dp(if (tv) 40 else 64) })
     root.padForSystemBars()
     setContentView(root)
     ListsUpdate.listen { pct.text = "${ListsUpdate.total}٪"; rows.refresh() }
+    if (tv) skip.post { skip.requestFocus() }
     ListsUpdate.start(this) {
+        if (entered) {             // دخلت قبل: نحدّث الأقسام بالقوائم الجديدة بس
+            listOf("home", "live", "movie", "series").forEach { dropScreen(it) }
+            toast("تحدّثت القوائم")
+            return@start
+        }
         ListsUpdate.listen(null)
         pct.text = "100٪"; sub.text = "جاهز"
-        scope.launch { delay(500); enter(acc, checkLogin = false) }
+        scope.launch { delay(500); if (!entered) { entered = true; enter(acc, checkLogin = false) } }
     }
 }
 

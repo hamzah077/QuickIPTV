@@ -35,7 +35,7 @@ final class Downloads: NSObject {
         let c = URLSessionConfiguration.background(withIdentifier: "com.urrox.player.downloads")
         c.isDiscretionary = false
         c.sessionSendsLaunchEvents = true
-        c.httpAdditionalHeaders = ["User-Agent": "URROX/1.0"]
+        c.httpAdditionalHeaders = ["User-Agent": "IPTVSmartersPro"]
         return URLSession(configuration: c, delegate: self, delegateQueue: .main)
     }()
 

@@ -177,7 +177,7 @@ final class PlayerController {
         m.addOption(r.type == "live" ? ":network-caching=2000" : ":network-caching=1500")
         m.addOption(":live-caching=2000")
         m.addOption(":http-reconnect")                                                    // ينقطع السيرفر؟ يرجع يتصل
-        m.addOption(":http-user-agent=URROX/1.0")
+        m.addOption(":http-user-agent=IPTVSmartersPro")
         if r.start > 0 { m.addOption(":start-time=\(Int(r.start))") }
         vlc.media = m
         vlc.play()

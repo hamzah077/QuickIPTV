@@ -15,7 +15,7 @@ final class Xtream: @unchecked Sendable {
         let cfg = URLSessionConfiguration.default
         cfg.timeoutIntervalForRequest = 45                  // قوائم الأفلام كبيرة على بعض السيرفرات
         cfg.httpMaximumConnectionsPerHost = 6
-        cfg.httpAdditionalHeaders = ["User-Agent": "URROX/1.0"]
+        cfg.httpAdditionalHeaders = ["User-Agent": "IPTVSmartersPro"]
         cfg.requestCachePolicy = .reloadIgnoringLocalCacheData
         session = URLSession(configuration: cfg)
     }
@@ -42,8 +42,14 @@ final class Xtream: @unchecked Sendable {
         for (k, v) in extra { q.append(URLQueryItem(name: k, value: v)) }
         c.queryItems = q
         guard let url = c.url else { throw XError.badServer }
+        // الطلبات العادية (تسجيل الدخول وغيره): طلب عادي بدون أي إضافات — العدّاد بس لقوائم التحديث
+        guard let progress else {
+            let (data, resp) = try await session.data(from: url)
+            if let h = resp as? HTTPURLResponse, h.statusCode >= 400 { throw XError.http(h.statusCode) }
+            return try JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])
+        }
         let grab = TaskGrab()
-        let poll: Task<Void, Never>? = progress.map { p in
+        let poll: Task<Void, Never>? = Optional(progress).map { p in
             Task {
                 while !Task.isCancelled {
                     if let t = grab.task {
