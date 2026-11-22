@@ -89,6 +89,7 @@ struct PlayerOverlay: View {
     @State private var toast: String?
     @State private var toastTask: Task<Void, Never>?
     @State private var draggingDown = false
+    @State private var draggingUp = false
 
     var body: some View {
         ZStack {
@@ -100,16 +101,41 @@ struct PlayerOverlay: View {
             .environment(\.layoutDirection, .leftToRight)
             // (المسافة بالنسبة للشاشة — المشغّل نفسه يتحرك ويصغر وأنت تسحب، فلو قسناها بالنسبة له تتذبذب)
             // المشغّل الصغير: السحب يبدأ يتبع إصبعك من أول حركة (نفس الأندرويد)
-            .gesture(DragGesture(minimumDistance: compact && onDragDown != nil ? 10 : 30, coordinateSpace: .global)
+            .gesture(DragGesture(minimumDistance: compact ? 10 : 30, coordinateSpace: .global)
             .onChanged { d in
-                // المشغّل فوق الصفحة: سحب لتحت = الصفحة تتبع إصبعك وتصغر (زي يوتيوب)
-                guard compact, let f = onDragDown else { return }
+                guard compact else { return }
                 let dx = d.translation.width, dy = d.translation.height
+                // سحب لفوق = الفيديو يكبر ويلف مع إصبعك لين يملى الشاشة (نفس زر التكبير)
+                if !draggingDown && !draggingUp && PlayerController.phone && dy < 0 && -dy > abs(dx) { draggingUp = true }
+                if draggingUp {
+                    let p = min(1, max(0, -dy / (UIScreen.main.bounds.height * 0.42)))
+                    var t = Transaction(); t.disablesAnimations = true
+                    withTransaction(t) { pc.fsDrag = p; if !pc.fullscreen { pc.fullscreen = true } }
+                    return
+                }
+                // المشغّل فوق الصفحة: سحب لتحت = الصفحة تتبع إصبعك وتصغر (زي يوتيوب)
+                guard let f = onDragDown else { return }
                 if !draggingDown && dy > 0 && dy > abs(dx) { draggingDown = true }
                 if draggingDown { f(max(0, dy), false) }
             }
             .onEnded { d in
                 let dx = d.translation.width, dy = d.translation.height
+                if draggingUp {
+                    // تركته بعد ثلث المسافة = يكمل لملء الشاشة، قبلها = يرجع مكانه
+                    draggingUp = false
+                    let p = pc.fsDrag ?? 0
+                    let commit = p > 0.33
+                    withAnimation(.timingCurve(0.2, 0.8, 0.2, 1, duration: commit ? 0.12 + 0.42 * (1 - p) : 0.16 + 0.3 * p)) {
+                        pc.fsDrag = commit ? 1 : 0
+                    } completion: {
+                        var t = Transaction(); t.disablesAnimations = true
+                        withTransaction(t) {
+                            pc.fsDrag = nil
+                            if !commit { pc.fullscreen = false }
+                        }
+                    }
+                    return
+                }
                 if draggingDown, let f = onDragDown { draggingDown = false; f(max(0, dy), true); return }
                 if !compact && dy > 110 && abs(dx) < 80 { onFullscreen(); return }          // سحب لتحت = تصغير
                 guard abs(dx) > 90, abs(dy) < 60, pc.isLive || pc.queue != nil else { return }
@@ -538,17 +564,20 @@ struct FullscreenPlayer: View {
             let rot = UIDevice.current.userInterfaceIdiom == .phone && H > W
             let fw = rot ? H : W, fh = rot ? W : H
             let f = pc.inlineFrame.width > 0 ? pc.inlineFrame : CGRect(x: 0, y: (H - W * 9 / 16) / 2, width: W, height: W * 9 / 16)
+            // 0 = مكانه بالصفحة، 1 = يملى الشاشة — وأنت تسحب لفوق يتبع إصبعك
+            let p = pc.fsDrag ?? (shown ? 1 : 0)
+            let cw = f.width + (fw - f.width) * p, ch = f.height + (fh - f.height) * p
             ZStack {
-                Color.black.opacity(shown ? 1 : 0)
+                Color.black.opacity(min(1, p * 1.3))
                 ZStack {
                     Color.black
                     VideoSurface(active: true)
-                    if shown { PlayerOverlay(compact: false) { exit() }.transition(.opacity) }
+                    if shown && pc.fsDrag == nil { PlayerOverlay(compact: false) { exit() }.transition(.opacity) }
                 }
-                .frame(width: shown ? fw : f.width, height: shown ? fh : f.height)
+                .frame(width: cw, height: ch)
                 .clipped()
-                .rotationEffect(.degrees(shown && rot ? angle : 0))
-                .position(x: shown ? W / 2 : f.midX, y: shown ? H / 2 : f.midY)
+                .rotationEffect(.degrees(rot ? angle * p : 0))
+                .position(x: f.midX + (W / 2 - f.midX) * p, y: f.midY + (H / 2 - f.midY) * p)
             }
         }
         .ignoresSafeArea()
@@ -565,7 +594,9 @@ struct FullscreenPlayer: View {
             // اتجاه اللفّة حسب مسكة الجوال
             angle = UIDevice.current.orientation == .landscapeRight ? -90 : 90
             if UIDevice.current.userInterfaceIdiom == .phone && !pc.autoFullscreen { Orientation.lock(.portrait) }
-            withAnimation(.spring(duration: 0.5, bounce: 0.06)) { shown = true }
+            // جاي من السحب لفوق: الحركة يقودها إصبعك (shown يصير جاهز بدون حركة)
+            if pc.fsDrag != nil { shown = true }
+            else { withAnimation(.spring(duration: 0.5, bounce: 0.06)) { shown = true } }
         }
     }
 

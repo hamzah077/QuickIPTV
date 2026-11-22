@@ -145,18 +145,29 @@ class DragDownFrame(ctx: Context) : FrameLayout(ctx) {
     var onDocked: (() -> Unit)? = null
     /** بدل ما الحاوية تتحرك لحالها: نعطي المسافة للصفحة (تتحرك كلها) — المسافة، وهل خلص السحب */
     var onDrag: ((Float, Boolean) -> Unit)? = null
+    /** السحب لفوق (تكبير ولف لملء الشاشة مع الإصبع): المسافة لفوق، وهل خلص السحب */
+    var canDragUp: () -> Boolean = { false }
+    var onDragUp: ((Float, Boolean) -> Unit)? = null
     private var downX = 0f
     private var downY = 0f
     private var dragging = false
+    private var draggingUp = false
     private val slop = ViewConfiguration.get(ctx).scaledTouchSlop
 
     override fun onInterceptTouchEvent(e: MotionEvent): Boolean {
-        if ((onDocked == null && onDrag == null) || !canDrag()) return false
+        val down = (onDocked != null || onDrag != null) && canDrag()
+        val up = onDragUp != null && canDragUp()
+        if (!down && !up) return false
         when (e.actionMasked) {
-            MotionEvent.ACTION_DOWN -> { downX = e.rawX; downY = e.rawY; dragging = false }
+            MotionEvent.ACTION_DOWN -> { downX = e.rawX; downY = e.rawY; dragging = false; draggingUp = false }
             MotionEvent.ACTION_MOVE -> {
                 val dy = e.rawY - downY; val dx = e.rawX - downX
-                if (dy > slop * 2 && dy > abs(dx) * 1.5f) {
+                if (up && -dy > slop * 2 && -dy > abs(dx) * 1.5f) {
+                    draggingUp = true
+                    parent?.requestDisallowInterceptTouchEvent(true)
+                    return true
+                }
+                if (down && dy > slop * 2 && dy > abs(dx) * 1.5f) {
                     dragging = true
                     parent?.requestDisallowInterceptTouchEvent(true)
                     return true
@@ -167,6 +178,14 @@ class DragDownFrame(ctx: Context) : FrameLayout(ctx) {
     }
 
     override fun onTouchEvent(e: MotionEvent): Boolean {
+        if (draggingUp) {
+            val up = maxOf(0f, downY - e.rawY)
+            when (e.actionMasked) {
+                MotionEvent.ACTION_MOVE -> onDragUp?.invoke(up, false)
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> { draggingUp = false; onDragUp?.invoke(if (e.actionMasked == MotionEvent.ACTION_UP) up else 0f, true) }
+            }
+            return true
+        }
         if (!dragging) return super.onTouchEvent(e)
         val dy = maxOf(0f, e.rawY - downY)
         onDrag?.let { f ->

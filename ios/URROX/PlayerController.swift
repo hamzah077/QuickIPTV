@@ -262,6 +262,8 @@ final class PlayerController {
 
     /// سرعة التشغيل (نفس الأندرويد: 0.5 … 2) — تبقى للحلقة اللي بعدها، والمباشر دايماً عادي
     var rate: Float = 1
+    /// السحب لفوق للتكبير: 0…1 وأنت تسحب (nil = ما فيه سحب)
+    var fsDrag: CGFloat?
     var playRate: Float { isLive ? 1 : rate }
     func setRate(_ r: Float) {
         rate = r

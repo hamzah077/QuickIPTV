@@ -213,14 +213,26 @@ class DetailsActivity : Activity() {
     /** يكبر ويلف (الحركة أ) ثم الشاشة تلف فوراً — والصورة أصلاً بمكانها النهائي = بدون قفزة. */
     private fun enterFs() {
         if (fs || animating || mini == null || isTv()) return
-        val box = miniBox; val slot = topSlot
-        fsPending = 1
-        setWindowOpaque(true)
-        setRotationAnim(rotationJumpcut)
-        if (box == null || slot == null || root.width == 0 || box.width == 0) {
+        val g = fsBegin()
+        if (g == null) {
+            fsPending = 1; setWindowOpaque(true); setRotationAnim(rotationJumpcut)
             requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE; return
         }
-        animating = true
+        fsCommit(g, 0f)
+    }
+
+    // ---------- التكبير مع الإصبع: تسحب المشغّل لفوق = يكبر ويلف شوي شوي، وتتركه = يكمل أو يرجع ----------
+    private class FsDrag(val box: View, val dim: View, val ty: Float, val scale: Float)
+    private var fsDrag: FsDrag? = null
+    private var fsAnim: android.animation.ValueAnimator? = null
+
+    /** نجهّز الحركة: الفيديو فوق كل شي وخلفية سودا وراه (بشفافية صفر) */
+    private fun fsBegin(): FsDrag? {
+        if (fs || animating || mini == null || isTv()) return null
+        val box = miniBox ?: return null; val slot = topSlot ?: return null
+        if (root.width == 0 || box.width == 0) return null
+        setWindowOpaque(true)
+        setRotationAnim(rotationJumpcut)
         val W = root.width.toFloat(); val H = root.height.toFloat()
         val bw = box.width.toFloat(); val bh = box.height.toFloat()
         val bl = IntArray(2); val rl = IntArray(2)
@@ -232,14 +244,64 @@ class DetailsActivity : Activity() {
         root.addView(d, FrameLayout.LayoutParams(MATCH, MATCH)); dim = d
         slot.bringToFront()
         miniBar?.visibility = View.INVISIBLE; slotBack?.visibility = View.INVISIBLE
-        d.animate().alpha(1f).setDuration(320).start()
-        box.animate().translationY(H / 2f - cy).rotation(90f).scaleX(scale).scaleY(scale)
-            .setDuration(420).setInterpolator(android.view.animation.PathInterpolator(0.2f, 0.8f, 0.2f, 1f))
-            .withEndAction {
-                animating = false
-                requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-                fsTimeout()
-            }.start()
+        return FsDrag(box, d, H / 2f - cy, scale)
+    }
+
+    /** 0 = مكانه عمودي، 1 = يملى الشاشة بالعرض */
+    private fun fsApply(g: FsDrag, p: Float) {
+        g.box.translationY = g.ty * p
+        g.box.rotation = 90f * p
+        val sc = 1f + (g.scale - 1f) * p
+        g.box.scaleX = sc; g.box.scaleY = sc
+        g.dim.alpha = minOf(1f, p * 1.3f)
+    }
+
+    /** يكمل لملء الشاشة ثم تلف الشاشة أفقي */
+    private fun fsCommit(g: FsDrag, from: Float) {
+        fsPending = 1
+        animating = true
+        fsAnim?.cancel()
+        fsAnim = android.animation.ValueAnimator.ofFloat(from, 1f).apply {
+            duration = (420 * (1f - from) + 120).toLong()
+            interpolator = android.view.animation.PathInterpolator(0.2f, 0.8f, 0.2f, 1f)
+            addUpdateListener { fsApply(g, it.animatedValue as Float) }
+            addListener(object : android.animation.AnimatorListenerAdapter() {
+                override fun onAnimationEnd(a: android.animation.Animator) {
+                    animating = false
+                    requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+                    fsTimeout()
+                }
+            })
+            start()
+        }
+    }
+
+    /** ما وصل للحد: يرجع مكانه بنفس الحركة */
+    private fun fsCancel(g: FsDrag, from: Float) {
+        animating = true
+        fsAnim?.cancel()
+        fsAnim = android.animation.ValueAnimator.ofFloat(from, 0f).apply {
+            duration = (300 * from + 160).toLong()
+            interpolator = android.view.animation.PathInterpolator(0.2f, 0f, 0f, 1f)
+            addUpdateListener { fsApply(g, it.animatedValue as Float) }
+            addListener(object : android.animation.AnimatorListenerAdapter() {
+                override fun onAnimationEnd(a: android.animation.Animator) {
+                    animating = false
+                    resetBox(g.box)
+                    if (!fs && !landscape) setWindowOpaque(false)
+                }
+            })
+            start()
+        }
+    }
+
+    private fun onFsDrag(up: Float, ended: Boolean) {
+        if (fsDrag == null) { if (ended) return; fsDrag = fsBegin() ?: return }
+        val g = fsDrag ?: return
+        val p = (up / (root.height * 0.42f)).coerceIn(0f, 1f)
+        if (!ended) { fsApply(g, p); return }
+        fsDrag = null
+        if (p > 0.33f) fsCommit(g, p) else fsCancel(g, p)
     }
 
     /** يرجع عمودي: الشاشة تلف فوراً والفيديو يبدأ بنفس شكله الأفقي ثم يلف ويصغر لمكانه. */
@@ -988,8 +1050,12 @@ class DetailsActivity : Activity() {
         miniBox = DragDownFrame(this).apply {
             background = android.graphics.drawable.GradientDrawable().apply { setColor(0xFF000000.toInt()) }   // (زواياه تتقعّر وأنت تسحب)
             // الجوال عمودي: اسحب المشغّل لتحت = يكمل في المشغّل الصغير تحت وترجع للصفحة اللي قبل (زي يوتيوب)
-            canDrag = { !isTv() && !fs && !wide && !animating && fsPending == 0 }
-            onDrag = { dy, ended -> onPageDrag(dy, ended) }
+            // وبملء الشاشة: اسحب لتحت = يرجع عمودي
+            canDrag = { !isTv() && (fs || !wide) && !animating && fsPending == 0 }
+            onDrag = { dy, ended -> if (fs) { if (ended && dy > dp(90)) exitFs() } else onPageDrag(dy, ended) }
+            // اسحب لفوق = يكبر ويلف مع إصبعك لين يملى الشاشة (زي زر التكبير)
+            canDragUp = { !isTv() && !fs && !wide && !animating && fsPending == 0 && mini != null }
+            onDragUp = { up, ended -> onFsDrag(up, ended) }
             addView(pv, FrameLayout.LayoutParams(MATCH, MATCH))
             addView(bar, FrameLayout.LayoutParams(MATCH, MATCH))
         }
