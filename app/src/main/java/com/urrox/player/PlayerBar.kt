@@ -79,6 +79,12 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
     class RowItem(val title: String, val image: String?, val current: Boolean, val onClick: () -> Unit)
     var rowProvider: (() -> Pair<String, List<RowItem>>?)? = null
 
+    /** نمط نتفلكس (التلفزيون): قائمة "الحلقات" بالمواسم، وقصة العمل لشاشة "أنت تشاهد". */
+    class EpCard(val title: String, val sub: String, val plot: String, val image: String?, val progress: Float, val current: Boolean, val onClick: () -> Unit)
+    class EpData(val seasons: List<Int>, val current: Int, val bySeason: (Int) -> List<EpCard>)
+    var episodesProvider: (() -> EpData?)? = null
+    var plotProvider: (() -> String)? = null
+
     /** الجوال: نمط يوتيوب (أزرار بالوسط، خط أحمر، ضغطتين = ±10 بقوس). التلفزيون: التصميم (أ). */
     private val yt = !act.isTv()
 
@@ -451,7 +457,7 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
 
     // ---------- الإظهار والإخفاء ----------
     val barVisible get() = panel.visibility == View.VISIBLE
-    private val hideRun = Runnable { if (autoHide && !dragging && player?.playWhenReady == true) hide() else poke() }
+    private val hideRun = Runnable { if (autoHide && !dragging && !epsOpen && player?.playWhenReady == true) hide() else if (!epsOpen) poke() }
 
     /** يظهر الشريط ويعيد مؤقّت الإخفاء. */
     fun show() {
@@ -470,6 +476,7 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
         if (panel.hasFocus()) act.window?.decorView?.requestFocus()
         hideTip(); bubble.visibility = View.INVISIBLE
         rowBox.visibility = View.GONE
+        endPeek()
         panel.animate().alpha(0f).setDuration(150).withEndAction { panel.visibility = View.GONE; placeNext() }.start()
         onVisibility?.invoke(false)
     }
@@ -478,6 +485,7 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
 
     /** أي تفاعل: نأجّل الإخفاء. */
     fun poke() {
+        if (pausedAt > 0) pausedAt = System.currentTimeMillis()
         removeCallbacks(hideRun)
         if (autoHide) postDelayed(hideRun, 3500)
     }
@@ -553,6 +561,7 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
     override fun onDetachedFromWindow() { removeCallbacks(tick); removeCallbacks(hideRun); super.onDetachedFromWindow() }
 
     fun refresh() {
+        if (netflix) refreshNetflix()
         if (tvBig) titleProvider?.invoke()?.let { (t, sub) ->
             if (tvTitle.text.toString() != t) tvTitle.text = t
             if (tvSub.text.toString() != sub) { tvSub.text = sub; tvSub.visibility = if (sub.isBlank()) View.GONE else View.VISIBLE }
@@ -783,6 +792,7 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
             intArrayOf(0xF0000000.toInt(), 0xB3000000.toInt(), 0x00000000))
         panel.setPadding(act.dp(48), act.dp(90), act.dp(48), act.dp(30))
         panel.clipChildren = false; panel.clipToPadding = false
+        if (!live) { arrangeNetflix(); return }
         // العنوان كبير
         tvTitleBox.addView(tvTitle); tvTitleBox.addView(tvSub)
         panel.addView(tvTitleBox, LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = act.dp(14) })
@@ -823,7 +833,7 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
 
     /** يطلّع الصف ويحدّد العنصر الحالي. false = ما فيه صف. */
     fun showRow(): Boolean {
-        if (!tvBig) return false
+        if (!tvBig || netflix) return false
         val (title, items) = rowProvider?.invoke() ?: return false
         if (items.isEmpty()) return false
         rowTitle.text = title
@@ -1001,6 +1011,22 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
     }
 
     // ---------- الريموت على شريط التقدّم: يمين/يسار = ±10 ثواني (ضغط مطوّل أسرع) ----------
+    private fun remoteSeek(forward: Boolean, repeat: Int) {
+        val p = player ?: return
+        val d = duration()
+        if (d <= 0) return
+        val step = if (repeat > 6) 60_000L else if (repeat > 0) 30_000L else 10_000L
+        val base = if (pendingSeek >= 0) pendingSeek else p.currentPosition
+        pendingSeek = (base + if (forward) step else -step).coerceIn(0, d)
+        seekLine.scrubbing = true
+        seekLine.progress = (pendingSeek * 1000 / d).toInt()
+        tPos.text = fmtTime(pendingSeek / 1000)
+        if (netflix) tRemain.text = fmtTime((d - pendingSeek) / 1000)
+        showBubble(pendingSeek)
+        removeCallbacks(commitSeek); postDelayed(commitSeek, 700)
+        poke()
+    }
+
     private var pendingSeek = -1L
     private val commitSeek = Runnable {
         if (pendingSeek >= 0) player?.seekTo(pendingSeek)
@@ -1017,32 +1043,359 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
             addView(edge, LayoutParams(MATCH, act.dp(3), Gravity.BOTTOM))
             panel.clipChildren = false
             arrange(true)
-        } else if (autoHide) arrange(false)           // التلفزيون بملء الشاشة: نمط يوتيوب تي في
+        }
         seekLine.setOnKeyListener { _, code, ev ->
             if (code != android.view.KeyEvent.KEYCODE_DPAD_LEFT && code != android.view.KeyEvent.KEYCODE_DPAD_RIGHT) return@setOnKeyListener false
             if (ev.action != android.view.KeyEvent.ACTION_DOWN) return@setOnKeyListener true
-            val p = player ?: return@setOnKeyListener true
-            val d = duration()
-            if (d <= 0) return@setOnKeyListener true
-            val step = if (ev.repeatCount > 6) 60_000L else if (ev.repeatCount > 0) 30_000L else 10_000L
-            val base = if (pendingSeek >= 0) pendingSeek else p.currentPosition
-            pendingSeek = (base + if (code == android.view.KeyEvent.KEYCODE_DPAD_RIGHT) step else -step).coerceIn(0, d)
-            seekLine.scrubbing = true
-            seekLine.progress = (pendingSeek * 1000 / d).toInt()
-            tPos.text = fmtTime(pendingSeek / 1000)
-            showBubble(pendingSeek)
-            removeCallbacks(commitSeek); postDelayed(commitSeek, 700)
-            poke()
+            remoteSeek(code == android.view.KeyEvent.KEYCODE_DPAD_RIGHT, ev.repeatCount)
             true
         }
         seekLine.setOnFocusChangeListener { _, has ->
             seekLine.active = has
             if (has) { hideTip(); player?.let { p -> val d = duration(); if (d > 0) showBubble(p.currentPosition) } } else hideBubble()
             // الأزرار تبهت شوي وقت الشريط محدّد
-            btnRow.animate().alpha(if (has) 0.55f else 1f).setDuration(140).start()
+            (if (netflix) nfBtns else btnRow).animate().alpha(if (has) 0.55f else 1f).setDuration(140).start()
             poke()
         }
     }
+
+    // =====================================================================================
+    // ---------- نمط نتفلكس (التلفزيون: الأفلام والمسلسلات) ----------
+    // الشريط تحت: تشغيل · خط التقدّم بعرض الشاشة · الوقت المتبقي، تحته اسم العمل بالنص،
+    // وتحته أزرار بالكلام: التالي · الحلقات · الصوت والترجمة · السرعة (المحدد أبيض).
+    // =====================================================================================
+    private var netflix = false
+    val isNetflix get() = netflix
+    private val tRemain = act.text("", 15f, 0xFFFFFFFF.toInt()).apply { maxLines = 1; includeFontPadding = false }
+    private val nfProg = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+    private val nfTitle = act.text("", 17f, 0xFFFFFFFF.toInt(), bold = true).apply {
+        gravity = Gravity.CENTER; maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
+        textDirection = View.TEXT_DIRECTION_FIRST_STRONG
+    }
+    private val nfBtns = LinearLayout(act).apply {
+        orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+        layoutDirection = View.LAYOUT_DIRECTION_RTL
+        clipChildren = false; clipToPadding = false
+    }
+
+    private fun nfButton(icon: Int, label: String, onClick: () -> Unit): Pair<LinearLayout, TextView> {
+        val tv = act.text(label, 14.5f, 0xFFFFFFFF.toInt(), bold = true).apply {
+            maxLines = 1; includeFontPadding = false; setPaddingRelative(act.dp(8), 0, 0, 0)
+        }
+        val b = LinearLayout(act).apply {
+            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+            layoutDirection = View.LAYOUT_DIRECTION_RTL
+            setPadding(act.dp(16), 0, act.dp(16), 0)
+            contentDescription = label
+            isFocusable = true; isClickable = true
+            setTag(R.id.own_focus_anim, true)
+            addView(act.icon(icon, 0xFFFFFFFF.toInt(), 20), LinearLayout.LayoutParams(act.dp(20), act.dp(20)))
+            addView(tv)
+            setOnClickListener { onClick(); poke() }
+        }
+        tvStyle(b, 8f)
+        b.setOnFocusChangeListener { _, has -> tvTintChildren(b, has); if (has) { hideTip(); poke() } }
+        return b to tv
+    }
+
+    private val nfNext = nfButton(R.drawable.ic_skip_next, "التالي") { nav?.let { if (it.hasNext) { learnManualNext(); it.next() } } }.first
+    private val nfEps = nfButton(R.drawable.ic_episodes, "الحلقات") { openEpisodes() }.first
+    private val nfAudio = nfButton(R.drawable.ic_cc, "الصوت والترجمة") { audioSubs() }.first
+    private val nfSpeedPair = nfButton(R.drawable.ic_speed, "السرعة") { speedDialog() }
+    private val nfSpeed = nfSpeedPair.first
+
+    private fun audioSubs() {
+        AlertDialog.Builder(act, android.R.style.Theme_Material_Dialog_Alert).setTitle("الصوت والترجمة")
+            .setItems(arrayOf("الصوت", "الترجمة")) { _, w -> tracksDialog(if (w == 0) MC.TRACK_TYPE_AUDIO else MC.TRACK_TYPE_TEXT) }
+            .show()
+    }
+
+    private fun arrangeNetflix() {
+        netflix = true
+        for (v in listOf<View>(nfProg, nfTitle, nfBtns)) (v.parent as? android.view.ViewGroup)?.removeView(v)
+        for (g in listOf(nfProg, nfBtns)) g.removeAllViews()
+        for (v in listOf<View>(nfNext, nfEps, nfAudio, nfSpeed)) (v.parent as? android.view.ViewGroup)?.removeView(v)
+        panel.setPadding(act.dp(48), act.dp(120), act.dp(48), act.dp(30))
+        val s = act.dp(44)
+        tvStyle(btnPlay, 22f); btnPlay.visibility = View.VISIBLE; btnPlay.alpha = 1f
+        nfProg.addView(btnPlay, LinearLayout.LayoutParams(s, s).apply { marginEnd = act.dp(12) })
+        nfProg.addView(seekLine, LinearLayout.LayoutParams(0, act.dp(28), 1f))
+        nfProg.addView(tRemain, LinearLayout.LayoutParams(WRAP, WRAP).apply { marginStart = act.dp(12) })
+        panel.addView(nfProg, LinearLayout.LayoutParams(MATCH, WRAP))
+        panel.addView(nfTitle, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = act.dp(8) })
+        val h = act.dp(42)
+        for (b in listOf<View>(nfNext, nfEps, nfAudio, nfSpeed))
+            nfBtns.addView(b, LinearLayout.LayoutParams(WRAP, h).apply { marginStart = act.dp(6); marginEnd = act.dp(6) })
+        panel.addView(nfBtns, LinearLayout.LayoutParams(WRAP, WRAP).apply { topMargin = act.dp(16); gravity = Gravity.CENTER_HORIZONTAL })
+        if (epsView.parent == null) addView(epsView, LayoutParams(MATCH, MATCH))
+        if (pauseView.parent == null) addView(pauseView, LayoutParams(MATCH, MATCH))
+        refresh()
+    }
+
+    private fun refreshNetflix() {
+        val p = player
+        val d = duration()
+        if (p != null && d > 0 && pendingSeek < 0) tRemain.text = fmtTime((d - p.currentPosition).coerceAtLeast(0) / 1000)
+        else if (d <= 0) tRemain.text = "--:--"
+        titleProvider?.invoke()?.let { (t, sub) ->
+            val v = listOf(t, sub.lineSequence().firstOrNull().orEmpty()).filter { it.isNotBlank() }.joinToString("   ·   ")
+            if (nfTitle.text.toString() != v) nfTitle.text = v
+        }
+        val n = nav
+        nfNext.visibility = if (n != null && n.hasNext) View.VISIBLE else View.GONE
+        nfEps.visibility = if (n != null && episodesProvider != null) View.VISIBLE else View.GONE
+        val sp = p?.playbackParameters?.speed ?: 1f
+        val lbl = if (sp == 1f) "السرعة (1x)" else "السرعة (${sp}x)"
+        if (nfSpeedPair.second.text.toString() != lbl) nfSpeedPair.second.text = lbl
+        updatePause(p)
+    }
+
+    // ---------- تقديم/ترجيع والأزرار مخفية: الشريط بس + الوقت فوق المؤشّر ----------
+    private var peeking = false
+    private val peekEnd = Runnable { endPeek() }
+    private fun endPeek() {
+        removeCallbacks(peekEnd)
+        if (!peeking) return
+        peeking = false
+        nfTitle.visibility = View.VISIBLE; nfBtns.visibility = View.VISIBLE; btnPlay.visibility = View.VISIBLE
+        if (!seekLine.isFocused) bubble.visibility = View.INVISIBLE
+    }
+
+    /** الريموت يمين/يسار والفيديو بدون أزرار (نمط نتفلكس). ضغط مطوّل = أسرع. */
+    fun peekSeek(forward: Boolean, repeat: Int) {
+        if (!netflix) { seek(forward); show(); return }
+        if (!barVisible || peeking) {
+            peeking = true
+            nfTitle.visibility = View.INVISIBLE; nfBtns.visibility = View.INVISIBLE; btnPlay.visibility = View.INVISIBLE
+            show()
+        }
+        remoteSeek(forward, repeat)
+        removeCallbacks(peekEnd); postDelayed(peekEnd, 2200)
+    }
+
+    // ---------- قائمة "الحلقات" ----------
+    private var epsOpen = false
+    fun overlayOpen() = epsOpen || pauseShown
+    private val epsTitle = act.text("الحلقات", 26f, 0xFFFFFFFF.toInt(), bold = true)
+    private val chipRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+    private val cardRow = LinearLayout(act).apply {
+        orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
+        clipChildren = false; clipToPadding = false
+    }
+    private fun edgeScroll(child: View) = object : android.widget.HorizontalScrollView(act) {
+        override fun computeScrollDeltaToGetChildRectOnScreen(rect: android.graphics.Rect): Int {
+            val r = android.graphics.Rect(rect); r.inset(-act.dp(40), 0)
+            return super.computeScrollDeltaToGetChildRectOnScreen(r)
+        }
+    }.apply {
+        isHorizontalScrollBarEnabled = false; clipToPadding = false; clipChildren = false
+        layoutDirection = View.LAYOUT_DIRECTION_RTL
+        setTag(R.id.focus_room, true)
+        addView(child)
+    }
+    private val chipScroll = edgeScroll(chipRow).apply { setPadding(act.dp(8), act.dp(6), act.dp(8), act.dp(6)) }
+    private val cardScroll = edgeScroll(cardRow).apply { setPadding(act.dp(16), act.dp(16), act.dp(16), act.dp(16)) }
+    private val epsView = FrameLayout(act).apply {
+        setBackgroundColor(0xE0000000.toInt())
+        visibility = View.GONE
+        isClickable = true
+        layoutDirection = View.LAYOUT_DIRECTION_RTL
+        val col = LinearLayout(act).apply {
+            orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
+            clipChildren = false; clipToPadding = false
+            setPadding(act.dp(40), act.dp(36), act.dp(40), act.dp(20))
+            addView(epsTitle, LinearLayout.LayoutParams(MATCH, WRAP).apply { marginStart = act.dp(8) })
+            addView(chipScroll, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = act.dp(10) })
+            addView(cardScroll, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = act.dp(10) })
+            addView(act.text("◀ ▶ تتنقل بين الحلقات  ·  ▲ المواسم  ·  رجوع = يقفل القائمة", 12.5f, 0xFF8A8F98.toInt()).apply {
+                gravity = Gravity.CENTER
+            }, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = act.dp(6) })
+        }
+        addView(col, LayoutParams(MATCH, WRAP, Gravity.CENTER_VERTICAL))
+    }
+    private var epsData: EpData? = null
+    private var epsSeason = -1
+
+    private fun openEpisodes() {
+        val data = episodesProvider?.invoke() ?: return
+        epsData = data
+        epsOpen = true
+        removeCallbacks(hideRun)
+        panel.animate().cancel(); panel.visibility = View.GONE; panel.alpha = 1f
+        hideTip(); bubble.visibility = View.INVISIBLE
+        onVisibility?.invoke(false)
+        chipRow.removeAllViews()
+        for (sn in data.seasons) {
+            val chip = act.text("الموسم $sn", 14f, 0xFFFFFFFF.toInt(), bold = true).apply {
+                gravity = Gravity.CENTER; maxLines = 1
+                setPadding(act.dp(18), 0, act.dp(18), 0)
+                isFocusable = true; isClickable = true
+                setTag(R.id.own_focus_anim, true)
+                tag = sn
+                setOnFocusChangeListener { _, has -> styleChips(); if (has && epsSeason != sn) fillSeason(sn, focusCard = false) }
+                setOnClickListener { fillSeason(sn, focusCard = true) }
+            }
+            chipRow.addView(chip, LinearLayout.LayoutParams(WRAP, act.dp(38)).apply { marginEnd = act.dp(10) })
+        }
+        chipScroll.visibility = if (data.seasons.size > 1) View.VISIBLE else View.GONE
+        epsView.visibility = View.VISIBLE
+        epsView.alpha = 0f; epsView.animate().alpha(1f).setDuration(160).start()
+        fillSeason(data.current, focusCard = true)
+    }
+
+    private fun styleChips() {
+        for (i in 0 until chipRow.childCount) {
+            val c = chipRow.getChildAt(i) as TextView
+            val sel = c.tag == epsSeason
+            val f = c.isFocused
+            c.background = rounded(if (f) 0xFFFFFFFF.toInt() else if (sel) 0x40FFFFFF else 0x14FFFFFF, act.dpf(19f))
+            c.setTextColor(if (f) 0xFF111214.toInt() else 0xFFFFFFFF.toInt())
+        }
+    }
+
+    private fun fillSeason(sn: Int, focusCard: Boolean) {
+        val data = epsData ?: return
+        epsSeason = sn
+        styleChips()
+        cardRow.removeAllViews()
+        val w = act.dp(250); val ih = w * 9 / 16
+        var cur: View? = null
+        for (e in data.bySeason(sn)) {
+            val img = android.widget.ImageView(act).apply {
+                scaleType = android.widget.ImageView.ScaleType.CENTER_CROP
+                background = rounded(0xFF2A2D33.toInt(), act.dpf(6f)); clipToOutline = true
+                load(e.image?.ifEmpty { null }) { size(400, 225) }
+            }
+            val frame = FrameLayout(act).apply {
+                setPadding(act.dp(3), act.dp(3), act.dp(3), act.dp(3))
+                background = android.graphics.drawable.StateListDrawable().apply {
+                    addState(intArrayOf(android.R.attr.state_focused), rounded(0x00000000, act.dpf(9f), 0xFFFFFFFF.toInt(), act.dp(3)))
+                    addState(intArrayOf(), rounded(0x00000000, act.dpf(9f)))
+                }
+                isDuplicateParentStateEnabled = true
+                addView(img, LayoutParams(MATCH, MATCH))
+                addView(FrameLayout(act).apply {
+                    background = android.graphics.drawable.GradientDrawable().apply { shape = android.graphics.drawable.GradientDrawable.OVAL; setColor(0x73000000) }
+                    addView(act.icon(R.drawable.ic_play, 0xFFFFFFFF.toInt(), 18), LayoutParams(act.dp(18), act.dp(18), Gravity.CENTER))
+                }, LayoutParams(act.dp(40), act.dp(40), Gravity.CENTER))
+                if (e.progress > 0.01f) addView(FrameLayout(act).apply {
+                    setBackgroundColor(0x4DFFFFFF)
+                    addView(View(act).apply { setBackgroundColor(0xFFE50914.toInt()) },
+                        LayoutParams((w * e.progress.coerceIn(0f, 1f)).toInt(), MATCH, Gravity.START))
+                }, LayoutParams(MATCH, act.dp(4), Gravity.BOTTOM).apply { setMargins(act.dp(3), 0, act.dp(3), act.dp(3)) })
+            }
+            val title = act.text(e.title, 15f, 0xFFFFFFFF.toInt(), bold = true).apply {
+                maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END; textDirection = View.TEXT_DIRECTION_FIRST_STRONG
+                setPadding(act.dp(3), act.dp(8), act.dp(3), 0)
+            }
+            val sub = act.text(e.sub, 12.5f, if (e.current) 0xFFE5484D.toInt() else 0xFFA8ADB5.toInt(), bold = e.current).apply {
+                maxLines = 1; setPadding(act.dp(3), act.dp(2), act.dp(3), 0)
+            }
+            val plot = act.text(e.plot, 12.5f, 0xFFC9CDD3.toInt(), lines = 3).apply {
+                textDirection = View.TEXT_DIRECTION_FIRST_STRONG; setPadding(act.dp(3), act.dp(6), act.dp(3), 0)
+                alpha = 0f; minLines = 3
+            }
+            val cell = LinearLayout(act).apply {
+                orientation = LinearLayout.VERTICAL
+                isFocusable = true; isClickable = true
+                setTag(R.id.own_focus_anim, true)
+                contentDescription = e.title
+                addView(frame, LinearLayout.LayoutParams(w, ih))
+                addView(title, LinearLayout.LayoutParams(w, WRAP))
+                addView(sub, LinearLayout.LayoutParams(w, WRAP))
+                addView(plot, LinearLayout.LayoutParams(w, WRAP))
+                val click = e.onClick
+                setOnClickListener { closeEpisodes(false); click() }
+                setOnFocusChangeListener { v, has ->
+                    v.raiseOnFocus(has)
+                    v.animate().scaleX(if (has) 1.05f else 1f).scaleY(if (has) 1.05f else 1f).setDuration(140).start()
+                    plot.animate().alpha(if (has && e.plot.isNotBlank()) 1f else 0f).setDuration(160).start()
+                }
+            }
+            cardRow.addView(cell, LinearLayout.LayoutParams(w, WRAP).apply { marginEnd = act.dp(18) })
+            if (e.current) cur = cell
+        }
+        if (focusCard) (cur ?: cardRow.getChildAt(0))?.let { t -> t.post { t.requestFocus() } }
+    }
+
+    /** يقفل قائمة الحلقات (رجوع). */
+    fun closeEpisodes(showBar: Boolean = true) {
+        if (!epsOpen) return
+        epsOpen = false
+        epsView.animate().cancel()
+        epsView.visibility = View.GONE
+        if (showBar) { show(); nfEps.requestFocus() } else poke()
+    }
+
+    // ---------- "أنت تشاهد": وقفت الفيديو وتركته شوي ----------
+    private var pausedAt = 0L
+    private var pauseShown = false
+    private val pWatch = act.text("أنت تشاهد", 15f, 0xFFB4B9C1.toInt())
+    private val pTitle = act.text("", 34f, 0xFFFFFFFF.toInt(), bold = true).apply { maxLines = 2; textDirection = View.TEXT_DIRECTION_FIRST_STRONG }
+    private val pSub = act.text("", 17f, 0xFFFFFFFF.toInt(), bold = true).apply { maxLines = 1; textDirection = View.TEXT_DIRECTION_FIRST_STRONG }
+    private val pPlot = act.text("", 14.5f, 0xFFC9CDD3.toInt(), lines = 4).apply { textDirection = View.TEXT_DIRECTION_FIRST_STRONG; setLineSpacing(0f, 1.3f) }
+    private val pauseView = FrameLayout(act).apply {
+        visibility = View.GONE
+        background = android.graphics.drawable.GradientDrawable(android.graphics.drawable.GradientDrawable.Orientation.RIGHT_LEFT,
+            intArrayOf(0xEB000000.toInt(), 0xB3000000.toInt(), 0x59000000))
+        layoutDirection = View.LAYOUT_DIRECTION_RTL
+        val col = LinearLayout(act).apply {
+            orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
+            setPaddingRelative(act.dp(64), 0, act.dp(24), 0)
+            addView(pWatch)
+            addView(pTitle, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = act.dp(6) })
+            addView(pSub, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = act.dp(6) })
+            addView(pPlot, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = act.dp(12) })
+            addView(LinearLayout(act).apply {
+                orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
+                setPadding(act.dp(20), 0, act.dp(20), 0)
+                background = rounded(0xFFFFFFFF.toInt(), act.dpf(6f))
+                addView(act.icon(R.drawable.ic_play, 0xFF111214.toInt(), 20), LinearLayout.LayoutParams(act.dp(20), act.dp(20)))
+                addView(act.text("كمّل", 16f, 0xFF111214.toInt(), bold = true).apply { setPaddingRelative(act.dp(8), 0, 0, 0) })
+            }, LinearLayout.LayoutParams(WRAP, act.dp(44)).apply { topMargin = act.dp(22) })
+            addView(act.text("متوقف مؤقتاً · أي زر يرجعك", 12.5f, 0xFF8A8F98.toInt()), LinearLayout.LayoutParams(WRAP, WRAP).apply { topMargin = act.dp(12) })
+        }
+        addView(col, LayoutParams((act.resources.displayMetrics.widthPixels * 0.5f).toInt(), WRAP, Gravity.CENTER_VERTICAL or Gravity.END))
+    }
+
+    fun isPauseShown() = pauseShown
+
+    private fun updatePause(p: Player?) {
+        val paused = p != null && !p.playWhenReady && p.playbackState == Player.STATE_READY
+        if (!paused) { pausedAt = 0L; if (pauseShown) hidePause(); return }
+        if (pauseShown || epsOpen || dragging) return
+        val now = System.currentTimeMillis()
+        if (pausedAt == 0L) { pausedAt = now; return }
+        if (now - pausedAt >= 8000) showPause()
+    }
+
+    private fun showPause() {
+        val (t, sub) = titleProvider?.invoke() ?: ("" to "")
+        pTitle.text = t
+        pSub.text = sub.lineSequence().firstOrNull().orEmpty(); pSub.visibility = if (pSub.text.isBlank()) View.GONE else View.VISIBLE
+        val plot = plotProvider?.invoke().orEmpty()
+        pPlot.text = plot; pPlot.visibility = if (plot.isBlank()) View.GONE else View.VISIBLE
+        pauseShown = true
+        removeCallbacks(hideRun)
+        panel.animate().cancel(); panel.visibility = View.GONE; panel.alpha = 1f
+        hideTip(); bubble.visibility = View.INVISIBLE
+        onVisibility?.invoke(false)
+        if (panel.hasFocus()) act.window?.decorView?.requestFocus()
+        pauseView.visibility = View.VISIBLE
+        pauseView.alpha = 0f; pauseView.animate().alpha(1f).setDuration(400).start()
+    }
+
+    /** يخفي شاشة "أنت تشاهد" (أي زر). */
+    fun hidePause() {
+        if (!pauseShown) return
+        pauseShown = false
+        pausedAt = if (player?.playWhenReady == false) System.currentTimeMillis() else 0L
+        pauseView.animate().cancel()
+        pauseView.visibility = View.GONE
+    }
+
+    // التلفزيون بملء الشاشة: يترتّب هنا بالآخر (بعد ما كل العناصر فوق تنعرّف)
+    init { if (!yt && autoHide) arrange(false) }
 }
 
 /**

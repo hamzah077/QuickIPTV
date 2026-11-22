@@ -1052,7 +1052,7 @@ class DetailsActivity : Activity() {
         startActivity(Intent(this, PlayerActivity::class.java)
             .putExtra("url", r.url).putExtra("key", r.key).putExtra("title", r.title).putExtra("sub", r.sub)
             .putExtra("image", icon).putExtra("type", r.type).putExtra("seriesId", if (series) id else "")
-            .putExtra("start", start).putExtra("handoff", handoff))
+            .putExtra("start", start).putExtra("handoff", handoff).putExtra("plot", plot))
     }
 
     // ---------- المشغّل المصغّر (الجوال عمودي) ----------

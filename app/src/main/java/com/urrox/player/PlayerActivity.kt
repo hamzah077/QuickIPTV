@@ -113,6 +113,14 @@ class PlayerActivity : Activity() {
             titleProvider = { title.text.toString() to sub.text.toString() }
             // التلفزيون: سهم تحت = صف حلقات الموسم / قنوات التصنيف
             rowProvider = { rowItems() }
+            // نمط نتفلكس: قائمة "الحلقات" بكل المواسم، وقصة الحلقة/الفيلم لشاشة "أنت تشاهد"
+            if (!live) {
+                episodesProvider = { episodesData() }
+                plotProvider = {
+                    SeriesQueue.list.getOrNull(SeriesQueue.indexOfKey(key))?.plot?.takeIf { it.isNotBlank() }
+                        ?: intent.getStringExtra("plot").orEmpty()
+                }
+            }
         }
         root.addView(bar, FrameLayout.LayoutParams(MATCH, MATCH))
 
@@ -313,6 +321,8 @@ class PlayerActivity : Activity() {
     override fun onBackPressed() {
         // رجوع: يقفل قائمة القنوات أول، وبعدها يرجّعك لصفحة المباشر
         if (panelOpen) { closePanel(); return }
+        if (!live && bar.isPauseShown()) { bar.hidePause(); bar.focusPlay(); return }
+        if (!live && bar.overlayOpen()) { bar.closeEpisodes(); return }
         if (!live && bar.cancelAutoNext()) return        // وقت عدّاد الحلقة التالية: رجوع = أكمل التتر
         @Suppress("DEPRECATION")
         super.onBackPressed()
@@ -434,8 +444,45 @@ class PlayerActivity : Activity() {
         }
     }
 
+    /** كل مواسم المسلسل وحلقاتها (قائمة "الحلقات" بنمط نتفلكس). */
+    private fun episodesData(): PlayerBar.EpData? {
+        val i = SeriesQueue.indexOfKey(key)
+        if (i < 0) return null
+        val cur = SeriesQueue.list[i]
+        val seasons = SeriesQueue.list.map { it.season }.distinct().sorted()
+        val img = intent.getStringExtra("image") ?: ""
+        return PlayerBar.EpData(seasons, cur.season) { sn ->
+            val hist = Store.history()
+            SeriesQueue.list.withIndex().filter { it.value.season == sn }.map { (j, e) ->
+                val k = "ep:${e.id}"
+                val isCur = k == key
+                val h = hist.firstOrNull { it.key == k }
+                val p = player
+                val prog = if (isCur && p != null && p.duration > 0) p.currentPosition.toFloat() / p.duration
+                    else if (h != null && h.dur > 0) h.pos.toFloat() / h.dur else 0f
+                val name = e.title.takeIf { it.isNotBlank() && !it.contains("S0") && !it.contains(SeriesQueue.name) } ?: "الحلقة ${e.num}"
+                val sub = when {
+                    isCur -> "تعرض الآن"
+                    h?.finished == true -> listOf(e.duration, "✓ شاهدتها").filter { it.isNotBlank() }.joinToString(" · ")
+                    else -> e.duration
+                }
+                PlayerBar.EpCard("${e.num}. $name", sub, e.plot, e.image.ifEmpty { img }, prog, isCur) { if (!isCur) switchEpisode(j) }
+            }
+        }
+    }
+
     private fun handleKey(event: KeyEvent): Boolean {
         val k = event.keyCode
+        // نمط نتفلكس: شاشة "أنت تشاهد" — OK/تشغيل = يكمل، أي زر ثاني = يرجّع الأزرار
+        if (!live && bar.isPauseShown()) {
+            bar.hidePause()
+            if (k == KeyEvent.KEYCODE_DPAD_CENTER || k == KeyEvent.KEYCODE_ENTER || k == KeyEvent.KEYCODE_MEDIA_PLAY ||
+                k == KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE || k == KeyEvent.KEYCODE_SPACE) { togglePause() }
+            bar.focusPlay()
+            return true
+        }
+        // قائمة "الحلقات" مفتوحة: الأسهم والاختيار لها (الرجوع يقفلها)
+        if (!live && bar.overlayOpen()) return false
         if (live && panelOpen) {
             // القائمة مفتوحة: الأسهم والاختيار للقائمة نفسها (الرجوع يقفلها)
             if (k == KeyEvent.KEYCODE_DPAD_LEFT || k == KeyEvent.KEYCODE_DPAD_RIGHT) { closePanel(); return true }
@@ -444,6 +491,7 @@ class PlayerActivity : Activity() {
         // الأزرار ظاهرة والتحديد داخلها: تحت = صف الحلقات/القنوات، فوق من الصف = رجوع للأزرار
         if (isTv() && bar.barVisible && bar.hasFocusInside()) {
             if (k == KeyEvent.KEYCODE_DPAD_DOWN && bar.seekFocused()) { bar.poke(); return false }      // من الشريط ← للأزرار
+            if (bar.isNetflix && (k == KeyEvent.KEYCODE_DPAD_DOWN || k == KeyEvent.KEYCODE_DPAD_UP)) { bar.poke(); return false }
             if (k == KeyEvent.KEYCODE_DPAD_DOWN) { if (!bar.rowHasFocus()) bar.showRow(); bar.poke(); return true }
             if (k == KeyEvent.KEYCODE_DPAD_UP && bar.rowHasFocus()) { bar.hideRow(); bar.focusPlay(); return true }
             if (k == KeyEvent.KEYCODE_DPAD_UP && live) { bar.poke(); return true }
@@ -457,9 +505,9 @@ class PlayerActivity : Activity() {
             KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT -> {
                 if (bar.barVisible && bar.hasFocusInside()) { bar.poke(); return false }   // تنقّل بين الأزرار
                 if (live) { bar.focusPlay(); return true }
-                // الأفلام والأزرار مخفية: يمين = تقديم 10 ثواني، يسار = تأخير 10 ثواني
-                bar.seek(k == KeyEvent.KEYCODE_DPAD_RIGHT)
-                bar.show()
+                // الأفلام والأزرار مخفية: يمين = تقديم 10 ثواني، يسار = تأخير 10 ثواني (مطوّل = أسرع)
+                if (isTv()) bar.peekSeek(k == KeyEvent.KEYCODE_DPAD_RIGHT, event.repeatCount)
+                else { bar.seek(k == KeyEvent.KEYCODE_DPAD_RIGHT); bar.show() }
                 return true
             }
             KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_SPACE, KeyEvent.KEYCODE_MEDIA_PAUSE, KeyEvent.KEYCODE_MEDIA_PLAY -> {
