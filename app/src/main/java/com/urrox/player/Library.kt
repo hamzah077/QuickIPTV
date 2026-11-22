@@ -117,7 +117,9 @@ class LibraryScreen(private val a: MainActivity, private val series: Boolean) : 
 
         // شبكة "الكل"
         val gh = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(a.dp(8), a.dp(10), a.dp(16), a.dp(4)) }
-        gh.addView(a.iconButton(R.drawable.ic_chev_right, "رجوع", 42) { closeGrid() })
+        // التلفزيون: بدون زر رجوع على الشاشة (زر الريموت يرجع) — عنوان كبير بس
+        if (!a.tv) gh.addView(a.iconButton(R.drawable.ic_chev_right, "رجوع", 42) { closeGrid() })
+        else { gridTitle.textSize = 24f; gh.setPadding(a.dp(16), a.dp(14), a.dp(16), a.dp(6)) }
         gh.addView(gridTitle, lp(0, WRAP, 1f).apply { marginStart = a.dp(6) })
         gridBox.addView(gh)
         sortRow.setPadding(a.dp(14), a.dp(4), a.dp(14), a.dp(8))
@@ -189,11 +191,17 @@ class LibraryScreen(private val a: MainActivity, private val series: Boolean) : 
             else -> all.filter { it.categoryId == shelf.id }
         }
         sort = if (shelf.id == NEW) "new" else sort
+        if (a.tv) gridTitle.text = "${shelf.title}  ·  ${gridItems.size}"
         buildSort()
         applySort()
         gridBox.visibility = View.VISIBLE
         gridBox.fadeIn(a.dp(24))
-        grid.post { (grid.getChildAt(0) ?: grid).requestFocus() }
+        if (a.tv) {
+            // الصفوف اللي ورا الصفحة تنخفي (قبل: التحديد كان ينزل لها وهي مغطّاة = تنقّل عشوائي)
+            sortRow.findViewWithTag<View>(sort)?.requestFocus()
+            mainBox?.visibility = View.INVISIBLE
+            grid.postDelayed({ if (gridBox.visibility == View.VISIBLE) firstOf(grid) }, 80)
+        } else grid.post { (grid.getChildAt(0) ?: grid).requestFocus() }
     }
 
     private fun buildSort() {
@@ -205,7 +213,9 @@ class LibraryScreen(private val a: MainActivity, private val series: Boolean) : 
                 setPadding(a.dp(14), a.dp(7), a.dp(14), a.dp(7))
                 background = a.focusBg(normal = if (on) C.PRIMARY else C.SURFACE2, radius = 16, selected = if (on) C.PRIMARY else C.ACCENT_SOFT)
                 isFocusable = true; isClickable = true
-                setOnClickListener { sort = k; buildSort(); applySort() }
+                tag = k
+                // الترتيب: التحديد يبقى على نفس الزر بعد ما تنبني الأزرار من جديد (قبل: يطير لمكان ثاني)
+                setOnClickListener { sort = k; buildSort(); applySort(); sortRow.findViewWithTag<View>(k)?.requestFocus() }
             }, lp(WRAP, WRAP).apply { marginEnd = a.dp(8) })
         }
     }
@@ -220,6 +230,7 @@ class LibraryScreen(private val a: MainActivity, private val series: Boolean) : 
     }
 
     private fun closeGrid() {
+        if (a.tv) mainBox?.visibility = View.VISIBLE
         gridBox.fadeOut(a.dp(24)) { gridBox.visibility = View.GONE }
         if (a.tv) {
             // نرجع لخانة «المزيد» بنفس الصف
