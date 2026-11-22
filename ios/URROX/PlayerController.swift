@@ -122,10 +122,16 @@ final class PlayerController {
         isPlaying = false; buffering = true               // تحميل البداية: علامة التحميل لين يبدأ فعلاً
         waitTask?.cancel()
         lastVlcT = -1; vlcStallTicks = 0
+        // سيرفرك ما يمشي معه بث آبل (HLS)؟ من أول مرة فشل نشغّل المباشر TS على VLC مباشرة — بدون انتظار
+        if r.type == "live", Self.liveTs, r.url.pathExtension.lowercased() == "m3u8" {
+            r.url = r.url.deletingPathExtension().appendingPathExtension("ts"); req = r
+        }
         if Self.engineFor(r.url) == .vlc { playVLC(r); return }
         stopVLC()
         engine = .av
-        let item = AVPlayerItem(url: r.url)
+        // نفس هوية التطبيقات المعروفة: بعض السيرفرات تبطّئ أو تحوّل الطلبات اللي بدونها
+        let asset = AVURLAsset(url: r.url, options: ["AVURLAssetHTTPHeaderFieldsKey": ["User-Agent": "IPTVSmartersPro"]])
+        let item = AVPlayerItem(asset: asset)
         // المباشر: النظام يحدد البفر حسب السيرفر (أثبت). الأفلام: بفر أكبر عشان ما يقطع على النت البطيء
         item.preferredForwardBufferDuration = 0          // النظام يحدد (يبدأ أسرع ويعبّي على قد النت)
         userPaused = false
@@ -140,6 +146,7 @@ final class PlayerController {
                     if r.type == "live", r.url.pathExtension.lowercased() == "m3u8" {
                         r.url = r.url.deletingPathExtension().appendingPathExtension("ts")
                         self.req = r
+                        Self.liveTs = true
                     }
                     self.playVLC(r)
                 }
@@ -175,6 +182,7 @@ final class PlayerController {
             if rr.type == "live", rr.url.pathExtension.lowercased() == "m3u8" {
                 rr.url = rr.url.deletingPathExtension().appendingPathExtension("ts")
                 self.req = rr
+                Self.liveTs = true
             }
             self.playVLC(rr)
         }
@@ -245,6 +253,12 @@ final class PlayerController {
         } else { vlcEndHandled = false }
         if Date().timeIntervalSince(lastSave) > 10 { saveNow() }
         checkSkips()
+    }
+
+    /// المباشر بصيغة TS على VLC (لو بث آبل تأخّر أو فشل مرة مع هالسيرفر) — ينحفظ
+    static var liveTs: Bool {
+        get { UserDefaults.standard.bool(forKey: "liveTs") }
+        set { UserDefaults.standard.set(newValue, forKey: "liveTs") }
     }
 
     static var phone: Bool { UIDevice.current.userInterfaceIdiom == .phone }

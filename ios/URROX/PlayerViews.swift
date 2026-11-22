@@ -595,7 +595,7 @@ struct FullscreenPlayer: View {
         }
         .onAppear {
             // اتجاه اللفّة حسب مسكة الجوال
-            angle = UIDevice.current.orientation == .landscapeRight ? -90 : 90
+            angle = UIDevice.current.orientation == .landscapeLeft ? 90 : -90      // الافتراضي: يلف لليمين
             if UIDevice.current.userInterfaceIdiom == .phone && !pc.autoFullscreen { Orientation.lock(.portrait) }
             // جاي من السحب لفوق: الحركة يقودها إصبعك (shown يصير جاهز بدون حركة)
             if pc.fsDrag != nil { shown = true }

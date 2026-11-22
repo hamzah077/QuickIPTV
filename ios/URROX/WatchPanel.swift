@@ -49,8 +49,10 @@ struct WatchPanel: View {
 
     /// مسافة السحب (من الصفحة الكاملة لمكان النافذة)
     static func range(W: CGFloat, H: CGFloat, top: CGFloat, bottom: CGFloat) -> CGFloat {
-        max(200, floorY(H: H, bottom: bottom) - (W * 0.5) * 9 / 16 - top)
+        max(200, floorY(H: H, bottom: bottom) - (W * 0.5) * 9 / 16 - top - head)
     }
+    /// شريط فوق الفيديو بنفس ارتفاع شريط الصفحة: الفيديو يطلع بنفس مكان الصورة بالضبط (الصفحة ما "تتغير")
+    static let head: CGFloat = 44
 
     /// مكان الفيديو: من فوق الصفحة بعرضها، لمكان النافذة العائمة
     private var video: CGRect {
@@ -59,7 +61,7 @@ struct WatchPanel: View {
             if hiddenSide != 0 { o.x = hiddenSide < 0 ? -fw - 6 : W + 6 }
             o.x += move.width; o.y += move.height
         }
-        return CGRect(x: L(0, o.x), y: L(top, o.y), width: L(W, fw), height: L(W * 9 / 16, fh))
+        return CGRect(x: L(0, o.x), y: L(top + Self.head, o.y), width: L(W, fw), height: L(W * 9 / 16, fh))
     }
 
     var body: some View {
@@ -69,11 +71,26 @@ struct WatchPanel: View {
             if t < 1, let vod = pc.watchVod {
                 DetailsView(vod: vod, inPanel: true)
                     .environment(\.layoutDirection, .rightToLeft)
-                    .frame(width: W, height: max(0, H - top - W * 9 / 16))
+                    .frame(width: W, height: max(0, H - top - Self.head - W * 9 / 16))
                     .background(Theme.bg)
-                    .offset(y: top + W * 9 / 16 + t * 220)
+                    .offset(y: top + Self.head + W * 9 / 16 + t * 220)
                     .opacity(Double(max(0, 1 - t * 1.4)))
                     .allowsHitTesting(t < 0.05)
+                // فوق: نفس شريط الصفحة (زر تصغير مكان زر الرجوع)
+                HStack {
+                    Spacer()
+                    Button { onDrag(10_000, true) } label: {
+                        Image(systemName: "chevron.down").font(.system(size: 17, weight: .semibold))
+                            .foregroundStyle(.white).frame(width: 44, height: 44).contentShape(Rectangle())
+                    }
+                    .accessibilityLabel("تصغير")
+                    .padding(.trailing, 8)
+                }
+                .frame(width: W, height: Self.head)
+                .padding(.top, top)
+                .background(Theme.bg)
+                .opacity(Double(max(0, 1 - t * 3)))
+                .allowsHitTesting(t < 0.05)
             }
 
             // الفيديو: مقاسه ثابت (بعرض الشاشة) ونصغّره بالتكبير/التصغير على كرت الشاشة —
@@ -223,6 +240,6 @@ struct WatchPanel: View {
 
     /// مكان الفيديو بالصفحة الكاملة (منه تبدأ حركة ملء الشاشة)
     private func reportFrame() {
-        if t == 0 { pc.inlineFrame = CGRect(x: 0, y: top, width: W, height: W * 9 / 16) }
+        if t == 0 { pc.inlineFrame = CGRect(x: 0, y: top + Self.head, width: W, height: W * 9 / 16) }
     }
 }

@@ -274,9 +274,16 @@ struct DetailsView: View {
         VStack(spacing: 0) {
             // المشغّل ثابت فوق (ما يتحرك مع القائمة)
             if showInline { InlinePlayer() }
+            // الجوال: الصورة ثابتة فوق بنفس مقاس الفيديو بالضبط — لما تضغط تشغيل الفيديو ياخذ مكانها
+            // والكلام تحته ما يتحرك (نفس المكان ونفس التمرير)
+            if PlayerController.phone && !inPanel {
+                Color.black.aspectRatio(16 / 9, contentMode: .fit)
+                    .overlay { Poster(url: vod.icon, radius: 0).opacity(0.55) }
+                    .clipped()
+            }
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
-                    if !showInline && !inPanel {
+                    if !showInline && !inPanel && !PlayerController.phone {
                         Poster(url: vod.icon, radius: 0).frame(height: 230).clipped().opacity(0.55)
                     }
                     VStack(alignment: .leading, spacing: 12) {
@@ -290,6 +297,7 @@ struct DetailsView: View {
                 }
                 .padding(.bottom, 40)
             }
+            .sharedScroll(key, restore: inPanel)
         }
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
@@ -675,5 +683,35 @@ struct PressGray: ButtonStyle {
             .background(c.isPressed ? Color(white: 0.7) : .white, in: Capsule())
             .contentShape(Capsule())
             .transaction { $0.animation = nil }
+    }
+}
+
+
+/// مكان التمرير بصفحة الفيلم/المسلسل: صفحة التشغيل تفتح على نفس المكان اللي كنت فيه (ما تقفز لفوق)
+enum DetailsScroll { @MainActor static var y: [String: CGFloat] = [:] }
+
+extension View {
+    @ViewBuilder func sharedScroll(_ key: String, restore: Bool) -> some View {
+        if #available(iOS 18.0, *) { modifier(SharedScroll(key: key, restore: restore)) } else { self }
+    }
+}
+
+@available(iOS 18.0, *)
+private struct SharedScroll: ViewModifier {
+    let key: String
+    let restore: Bool
+    @State private var pos = ScrollPosition(edge: .top)
+    func body(content: Content) -> some View {
+        content
+            .scrollPosition($pos)
+            .onScrollGeometryChange(for: CGFloat.self, of: { $0.contentOffset.y + $0.contentInsets.top }) { _, y in
+                DetailsScroll.y[key] = max(0, y)
+            }
+            .onAppear {
+                guard restore, let y = DetailsScroll.y[key], y > 0 else { return }
+                var t = Transaction(); t.disablesAnimations = true
+                withTransaction(t) { pos.scrollTo(y: y) }
+                Task { @MainActor in withTransaction(t) { pos.scrollTo(y: y) } }     // بعد ما ينرسم المحتوى
+            }
     }
 }
