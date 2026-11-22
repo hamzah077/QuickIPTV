@@ -463,6 +463,20 @@ class MainActivity : Activity() {
         bl.animate().cancel(); bl.animate().alpha(v * 0.85f).setDuration(260).start()
     }
     private var lastContentFocus: java.lang.ref.WeakReference<View>? = null
+    private var bleed = false
+
+    /**
+     * التلفزيون: الصفحة تملى الشاشة كاملة (بدون القائمة الجانبية ولا الهوامش) — مثل المباشر «البث يملى الشاشة»
+     * لما تخفي اللوحة. false = ترجع طبيعية.
+     */
+    fun setBleed(on: Boolean) {
+        if (!tv || bleed == on) return
+        bleed = on
+        nav.visibility = if (on) View.GONE else View.VISIBLE
+        if (on) railScrim?.visibility = View.GONE
+        content.setPadding(0, if (on) 0 else dp(27), if (on) 0 else dp(48), if (on) 0 else dp(27))
+        (content.layoutParams as? FrameLayout.LayoutParams)?.let { it.marginStart = if (on) 0 else dp(RAIL_W); content.layoutParams = it }
+    }
 
     /** التلفزيون: الصورة الكبيرة خلف الشاشة (null = تختفي). تتبدّل بتلاشي ناعم. */
     fun setBackdrop(url: String?) {
@@ -590,6 +604,7 @@ class MainActivity : Activity() {
         current = key
         if (key != "home") setBackdrop(null)
         setBlur(0f)
+        setBleed(false)
         val s = screen(key)
         content.removeAllViews()
         (s.view.parent as? FrameLayout)?.removeView(s.view)
@@ -620,6 +635,7 @@ class MainActivity : Activity() {
         current = key
         if (key != "home") setBackdrop(null)
         setBlur(0f)
+        setBleed(false)
         val s = screen(key)
         content.removeAllViews()
         (s.view.parent as? FrameLayout)?.removeView(s.view)

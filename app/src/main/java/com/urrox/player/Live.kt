@@ -272,6 +272,7 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
         panelHidden = !on
         val v = if (on) View.VISIBLE else View.GONE
         panel?.visibility = v; infoBox?.visibility = v; shadeV?.visibility = v
+        a.setBleed(!on)          // اللوحة مخفية: البث يملى الشاشة كاملة (حتى مكان القائمة الجانبية والهوامش)
         if (!focus) return
         if (on) focusChannels() else root.requestFocus()
     }
@@ -698,6 +699,7 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
     }
 
     override fun onHide() {
+        if (panelHidden) showPanel(true, focus = false)      // طلعت من المباشر: القائمة الجانبية والهوامش ترجع
         stopPlayer()
         epgJob?.cancel()
     }
