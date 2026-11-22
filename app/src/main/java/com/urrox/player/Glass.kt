@@ -116,7 +116,7 @@ object Glass {
             c.drawPath(path, paint)
             if (dark) { paint.color = 0x14FFFFFF; c.drawPath(path, paint) }
             // الحافة اللامعة: أقوى فوق ويسار، وتخف بالنص
-            stroke.strokeWidth = host.resources.displayMetrics.density * 1.2f
+            stroke.strokeWidth = host.resources.displayMetrics.density * 1.6f      // (tvOS: بدون خطوط شعرية — تختفي من بعيد)
             stroke.shader = LinearGradient(r.left, r.top, r.right, r.bottom,
                 intArrayOf(0xB3FFFFFF.toInt(), 0x1FFFFFFF, 0x66FFFFFF), floatArrayOf(0f, 0.5f, 1f), Shader.TileMode.CLAMP)
             val inset = stroke.strokeWidth / 2
@@ -133,8 +133,15 @@ object Glass {
     /** زر زجاج: عادي = زجاج، محدد = أبيض (كبسولة). */
     fun button(host: View, radiusPx: Float, backdrop: Boolean = true): Drawable = android.graphics.drawable.StateListDrawable().apply {
         setEnterFadeDuration(120); setExitFadeDuration(120)
+        addState(intArrayOf(android.R.attr.state_pressed), pressedLens(radiusPx))     // ضغطة OK: العدسة تغمق لحظة (إحساس الضغط)
         addState(intArrayOf(android.R.attr.state_focused), lens(radiusPx))
         addState(intArrayOf(), Pane(host, radiusPx, backdrop = backdrop))
+    }
+
+    /** العدسة وقت الضغط: أغمق شوي. */
+    fun pressedLens(radiusPx: Float): Drawable = android.graphics.drawable.GradientDrawable(
+        android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0xFFD9DDE6.toInt(), 0xFFC3C8D3.toInt())).apply {
+        cornerRadius = radiusPx; setStroke(2, 0xFFFFFFFF.toInt())
     }
 
     /**

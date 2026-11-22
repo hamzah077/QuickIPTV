@@ -540,7 +540,8 @@ class MainActivity : Activity() {
         // التركيز: كبسولة بيضاء والأيقونة والكتابة داكنة (مثل Google TV) — بدون أزرق
         background = android.graphics.drawable.StateListDrawable().apply {
             setEnterFadeDuration(120); setExitFadeDuration(100)
-            addState(intArrayOf(android.R.attr.state_focused), rounded(C.FOCUS, dpf(24f)))
+            if (Glass.on) addState(intArrayOf(android.R.attr.state_pressed), Glass.pressedLens(dpf(24f)))
+            addState(intArrayOf(android.R.attr.state_focused), if (Glass.on) Glass.lens(dpf(24f)) else rounded(C.FOCUS, dpf(24f)))
             addState(intArrayOf(), rounded(android.graphics.Color.TRANSPARENT, dpf(24f)))
         }
         isFocusable = true
