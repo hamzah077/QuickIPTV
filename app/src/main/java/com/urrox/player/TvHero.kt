@@ -133,9 +133,8 @@ class TvHero(private val a: MainActivity, private val screenKey: String) {
         btns.animate().cancel(); btns.alpha = 1f
         btns.visibility = if (on) View.GONE else View.VISIBLE
         plot.visibility = if (on) View.GONE else View.VISIBLE
-        // ليكود جلاس: وأنت بالصفوف الإعلان يصير بطاقة زجاج
+        // ليكود جلاس: وأنت بالصفوف الخلفية تتموّه خفيف (بدون بطاقة حول العنوان)
         if (glass) {
-            view.background = if (on) Glass.Pane(view, a.dpf(22f)) else null
             a.setBlur(if (on) 0.6f else 0f)          // وأنت بالصفوف: الخلفية تتموّه خفيف (عمق)
         }
         if (!on) featured?.let { apply(it) }
