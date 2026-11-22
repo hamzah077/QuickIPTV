@@ -105,8 +105,11 @@ struct LiveView: View {
                     Text(c.name).font(.title3.weight(.semibold))
                     Spacer()
                     Button { model.toggleFav("live:\(c.id)") } label: {
-                        Image(systemName: model.isFav("live:\(c.id)") ? "heart.fill" : "heart").frame(width: 40, height: 40)
+                        Image(systemName: model.isFav("live:\(c.id)") ? "heart.fill" : "heart").frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
                     }.glassCircle()
+                    .accessibilityLabel(model.isFav("live:\(c.id)") ? "إزالة من المفضلة" : "إضافة للمفضلة")
+                    .sensoryFeedback(.selection, trigger: model.isFav("live:\(c.id)"))
                 }
                 if let now = epg.first(where: { $0.isNow }) {
                     Text("الآن: \(now.title)").font(.subheadline).foregroundStyle(Theme.muted)
@@ -236,6 +239,7 @@ struct DetailsView: View {
     @State private var season = 1
     @State private var loaded = false
     @State private var didLoad = false
+    @State private var playTaps = 0
 
     private var key: String { vod.isSeries ? "series:\(vod.id)" : "movie:\(vod.id)" }
     /// المشغّل داخل الصفحة: الآيباد بس (الجوال: صفحة التشغيل فوق تعرضه)
@@ -320,18 +324,22 @@ struct DetailsView: View {
             Button {
                 var t = Transaction(); t.disablesAnimations = true      // بدون حركة: الزر ما يطلع من تحت
                 withTransaction(t) { primary() }
+                playTaps += 1
             } label: {
                 Label(primaryTitle, systemImage: "play.fill").font(.headline)
                     .frame(maxWidth: .infinity).frame(height: 50)
                     .foregroundStyle(.black)
             }
             .buttonStyle(PressGray())
+            .sensoryFeedback(.impact(weight: .light), trigger: playTaps)      // تحس إن الضغطة وصلت
             if !vod.isSeries {
                 DownloadButton(req: { movieRequest() }, key: "movie:\(vod.id)").glassCircle()
             }
             Button { model.toggleFav(key) } label: {
                 Image(systemName: model.isFav(key) ? "heart.fill" : "heart").font(.title3).frame(width: 50, height: 50)
             }.glassCircle()
+            .accessibilityLabel(model.isFav(key) ? "إزالة من المفضلة" : "إضافة للمفضلة")
+            .sensoryFeedback(.selection, trigger: model.isFav(key))         // اهتزاز خفيف (إرشادات آبل)
         }
     }
 

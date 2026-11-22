@@ -245,7 +245,9 @@ struct DownloadsView: View {
                         if it.status != "done" {
                             Button { it.status == "running" ? dl.pause(it.key) : dl.resume(it.key) } label: {
                                 Image(systemName: it.status == "running" ? "pause.circle" : "arrow.clockwise.circle").font(.title2)
+                                    .frame(width: 44, height: 44).contentShape(Rectangle())
                             }.buttonStyle(.plain)
+                            .accessibilityLabel(it.status == "running" ? "إيقاف التحميل مؤقتاً" : "إكمال التحميل")
                         }
                     }
                 }

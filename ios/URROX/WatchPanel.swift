@@ -80,7 +80,7 @@ struct WatchPanel: View {
                 HStack {
                     Spacer()
                     Button { onDrag(10_000, true) } label: {
-                        Image(systemName: "chevron.down").font(.system(size: 17, weight: .semibold))
+                        Image(systemName: "chevron.down").font(.body.weight(.semibold))          // يكبر مع حجم الخط (Dynamic Type)
                             .foregroundStyle(.white).frame(width: 44, height: 44).contentShape(Rectangle())
                     }
                     .accessibilityLabel("تصغير")
