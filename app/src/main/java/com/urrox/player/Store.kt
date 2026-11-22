@@ -172,6 +172,11 @@ object Store {
     }
 
     /** شكل صفحة المباشر بالتلفزيون: a = البث يملى الشاشة (الافتراضي)، c = أعمدة، z = مشغّل كبير + قائمة */
+    /** ثيم واجهة التلفزيون: netflix (الافتراضي) | glass (ليكود جلاس). */
+    var tvTheme: String
+        get() = p.getString("tvTheme", "netflix") ?: "netflix"
+        set(v) = p.edit().putString("tvTheme", v).apply()
+
     var liveStyle: String
         get() = p.getString("liveStyle", "a") ?: "a"
         set(v) = p.edit().putString("liveStyle", v).apply()

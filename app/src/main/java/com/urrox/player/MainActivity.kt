@@ -175,7 +175,12 @@ class MainActivity : Activity() {
             railScrim = View(this).apply { setBackgroundColor(0x8C000000.toInt()); alpha = 0f; visibility = View.GONE }
             root.addView(railScrim, FrameLayout.LayoutParams(MATCH, MATCH))
             nav.setBackgroundColor(android.graphics.Color.TRANSPARENT)
-            root.addView(nav, FrameLayout.LayoutParams(WRAP, MATCH, Gravity.START))
+            if (Glass.on) {
+                // ليكود جلاس: القائمة كبسولة زجاج عائمة بالنص
+                nav.background = Glass.Pane(nav, dpf(30f))
+                nav.setPaddingRelative(dp(8), dp(12), dp(8), dp(12))
+                root.addView(nav, FrameLayout.LayoutParams(WRAP, WRAP, Gravity.START or Gravity.CENTER_VERTICAL).apply { marginStart = dp(14) })
+            } else root.addView(nav, FrameLayout.LayoutParams(WRAP, MATCH, Gravity.START))
             root.padForSystemBars()
             for ((key, label, ic) in sections) {
                 val b = railButton(key, label, ic)
@@ -448,6 +453,7 @@ class MainActivity : Activity() {
         if (u == backdropUrl) return
         backdropUrl = u
         if (u == null) {
+            if (Glass.on) Glass.setBackdrop(null)
             bd.animate().alpha(0f).setDuration(250).start()
             backdropScrim?.animate()?.alpha(0f)?.setDuration(250)?.start()
             return
@@ -456,6 +462,7 @@ class MainActivity : Activity() {
         bd.load(u) {
             size(1280, 720); crossfade(350)
             placeholder(old); error(old)
+            if (Glass.on) listener(onSuccess = { _, r -> Glass.setBackdrop(r.drawable) })
         }
         bd.animate().alpha(0.85f).setDuration(300).start()
         backdropScrim?.animate()?.alpha(1f)?.setDuration(300)?.start()
@@ -476,7 +483,7 @@ class MainActivity : Activity() {
                 tx.visibility = View.GONE; tx.alpha = 1f; tx.translationX = 0f
             }
         }
-        nav.setBackgroundColor(if (open) 0xF20C0E11.toInt() else android.graphics.Color.TRANSPARENT)
+        if (!Glass.on) nav.setBackgroundColor(if (open) 0xF20C0E11.toInt() else android.graphics.Color.TRANSPARENT)
         nav.elevation = if (open) dp(12).toFloat() else 0f
         railScrim?.let { sc ->
             sc.animate().cancel()

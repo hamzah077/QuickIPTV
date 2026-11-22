@@ -67,6 +67,7 @@ class TvHero(private val a: MainActivity, private val screenKey: String) {
     }
     val play = btn(R.drawable.ic_play, "تشغيل") { act(true) }
     private val info = btn(R.drawable.ic_info, "معلومات") { act(false) }
+    private val glass = Glass.on
     private val btns = LinearLayout(a).apply {
         orientation = LinearLayout.HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
         clipChildren = false; clipToPadding = false
@@ -82,6 +83,18 @@ class TvHero(private val a: MainActivity, private val screenKey: String) {
         addView(plot, LinearLayout.LayoutParams(w, ViewGroup.LayoutParams.WRAP_CONTENT))
         addView(btns, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = a.dp(18) })
         visibility = View.INVISIBLE         // مكانه محجوز من البداية (ما يدف الصفوف لما يطلع)
+    }
+
+    init {
+        if (glass) {
+            // ليكود جلاس: كبسولات زجاج (المحدد أبيض)، والتفاصيل داخل شريط زجاج
+            for (b in listOf(play, info)) b.background = Glass.button(b, a.dpf(21f))
+            meta.background = Glass.Pane(meta, a.dpf(14f))
+            meta.setPadding(a.dp(12), a.dp(4), a.dp(12), a.dp(5))
+            meta.layoutParams = (meta.layoutParams as LinearLayout.LayoutParams).apply { width = ViewGroup.LayoutParams.WRAP_CONTENT; topMargin = a.dp(6) }
+            meta.maxWidth = w
+            view.setPaddingRelative(a.dp(28), a.dp(18), a.dp(20), a.dp(14))
+        }
     }
 
     val hasFeatured get() = featured != null
@@ -117,6 +130,11 @@ class TvHero(private val a: MainActivity, private val screenKey: String) {
         btns.animate().cancel(); btns.alpha = 1f
         btns.visibility = if (on) View.GONE else View.VISIBLE
         plot.visibility = if (on) View.GONE else View.VISIBLE
+        // ليكود جلاس: وأنت بالصفوف الإعلان يصير بطاقة زجاج
+        if (glass) {
+            view.background = if (on) Glass.Pane(view, a.dpf(22f)) else null
+            meta.background = if (on) null else Glass.Pane(meta, a.dpf(14f))
+        }
         if (!on) featured?.let { apply(it) }
     }
 

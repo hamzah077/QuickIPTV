@@ -727,6 +727,7 @@ class SettingsScreen(private val a: MainActivity) : Screen {
         col.addView(a.sectionHeader("الإعدادات"))
         add(a.listRow(R.drawable.ic_settings, "شكل الواجهة", when (Store.uiMode) { "tv" -> "تلفزيون"; "phone" -> "جوال"; else -> "تلقائي" },
             subtitle = "تلقائي: يعرف لحاله إذا الجهاز تلفزيون") { chooseUiMode() })
+        if (a.tv) add(a.listRow(R.drawable.ic_settings, "ثيم التلفزيون", if (Store.tvTheme == "glass") "ليكود جلاس" else "نتفلكس") { chooseTvTheme() })
         if (a.tv) add(a.listRow(R.drawable.ic_live, "شكل صفحة المباشر", liveStyleName(Store.liveStyle)) { chooseLiveStyle() })
         add(a.listRow(R.drawable.ic_live, "صيغة البث المباشر", if (Store.liveFormat == "ts") "MPEG-TS" else "HLS") { chooseFormat() })
         add(a.listRow(R.drawable.ic_guide, "دليل البرامج", Epg.status.ifEmpty { "—" }) { a.openExtra("epg") })
@@ -768,6 +769,18 @@ class SettingsScreen(private val a: MainActivity) : Screen {
                 d.dismiss()
                 Store.autoUpdateDays = days[w]
                 onShow(); first?.requestFocus()
+            }.show()
+    }
+
+    /** ثيم التلفزيون: نتفلكس (الافتراضي) أو ليكود جلاس — الواجهة تنبني من جديد. */
+    private fun chooseTvTheme() {
+        val keys = listOf("netflix", "glass")
+        val opts = arrayOf("نتفلكس (الافتراضي)", "ليكود جلاس")
+        AlertDialog.Builder(a, android.R.style.Theme_Material_Dialog_Alert)
+            .setTitle("ثيم التلفزيون")
+            .setSingleChoiceItems(opts, keys.indexOf(Store.tvTheme).coerceAtLeast(0)) { d, w ->
+                d.dismiss()
+                if (keys[w] != Store.tvTheme) { Store.tvTheme = keys[w]; a.recreate() }
             }.show()
     }
 

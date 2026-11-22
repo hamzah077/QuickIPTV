@@ -1173,6 +1173,13 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
         val h = act.dp(42)
         for (b in listOf<View>(nfNext, nfEps, nfAudio, nfSpeed))
             nfBtns.addView(b, LinearLayout.LayoutParams(WRAP, h).apply { marginStart = act.dp(6); marginEnd = act.dp(6) })
+        if (Glass.on) {
+            // ليكود جلاس: كل الأزرار والشريط داخل كبسولة زجاج داكنة عائمة تحت، والأزرار كبسولات زجاج
+            panel.background = Glass.Pane(panel, act.dpf(34f), dark = true)
+            panel.setPadding(act.dp(26), act.dp(16), act.dp(26), act.dp(16))
+            (panel.layoutParams as? LayoutParams)?.let { it.setMargins(act.dp(40), 0, act.dp(40), act.dp(22)); panel.layoutParams = it }
+            for (b in listOf<View>(nfNext, nfEps, nfAudio, nfSpeed)) b.background = Glass.button(b, act.dpf(21f), backdrop = false)
+        }
         panel.addView(nfBtns, LinearLayout.LayoutParams(WRAP, WRAP).apply { topMargin = act.dp(16); gravity = Gravity.CENTER_HORIZONTAL })
         if (epsView.parent == null) addView(epsView, LayoutParams(MATCH, MATCH))
         if (pauseView.parent == null) addView(pauseView, LayoutParams(MATCH, MATCH))
