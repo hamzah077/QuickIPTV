@@ -324,6 +324,7 @@ class PlayerActivity : Activity() {
         if (!live && bar.isPauseShown()) { bar.hidePause(); bar.focusPlay(); return }
         if (!live && bar.overlayOpen()) { bar.closeEpisodes(); return }
         if (!live && bar.cancelAutoNext()) return        // وقت عدّاد الحلقة التالية: رجوع = أكمل التتر
+        if (bar.barVisible) { bar.hide(); return }         // الشريط طالع: رجوع = يخفيه بس (المرة الثانية تطلع من المشغّل)
         @Suppress("DEPRECATION")
         super.onBackPressed()
     }
