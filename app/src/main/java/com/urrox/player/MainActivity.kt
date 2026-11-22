@@ -184,7 +184,8 @@ class MainActivity : Activity() {
             nav.setBackgroundColor(android.graphics.Color.TRANSPARENT)
             if (Glass.on) {
                 // ليكود جلاس: القائمة كبسولة زجاج عائمة بالنص
-                nav.background = Glass.Pane(nav, dpf(30f))
+                // زجاج «مثلّج»: صورة ممَوّهة + طبقة غامقة كثيفة = ما يبان اللي وراها
+                nav.background = Glass.Pane(nav, dpf(30f), tint = 0x1AFFFFFF, frost = 0xD914161C.toInt())
                 nav.setPaddingRelative(dp(8), dp(12), dp(8), dp(12))
                 root.addView(nav, FrameLayout.LayoutParams(WRAP, WRAP, Gravity.START or Gravity.CENTER_VERTICAL).apply { marginStart = dp(14) })
             } else root.addView(nav, FrameLayout.LayoutParams(WRAP, MATCH, Gravity.START))
@@ -502,7 +503,12 @@ class MainActivity : Activity() {
         }
         if (!Glass.on) nav.setBackgroundColor(if (open) 0xF20C0E11.toInt() else android.graphics.Color.TRANSPARENT)
         nav.elevation = if (open) dp(12).toFloat() else 0f
-        if (Glass.on) setBlur(blurLevel)
+        if (Glass.on) {
+            setBlur(blurLevel)
+            // أندرويد 12+: المحتوى نفسه يتموّه وراء القائمة المفتوحة (Blur حقيقي)
+            if (android.os.Build.VERSION.SDK_INT >= 31) content.setRenderEffect(
+                if (open) android.graphics.RenderEffect.createBlurEffect(dpf(14f), dpf(14f), android.graphics.Shader.TileMode.CLAMP) else null)
+        }
         railScrim?.let { sc ->
             sc.animate().cancel()
             if (open) { sc.visibility = View.VISIBLE; sc.animate().alpha(1f).setDuration(180).start() }

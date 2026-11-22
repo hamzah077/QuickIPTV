@@ -83,7 +83,9 @@ object Glass {
      * لوح زجاج: [radiusPx] الزوايا، [tint] لون أبيض شفاف فوق الضبابية، [dark] = زجاج داكن (فوق الفيديو).
      */
     class Pane(private val host: View, private val radiusPx: Float, private val tint: Int = 0x24FFFFFF, private val dark: Boolean = false,
-               private val backdrop: Boolean = true) : Drawable() {
+               private val backdrop: Boolean = true,
+               /** طبقة «مثلّجة» تحت اللون (0 = بدون): تغطي اللي ورا اللوح (مثل القائمة الجانبية) */
+               private val frost: Int = 0) : Drawable() {
         private val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
         private val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
         private val r = RectF(); private val src = Rect(); private val dst = RectF()
@@ -108,6 +110,7 @@ object Glass {
                 c.restore()
             }
             paint.shader = null
+            if (frost != 0) { paint.color = frost; c.drawPath(path, paint) }
             paint.color = if (dark) 0x8C0E1016.toInt() else tint
             c.drawPath(path, paint)
             if (dark) { paint.color = 0x14FFFFFF; c.drawPath(path, paint) }
