@@ -491,6 +491,7 @@ class PlayerActivity : Activity() {
         // الأزرار ظاهرة والتحديد داخلها: تحت = صف الحلقات/القنوات، فوق من الصف = رجوع للأزرار
         if (isTv() && bar.barVisible && bar.hasFocusInside()) {
             if (k == KeyEvent.KEYCODE_DPAD_DOWN && bar.seekFocused()) { bar.poke(); return false }      // من الشريط ← للأزرار
+            if (k == KeyEvent.KEYCODE_DPAD_DOWN && bar.downFromButtons()) return true          // المسلسل: تحت من الأزرار = الحلقات
             if (bar.isNetflix && (k == KeyEvent.KEYCODE_DPAD_DOWN || k == KeyEvent.KEYCODE_DPAD_UP)) { bar.poke(); return false }
             if (k == KeyEvent.KEYCODE_DPAD_DOWN) { if (!bar.rowHasFocus()) bar.showRow(); bar.poke(); return true }
             if (k == KeyEvent.KEYCODE_DPAD_UP && bar.rowHasFocus()) { bar.hideRow(); bar.focusPlay(); return true }

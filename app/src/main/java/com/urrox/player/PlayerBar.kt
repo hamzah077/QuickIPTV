@@ -456,14 +456,21 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
     }
 
     // ---------- الإظهار والإخفاء ----------
-    val barVisible get() = panel.visibility == View.VISIBLE
+    val barVisible get() = panel.visibility == View.VISIBLE && !hiding
     private val hideRun = Runnable { if (autoHide && !dragging && !epsOpen && player?.playWhenReady == true) hide() else if (!epsOpen) poke() }
 
     /** يظهر الشريط ويعيد مؤقّت الإخفاء. */
+    /** الشريط قاعد يختفي (حركة التلاشي): نعتبره مخفي. */
+    private var hiding = false
+
     fun show() {
-        if (panel.visibility != View.VISIBLE) {
+        if (panel.visibility != View.VISIBLE || hiding) {
+            // كان يختفي؟ نلغي الاختفاء (قبل: تكمل حركة الإخفاء وتخفيه بعد ما طلبنا إظهاره = ضغطة ضايعة)
+            val wasHidden = panel.visibility != View.VISIBLE
+            hiding = false
+            panel.animate().cancel()
             panel.visibility = View.VISIBLE
-            panel.alpha = 0f
+            if (wasHidden) panel.alpha = 0f
             panel.animate().alpha(1f).setDuration(150).start()
             onVisibility?.invoke(true)
         }
@@ -472,13 +479,15 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
     }
 
     fun hide() {
-        if (!autoHide || panel.visibility != View.VISIBLE) return
+        if (!autoHide || panel.visibility != View.VISIBLE || hiding) return
         // التحديد يروح لنقطة مخفية (مو لأول زر بالشريط اللي بيختفي — كان يعلق فيه وتصير الأسهم تنقل لتحت)
         if (panel.hasFocus()) parkFocus()
         hideTip(); bubble.visibility = View.INVISIBLE
         rowBox.visibility = View.GONE
         endPeek()
-        panel.animate().alpha(0f).setDuration(150).withEndAction { panel.visibility = View.GONE; placeNext() }.start()
+        hiding = true
+        panel.animate().cancel()
+        panel.animate().alpha(0f).setDuration(150).withEndAction { if (hiding) { hiding = false; panel.visibility = View.GONE; placeNext() } }.start()
         onVisibility?.invoke(false)
     }
 
@@ -492,10 +501,16 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
     }
 
     /** يحط التركيز على زر التشغيل (الريموت). */
-    fun focusPlay() { show(); btnPlay.requestFocus() }
+    fun focusPlay() { endPeek(); show(); btnPlay.requestFocus() }
 
     /** التحديد على أزرار الشريط (الظاهر). أزرار «تخطي المقدمة/الحلقة التالية» لحالها: floatFocused. */
-    fun hasFocusInside() = panel.visibility == View.VISIBLE && panel.alpha > 0.5f && panel.hasFocus()
+    fun hasFocusInside() = panel.visibility == View.VISIBLE && !hiding && panel.hasFocus()
+
+    /** نمط نتفلكس: سهم تحت من صف الأزرار (المسلسل) = قائمة الحلقات على طول. */
+    fun downFromButtons(): Boolean {
+        if (!netflix || !nfBtns.hasFocus() || nav == null || episodesProvider == null) return false
+        openEpisodes(); return true
+    }
     fun floatFocused() = (nextFloat.visibility == View.VISIBLE && nextFloat.hasFocus()) || (introFloat.visibility == View.VISIBLE && introFloat.hasFocus())
 
     /** نقطة تحديد مخفية: لما الأزرار تختفي التحديد يجلس هنا والأسهم ترجع للمشغّل (تقديم/ترجيع). */
@@ -1024,10 +1039,21 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
     }
 
     // ---------- الريموت على شريط التقدّم: يمين/يسار = ±10 ثواني (ضغط مطوّل أسرع) ----------
+    private var noSeekToast = 0L
     private fun remoteSeek(forward: Boolean, repeat: Int) {
         val p = player ?: return
         val d = duration()
-        if (d <= 0) return
+        if (d <= 0) {
+            // المدة مو معروفة (بعض الحلقات من السيرفر): قبل كان ما يصير شي أبداً — نقدّم مباشرة لو الملف يسمح
+            if (p.isCurrentMediaItemSeekable) {
+                val step = if (repeat > 6) 60_000L else if (repeat > 0) 30_000L else 10_000L
+                p.seekTo((p.currentPosition + if (forward) step else -step).coerceAtLeast(0))
+            } else if (System.currentTimeMillis() - noSeekToast > 4000) {
+                noSeekToast = System.currentTimeMillis()
+                android.widget.Toast.makeText(act, "هذا الملف ما يدعم التقديم من السيرفر", android.widget.Toast.LENGTH_SHORT).show()
+            }
+            poke(); return
+        }
         val step = if (repeat > 6) 60_000L else if (repeat > 0) 30_000L else 10_000L
         val base = if (pendingSeek >= 0) pendingSeek else p.currentPosition
         pendingSeek = (base + if (forward) step else -step).coerceIn(0, d)
@@ -1234,7 +1260,7 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
         epsData = data
         epsOpen = true
         removeCallbacks(hideRun)
-        panel.animate().cancel(); panel.visibility = View.GONE; panel.alpha = 1f
+        panel.animate().cancel(); hiding = false; panel.visibility = View.GONE; panel.alpha = 1f
         hideTip(); bubble.visibility = View.INVISIBLE
         onVisibility?.invoke(false)
         chipRow.removeAllViews()
@@ -1390,7 +1416,7 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
         pPlot.text = plot; pPlot.visibility = if (plot.isBlank()) View.GONE else View.VISIBLE
         pauseShown = true
         removeCallbacks(hideRun)
-        panel.animate().cancel(); panel.visibility = View.GONE; panel.alpha = 1f
+        panel.animate().cancel(); hiding = false; panel.visibility = View.GONE; panel.alpha = 1f
         hideTip(); bubble.visibility = View.INVISIBLE
         onVisibility?.invoke(false)
         if (panel.hasFocus()) parkFocus()
