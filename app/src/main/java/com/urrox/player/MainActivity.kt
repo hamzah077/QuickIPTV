@@ -7,6 +7,8 @@ import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
 import android.widget.FrameLayout
+import android.widget.ImageView
+import coil.load
 import android.widget.LinearLayout
 import android.widget.Toast
 import kotlinx.coroutines.CoroutineScope
@@ -151,7 +153,28 @@ class MainActivity : Activity() {
             // حواف آمنة: بعض التلفزيونات تقص أطراف الصورة
             // حواف آمنة (دليل Google: ~48 من الجنب و27 من فوق وتحت) — بعض التلفزيونات تقص أطراف الصورة
             content.setPadding(0, dp(27), dp(48), dp(27))
+            // نمط نتفلكس: صورة كبيرة خلف كل شي (حتى خلف القائمة الجانبية) للعمل المحدد بالرئيسية، مع تظليل
+            val bd = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; alpha = 0f }
+            backdrop = bd
+            root.addView(bd, FrameLayout.LayoutParams(MATCH, MATCH))
+            val bg = C.BG and 0x00FFFFFF
+            backdropScrim = FrameLayout(this).apply {
+                alpha = 0f
+                addView(View(this@MainActivity).apply {
+                    background = android.graphics.drawable.GradientDrawable(android.graphics.drawable.GradientDrawable.Orientation.RIGHT_LEFT,
+                        intArrayOf(bg or 0xF5000000.toInt(), bg or 0xB3000000.toInt(), bg or 0x26000000))
+                }, FrameLayout.LayoutParams(MATCH, MATCH))
+                addView(View(this@MainActivity).apply {
+                    background = android.graphics.drawable.GradientDrawable(android.graphics.drawable.GradientDrawable.Orientation.BOTTOM_TOP,
+                        intArrayOf(bg or 0xFF000000.toInt(), bg or 0xE0000000.toInt(), bg))
+                }, FrameLayout.LayoutParams(MATCH, (resources.displayMetrics.heightPixels * 0.62f).toInt(), Gravity.BOTTOM))
+            }
+            root.addView(backdropScrim, FrameLayout.LayoutParams(MATCH, MATCH))
             root.addView(content, FrameLayout.LayoutParams(MATCH, MATCH).apply { marginStart = dp(RAIL_W) })
+            // القائمة مفتوحة: المحتوى يغمق وراها (نمط نتفلكس)
+            railScrim = View(this).apply { setBackgroundColor(0x8C000000.toInt()); alpha = 0f; visibility = View.GONE }
+            root.addView(railScrim, FrameLayout.LayoutParams(MATCH, MATCH))
+            nav.setBackgroundColor(android.graphics.Color.TRANSPARENT)
             root.addView(nav, FrameLayout.LayoutParams(WRAP, MATCH, Gravity.START))
             root.padForSystemBars()
             for ((key, label, ic) in sections) {
@@ -412,6 +435,30 @@ class MainActivity : Activity() {
 
     private val RAIL_W = 92
     private var railOpen = false
+    private var backdrop: ImageView? = null
+    private var backdropScrim: View? = null
+    private var railScrim: View? = null
+    private var backdropUrl: String? = null
+
+    /** التلفزيون: الصورة الكبيرة خلف الشاشة (null = تختفي). تتبدّل بتلاشي ناعم. */
+    fun setBackdrop(url: String?) {
+        val bd = backdrop ?: return
+        val u = url?.takeIf { it.isNotBlank() }
+        if (u == backdropUrl) return
+        backdropUrl = u
+        if (u == null) {
+            bd.animate().alpha(0f).setDuration(250).start()
+            backdropScrim?.animate()?.alpha(0f)?.setDuration(250)?.start()
+            return
+        }
+        val old = bd.drawable
+        bd.load(u) {
+            size(1280, 720); crossfade(350)
+            placeholder(old); error(old)
+        }
+        bd.animate().alpha(0.85f).setDuration(300).start()
+        backdropScrim?.animate()?.alpha(1f)?.setDuration(300)?.start()
+    }
 
     /** القائمة الجانبية: تتوسّع بأسماء الأقسام لما يوقف عليها الريموت، وترجع أيقونات لما يطلع منها. */
     private fun railExpand(open: Boolean) {
@@ -428,8 +475,13 @@ class MainActivity : Activity() {
                 tx.visibility = View.GONE; tx.alpha = 1f; tx.translationX = 0f
             }
         }
-        nav.setBackgroundColor(if (open) 0xF20C0E11.toInt() else C.RAIL)
+        nav.setBackgroundColor(if (open) 0xF20C0E11.toInt() else android.graphics.Color.TRANSPARENT)
         nav.elevation = if (open) dp(12).toFloat() else 0f
+        railScrim?.let { sc ->
+            sc.animate().cancel()
+            if (open) { sc.visibility = View.VISIBLE; sc.animate().alpha(1f).setDuration(180).start() }
+            else sc.animate().alpha(0f).setDuration(150).withEndAction { sc.visibility = View.GONE }.start()
+        }
     }
 
     private fun railButton(key: String, label: String, ic: Int): View = LinearLayout(this).apply {
@@ -463,7 +515,8 @@ class MainActivity : Activity() {
 
     /** ألوان زر القائمة: مركّز = داكن على أبيض، القسم الحالي = أبيض، الباقي = رمادي. */
     private fun railTint(b: View, key: String, focused: Boolean = b.hasFocus()) {
-        val col = when { focused -> C.PRIMARY_TEXT; key == current -> C.TEXT; else -> C.MUTED }
+        // القسم اللي أنت فيه: أحمر (نمط نتفلكس)، والمحدد داكن على أبيض
+        val col = when { focused -> C.PRIMARY_TEXT; key == current -> 0xFFE50914.toInt(); else -> C.MUTED }
         b.findViewWithTag<android.widget.ImageView>("ic")?.imageTintList = android.content.res.ColorStateList.valueOf(col)
         b.findViewWithTag<android.widget.TextView>("tx")?.setTextColor(col)
     }
@@ -503,6 +556,7 @@ class MainActivity : Activity() {
         screens[current]?.onHide()
         if (key == "live") MiniDock.undockLive()         // رجعت للمباشر: البث يرجع لشاشته
         current = key
+        if (key != "home") setBackdrop(null)
         val s = screen(key)
         content.removeAllViews()
         (s.view.parent as? FrameLayout)?.removeView(s.view)
@@ -531,6 +585,7 @@ class MainActivity : Activity() {
         leaving(current, key)
         screens[current]?.onHide()
         current = key
+        if (key != "home") setBackdrop(null)
         val s = screen(key)
         content.removeAllViews()
         (s.view.parent as? FrameLayout)?.removeView(s.view)

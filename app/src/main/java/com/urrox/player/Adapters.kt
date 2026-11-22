@@ -162,6 +162,7 @@ class PosterAdapter(
         val r = v.rating.toDoubleOrNull()
         if (r != null && r > 0) { h.badge.text = "★ %.1f".format(java.util.Locale.US, r); h.badge.visibility = View.VISIBLE } else h.badge.visibility = View.GONE
         h.root.setOnClickListener { onClick(v) }
+        h.root.setTag(R.id.hero_item, v)          // التلفزيون: الرئيسية تعرض تفاصيله فوق لما يتحدد
     }
 }
 

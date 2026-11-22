@@ -5,4 +5,5 @@
     <item name="focus_room" type="id" />
     <item name="pending_player" type="id"/>
     <item name="ink_orig" type="id" />
+    <item name="hero_item" type="id" />
 </resources>

@@ -523,7 +523,7 @@ class PlayerActivity : Activity() {
                 KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_CHANNEL_DOWN -> { playChannel(Session.playIndex + 1, zap = true); return true }
             }
             if (k in KeyEvent.KEYCODE_0..KeyEvent.KEYCODE_9) { digit(k - KeyEvent.KEYCODE_0); return true }
-        } else if ((k == KeyEvent.KEYCODE_DPAD_UP || k == KeyEvent.KEYCODE_DPAD_DOWN) && !bar.barVisible) {
+        } else if ((k == KeyEvent.KEYCODE_DPAD_UP || k == KeyEvent.KEYCODE_DPAD_DOWN) && (!bar.barVisible || !bar.hasFocusInside())) {
             bar.focusPlay(); return true
         }
         return false

@@ -473,7 +473,8 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
 
     fun hide() {
         if (!autoHide || panel.visibility != View.VISIBLE) return
-        if (panel.hasFocus()) act.window?.decorView?.requestFocus()
+        // التحديد يروح لنقطة مخفية (مو لأول زر بالشريط اللي بيختفي — كان يعلق فيه وتصير الأسهم تنقل لتحت)
+        if (panel.hasFocus()) parkFocus()
         hideTip(); bubble.visibility = View.INVISIBLE
         rowBox.visibility = View.GONE
         endPeek()
@@ -493,7 +494,18 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
     /** يحط التركيز على زر التشغيل (الريموت). */
     fun focusPlay() { show(); btnPlay.requestFocus() }
 
-    fun hasFocusInside() = panel.hasFocus() || nextFloat.hasFocus() || introFloat.hasFocus()
+    fun hasFocusInside() = (panel.visibility == View.VISIBLE && panel.alpha > 0.5f && panel.hasFocus()) ||
+        (nextFloat.visibility == View.VISIBLE && nextFloat.hasFocus()) || (introFloat.visibility == View.VISIBLE && introFloat.hasFocus())
+
+    /** نقطة تحديد مخفية: لما الأزرار تختفي التحديد يجلس هنا والأسهم ترجع للمشغّل (تقديم/ترجيع). */
+    private val focusSink = View(act).apply {
+        isFocusable = false; setTag(R.id.own_focus_anim, true)
+        setOnFocusChangeListener { v, has -> if (!has) v.isFocusable = false }     // ما ينوصل له بالأسهم (بس وقت نركنه)
+    }
+    private fun parkFocus() {
+        if (focusSink.parent == null) addView(focusSink, LayoutParams(1, 1))
+        focusSink.isFocusable = true; focusSink.requestFocus()
+    }
 
     /** الريموت: رجوع وقت العدّاد = نلغي التشغيل التلقائي (يرجّع true لو استهلكها). */
     fun cancelAutoNext(): Boolean {
@@ -1380,7 +1392,7 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
         panel.animate().cancel(); panel.visibility = View.GONE; panel.alpha = 1f
         hideTip(); bubble.visibility = View.INVISIBLE
         onVisibility?.invoke(false)
-        if (panel.hasFocus()) act.window?.decorView?.requestFocus()
+        if (panel.hasFocus()) parkFocus()
         pauseView.visibility = View.VISIBLE
         pauseView.alpha = 0f; pauseView.animate().alpha(1f).setDuration(400).start()
     }
