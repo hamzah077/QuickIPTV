@@ -164,8 +164,15 @@ fun View.focusScale(scale: Float = 1.05f) {
     setTag(R.id.own_focus_anim, true)
     pressScale()
     setOnFocusChangeListener { v, has ->
+        v.raiseOnFocus(has)
         v.animate().scaleX(if (has) scale else 1f).scaleY(if (has) scale else 1f).setDuration(110).start()
     }
+}
+
+/** العنصر المحدد يترسم فوق اللي جنبه (كان تكبيره يطلع تحت الصورة المجاورة) — بدون ظل. */
+fun View.raiseOnFocus(has: Boolean) {
+    if (android.os.Build.VERSION.SDK_INT >= 28) { outlineAmbientShadowColor = 0; outlineSpotShadowColor = 0 }
+    translationZ = if (has) resources.displayMetrics.density * 4 else 0f
 }
 
 fun Context.text(
@@ -459,9 +466,10 @@ fun android.app.Activity.installFocusMotion() {
         if (isTv() && new != null) roomForFocus(new, window.decorView)       // التحديد (والتكبير) ما ينقص من الأطراف
         if (old != null && old === inked) { ink(old, false); inked = null }
         if (new != null && new.background is TvFocusDrawable) { inked = new; ink(new, true) }
-        if (eligible(old)) old!!.animate().scaleX(1f).scaleY(1f).setDuration(120).setInterpolator(interp).start()
+        if (eligible(old)) { old!!.raiseOnFocus(false); old.animate().scaleX(1f).scaleY(1f).setDuration(120).setInterpolator(interp).start() }
         if (eligible(new)) {
             val v = new!!
+            v.raiseOnFocus(true)
             // الصفوف العريضة (قنوات/تصنيفات/حلقات) تتلوّن بس بدون تكبير — عشان ما تطلع عن حدود القائمة وتنقص
             if (v.width <= v.height * 3 && v.width <= screenW * 0.4)
                 v.animate().scaleX(1.05f).scaleY(1.05f).setDuration(140).setInterpolator(interp).start()

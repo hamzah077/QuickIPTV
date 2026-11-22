@@ -860,6 +860,7 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
                 val click = it.onClick
                 setOnClickListener { hideRow(); click(); poke() }
                 setOnFocusChangeListener { v, has ->
+                    v.raiseOnFocus(has)
                     v.animate().scaleX(if (has) 1.06f else 1f).scaleY(if (has) 1.06f else 1f).setDuration(140).start()
                     if (has) poke()
                 }
