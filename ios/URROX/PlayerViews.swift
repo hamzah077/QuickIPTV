@@ -102,7 +102,9 @@ struct PlayerOverlay: View {
             .environment(\.layoutDirection, .leftToRight)
             // (المسافة بالنسبة للشاشة — المشغّل نفسه يتحرك ويصغر وأنت تسحب، فلو قسناها بالنسبة له تتذبذب)
             // المشغّل الصغير: السحب يبدأ يتبع إصبعك من أول حركة (نفس الأندرويد)
-            .gesture(DragGesture(minimumDistance: compact ? 10 : 30, coordinateSpace: .global)
+            // ملء الشاشة: المشغّل ملفوف (rotationEffect) فنقيس السحب بإحداثياته هو، مو الشاشة
+            // (قبل: السحب لفوق/تحت بالعرض ينحسب يمين/يسار = تتغير الحلقة)
+            .gesture(DragGesture(minimumDistance: compact ? 10 : 30, coordinateSpace: compact ? .global : .local)
             .onChanged { d in
                 guard compact else { return }
                 let dx = d.translation.width, dy = d.translation.height
@@ -138,8 +140,9 @@ struct PlayerOverlay: View {
                 }
                 if draggingDown, let f = onDragDown { draggingDown = false; f(max(0, dy), true); return }
                 if !compact && dy > 110 && abs(dx) < 80 { onFullscreen(); return }          // سحب لتحت = تصغير
-                guard abs(dx) > 90, abs(dy) < 60, pc.isLive || pc.queue != nil else { return }
-                if dx < 0 { pc.learnManualNext(); pc.next() } else { pc.prev() }         // سحب = الحلقة/القناة التالية أو السابقة
+                // سحب يمين/يسار = القناة التالية/السابقة (المباشر بس) — الحلقات تتغير بالأزرار فقط
+                guard abs(dx) > 90, abs(dy) < 60, pc.isLive else { return }
+                if dx < 0 { pc.next() } else { pc.prev() }
             })
 
             // قوس التقديم/التأخير
