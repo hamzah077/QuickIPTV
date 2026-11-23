@@ -72,6 +72,9 @@ schemes:
       targets:
         URROX: all
         URROXUITests: [test]
+    # التشغيل من Xcode على الجوال بنسخة Release (محسّنة): نسخة Debug بطيئة ومعلّقة مع القوائم الكبيرة
+    run:
+      config: Release
     test:
       targets:
         - URROXUITests

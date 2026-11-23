@@ -44,7 +44,10 @@ extension SearchNorm {
     }
     /// بعد تحميل القوائم: نجهّز الأسماء بالخلفية عشان أول بحث يكون سريع
     static func warm(_ names: [String]) {
-        Task.detached(priority: .utility) { for n in names { _ = cache.get(n) } }
+        Task.detached(priority: .background) {
+            try? await Task.sleep(for: .seconds(4))                 // بعد ما يهدى التطبيق من التحميل
+            for n in names { _ = cache.get(n) }
+        }
     }
 }
 
@@ -178,7 +181,7 @@ struct LiveView: View {
                 HStack(spacing: 8) {
                     chip("الكل", "")
                     ForEach(model.liveCats) { c in chip(c.name, c.id) }
-                }.padding(.horizontal, 12)
+                }.padding(.horizontal, 12).glassGroup()
             }
             List(visible) { ch in
                 Button { play(ch) } label: {
@@ -254,7 +257,7 @@ struct VodGridView: View {
                 HStack(spacing: 8) {
                     chip("الكل", "")
                     ForEach(series ? model.seriesCats : model.movieCats) { c in chip(c.name, c.id) }
-                }.padding(.horizontal, 16)
+                }.padding(.horizontal, 16).glassGroup()
             }
             LazyVGrid(columns: [GridItem(.adaptive(minimum: hsize == .regular ? 150 : 104), spacing: 12)], spacing: 14) {
                 ForEach(items) { v in

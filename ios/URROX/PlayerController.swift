@@ -238,21 +238,23 @@ final class PlayerController {
     private func vlcTick() {
         guard engine == .vlc else { return }
         let t = Double(vlc.time.intValue) / 1000
-        if t.isFinite, t >= 0, seekTarget == nil { position = t }
-        if let len = vlc.media?.length.intValue, len > 0 { duration = Double(len) / 1000 }
-        isPlaying = vlc.isPlaying
+        // نكتب بس لما تتغير القيمة: كل كتابة تعيد رسم الصفحات اللي تقراها (حتى لو نفس القيمة)
+        if t.isFinite, t >= 0, seekTarget == nil, t != position { position = t }
+        if let len = vlc.media?.length.intValue, len > 0, Double(len) / 1000 != duration { duration = Double(len) / 1000 }
+        let playing = vlc.isPlaying
+        if playing != isPlaying { isPlaying = playing }
         if isPlaying && !vlcTracksLoaded { vlcTracksLoaded = true; loadVLCTracks() }
         let st = vlc.state
         if st == .paused || st == .ended || st == .error || (st == .stopped && t > 0) {
-            buffering = false; vlcStallTicks = 0
+            if buffering { buffering = false }; vlcStallTicks = 0
         } else if lastVlcT < 0 {
-            buffering = t <= 0                               // أول قراءة (بداية أو بعد تقديم): لسه ما بدأ؟ تحميل
+            if buffering != (t <= 0) { buffering = t <= 0 }                              // أول قراءة (بداية أو بعد تقديم): لسه ما بدأ؟ تحميل
         } else if t > lastVlcT + 0.05 {
-            buffering = false; vlcStallTicks = 0             // الوقت يتقدّم = شغّال (حتى لو VLC يقول buffering)
+            if buffering { buffering = false }; vlcStallTicks = 0             // الوقت يتقدّم = شغّال (حتى لو VLC يقول buffering)
             markStarted()
         } else {
             vlcStallTicks += 1                               // وقف التقدّم ثانية كاملة = فعلاً يحمّل
-            if vlcStallTicks >= 2 { buffering = true }
+            if vlcStallTicks >= 2, !buffering { buffering = true }
         }
         if t > 0 { lastVlcT = t }
         if st == .error { failed = "ما اشتغل. جرّب مرة ثانية أو محتوى ثاني." }
@@ -458,7 +460,7 @@ final class PlayerController {
         let p = t.seconds
         if p.isFinite, seekTarget == nil { position = p }     // أثناء التقديم: نخلي الشريط على الهدف (ما يرجع ويقفز)
         if player.timeControlStatus == .playing { if buffering { buffering = false }; if !isPlaying { isPlaying = true } }
-        if let d = player.currentItem?.duration.seconds, d.isFinite, d > 0 { duration = d }
+        if let d = player.currentItem?.duration.seconds, d.isFinite, d > 0, d != duration { duration = d }
         if Date().timeIntervalSince(lastSave) > 10 { saveNow() }
         checkSkips()
     }

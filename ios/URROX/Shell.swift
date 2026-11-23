@@ -326,7 +326,9 @@ struct HomeView: View {
                     .padding(.vertical, -10)
                 }
 
-                let favCh = model.channels.filter { model.isFav("live:\($0.id)") }
+                // المفضلة قليلة: نمر عليها هي بدل ما نفحص آلاف القنوات كل مرة تنرسم الصفحة
+                let favIds = Set(model.favs.compactMap { $0.hasPrefix("live:") ? String($0.dropFirst(5)) : nil })
+                let favCh = favIds.isEmpty ? [] : model.channels.filter { favIds.contains($0.id) }
                 if !favCh.isEmpty {
                     SectionHeader(title: "القنوات المفضلة")
                     ScrollView(.horizontal, showsIndicators: false) {

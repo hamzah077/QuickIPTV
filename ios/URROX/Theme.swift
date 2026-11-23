@@ -31,6 +31,16 @@ extension View {
         #endif
     }
 
+    /// مجموعة عناصر زجاج (صف تصنيفات مثلاً): iOS 26 يرسمها مرة وحدة بدل كل وحدة لحالها = أخف بكثير
+    @ViewBuilder
+    func glassGroup() -> some View {
+        #if compiler(>=6.2)
+        if #available(iOS 26.0, *) { GlassEffectContainer(spacing: 0) { self } } else { self }
+        #else
+        self
+        #endif
+    }
+
     /// زجاج دائري (أزرار المشغّل)
     @ViewBuilder
     func glassCircle() -> some View {
