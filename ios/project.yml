@@ -83,6 +83,8 @@ schemes:
       config: Release
       # مكتبة MPV (MoltenVK) تكرش مع فحص Metal اللي يشغّله Xcode وقت التشغيل منه — نطفيه (تنبيه MPVKit نفسها)
       enableGPUValidationMode: false
+      # وقت التشغيل من Xcode: فاحص الخيط الرئيسي ما يوقف التطبيق لما MPV يرسم من خيطه الخاص
+      disableMainThreadChecker: true
     test:
       targets:
         - URROXUITests
