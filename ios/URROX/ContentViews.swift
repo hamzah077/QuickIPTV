@@ -409,7 +409,7 @@ struct DetailsView: View {
             } label: {
                 Label(primaryTitle, systemImage: "play.fill").font(.headline)
                     .frame(maxWidth: .infinity).frame(height: 50)
-                    .foregroundStyle(Theme.bg)
+                    .foregroundStyle(.primary)
             }
             .buttonStyle(PressGray())
             .sensoryFeedback(.impact(weight: .light), trigger: playTaps)      // تحس إن الضغطة وصلت
@@ -908,12 +908,13 @@ struct SettingsView: View {
 }
 
 
-/// زر أبيض: وأنت ضاغط عليه يصير رمادي (بدون حركة ولا تكبير)
+/// زر تشغيل زجاج (ليكويد جلاس) — نفس باقي الأزرار، ويناسب الفاتح والليلي
 struct PressGray: ButtonStyle {
     func makeBody(configuration c: Configuration) -> some View {
         c.label
-            .background(c.isPressed ? Color.primary.opacity(0.7) : Color.primary, in: Capsule())
             .contentShape(Capsule())
+            .glass(25, interactive: true)
+            .opacity(c.isPressed ? 0.75 : 1)
             .transaction { $0.animation = nil }
     }
 }
