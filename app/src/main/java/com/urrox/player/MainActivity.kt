@@ -191,14 +191,38 @@ class MainActivity : Activity() {
             if (Glass.on) {
                 // ليكود جلاس: القائمة كبسولة زجاج عائمة بالنص
                 // زجاج «مثلّج»: صورة ممَوّهة + طبقة غامقة كثيفة = ما يبان اللي وراها
-                nav.background = Glass.Pane(nav, dpf(30f), tint = 0x1AFFFFFF, frost = 0xD914161C.toInt())
-                nav.setPaddingRelative(dp(8), dp(12), dp(8), dp(12))
+                // (أ) شريط جانبي زي iOS 27: زجاج يبان وراه المحتوى ممَوّه، والحساب فوق
+                nav.background = Glass.Pane(nav, dpf(30f), tint = 0x1FFFFFFF, frost = 0xA614161C.toInt())
+                nav.setPaddingRelative(dp(8), dp(14), dp(8), dp(14))
                 root.addView(nav, FrameLayout.LayoutParams(WRAP, WRAP, Gravity.START or Gravity.CENTER_VERTICAL).apply { marginStart = dp(14) })
             } else root.addView(nav, FrameLayout.LayoutParams(WRAP, MATCH, Gravity.START))
             root.padForSystemBars()
+            if (Glass.on) {
+                // فوق: دائرة بأول حرف من الحساب + اسمه (الاسم يطلع لما تنفتح القائمة)، وتحته خط
+                val accName = Store.current?.name.orEmpty()
+                val head = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+                    setPadding(dp(6), dp(2), dp(6), dp(10))
+                    importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+                }
+                head.addView(text(accName.take(1).uppercase().ifEmpty { "؟" }, 16f, 0xFFA9C1FF.toInt(), bold = true).apply {
+                    gravity = Gravity.CENTER; background = rounded(0xFF2B3A5C.toInt(), dpf(20f))
+                }, LinearLayout.LayoutParams(dp(40), dp(40)))
+                val names = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL; visibility = View.GONE; setPadding(dp(12), 0, dp(6), 0)
+                    addView(text(accName, 14.5f, C.TEXT, bold = true).apply { maxLines = 1 })
+                    addView(text("الحساب", 11.5f, 0xFFC4C8D0.toInt()))
+                }
+                railHeadText = names
+                head.addView(names)
+                nav.addView(head, LinearLayout.LayoutParams(MATCH, WRAP))
+                nav.addView(railDivider(), LinearLayout.LayoutParams(MATCH, dp(1)).apply { setMargins(dp(10), 0, dp(10), dp(10)) })
+            }
             for ((key, label, ic) in sections) {
                 val b = railButton(key, label, ic)
                 navButtons[key] = b
+                // الإعدادات منفصلة بخط فوقها (زي الشريط الجانبي في iOS 27)
+                if (Glass.on && key == "settings") nav.addView(railDivider(), LinearLayout.LayoutParams(MATCH, dp(1)).apply { setMargins(dp(10), dp(4), dp(10), dp(10)) })
                 nav.addView(b)
             }
             setContentView(root)
@@ -459,6 +483,8 @@ class MainActivity : Activity() {
     private var railScrim: View? = null
     private var backdropUrl: String? = null
     private var blurView: ImageView? = null
+    private var railHeadText: View? = null
+    private fun railDivider() = View(this).apply { setBackgroundColor(0x2EFFFFFF) }
     private var blurCb: ((android.graphics.Bitmap?) -> Unit)? = null
     private var blurLevel = 0f
 
@@ -511,6 +537,7 @@ class MainActivity : Activity() {
     private fun railExpand(open: Boolean) {
         if (open == railOpen) return
         railOpen = open
+        railHeadText?.let { h -> h.animate().cancel(); h.visibility = if (open) View.VISIBLE else View.GONE; h.alpha = if (open) 0f else 1f; if (open) h.animate().alpha(1f).setDuration(160).start() }
         navButtons.values.forEach { b ->
             val tx = b.findViewWithTag<View?>("tx") ?: return@forEach
             tx.animate().cancel()
@@ -549,6 +576,8 @@ class MainActivity : Activity() {
             setEnterFadeDuration(120); setExitFadeDuration(100)
             if (Glass.on) addState(intArrayOf(android.R.attr.state_pressed), Glass.pressedLens(dpf(24f)))
             addState(intArrayOf(android.R.attr.state_focused), if (Glass.on) Glass.lens(dpf(24f)) else rounded(C.FOCUS, dpf(24f)))
+            // ليكود جلاس: القسم اللي أنت فيه كبسولة زجاج أوضح (بدل الكلام الأحمر)
+            if (Glass.on) addState(intArrayOf(android.R.attr.state_selected), Glass.Sheet(dpf(24f), 0x3DFFFFFF, resources.displayMetrics.density))
             addState(intArrayOf(), rounded(android.graphics.Color.TRANSPARENT, dpf(24f)))
         }
         isFocusable = true
@@ -570,7 +599,13 @@ class MainActivity : Activity() {
     /** ألوان زر القائمة: مركّز = داكن على أبيض، القسم الحالي = أبيض، الباقي = رمادي. */
     private fun railTint(b: View, key: String, focused: Boolean = b.hasFocus()) {
         // القسم اللي أنت فيه: أحمر (نمط نتفلكس)، والمحدد داكن على أبيض
-        val col = when { focused -> C.PRIMARY_TEXT; key == current -> 0xFFE50914.toInt(); else -> C.MUTED }
+        val glass = Glass.on
+        b.isSelected = glass && key == current
+        val col = when {
+            focused -> C.PRIMARY_TEXT
+            key == current -> if (glass) C.TEXT else 0xFFE50914.toInt()
+            else -> if (glass) 0xFFD3D7DF.toInt() else C.MUTED
+        }
         b.findViewWithTag<android.widget.ImageView>("ic")?.imageTintList = android.content.res.ColorStateList.valueOf(col)
         b.findViewWithTag<android.widget.TextView>("tx")?.setTextColor(col)
     }
