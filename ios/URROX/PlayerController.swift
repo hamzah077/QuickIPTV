@@ -285,8 +285,9 @@ final class PlayerController {
         UserDefaults.standard.set(d, forKey: "engineMemo")
     }
 
-    /// محرك التشغيل من الإعدادات: "vlc" = VLC لكل شي (الافتراضي)، "auto" = مشغّل آبل وبعده VLC
-    static var vlcAlways: Bool { (UserDefaults.standard.string(forKey: "engineMode") ?? "vlc") == "vlc" }
+    /// محرك التشغيل من الإعدادات: "auto" (الافتراضي) = مشغّل آبل وبعده VLC ويتذكر اللي نجح، "vlc" = VLC لكل شي
+    /// (قياس الأداء: VLC يرسم الفيديو بطريقة أثقل على الجوال من مشغّل آبل = لاق بالواجهة وهو شغّال)
+    static var vlcAlways: Bool { (UserDefaults.standard.string(forKey: "engineMode") ?? "auto") == "vlc" }
 
     /// عدّاد الفتح: من الضغط لين أول صورة
     @ObservationIgnored private var startAt: Date?

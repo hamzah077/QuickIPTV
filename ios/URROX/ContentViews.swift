@@ -1008,7 +1008,7 @@ struct DetailsOverlay: View {
 struct SettingsView: View {
     @Environment(AppModel.self) private var model
     @AppStorage("appearance") private var appearance = "auto"
-    @AppStorage("engineMode") private var engineMode = "vlc"
+    @AppStorage("engineMode") private var engineMode = "auto"
     @State private var adding = false
     /// مفتوحة كنافذة من تحت (الجوال): نافذة التحديث لازم تطلع داخلها عشان تبان فوقها
     var inSheet = false
@@ -1053,12 +1053,12 @@ struct SettingsView: View {
             }
             SwiftUI.Section {
                 Picker(selection: $engineMode) {
-                    Text("VLC لكل شي").tag("vlc")
                     Text("تلقائي (آبل ثم VLC)").tag("auto")
+                    Text("VLC لكل شي").tag("vlc")
                 } label: { Label("محرك التشغيل", systemImage: "play.rectangle") }
             } footer: {
-                Text(engineMode == "vlc" ? "فتح أسرع وثابت مع سيرفرات IPTV. صورة داخل صورة وإرسال الفيديو بـ AirPlay ما يشتغلون."
-                                         : "يدعم صورة داخل صورة وAirPlay، والفتح ممكن يكون أبطأ مع بعض السيرفرات.")
+                Text(engineMode == "vlc" ? "يفتح على طول مع كل السيرفرات، بس أثقل على الجوال. صورة داخل صورة وAirPlay ما يشتغلون."
+                                         : "الأخف والأنعم (مشغّل آبل)، ويتحول لـ VLC لحاله مع السيرفرات اللي ما تمشي ويتذكرها. يدعم صورة داخل صورة وAirPlay.")
             }
             SwiftUI.Section {
                 LabeledContent("URROX PLAYER", value: Self.version)
