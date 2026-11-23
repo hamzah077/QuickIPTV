@@ -129,7 +129,7 @@ final class PlayerController {
         }
         startAt = Date()
         // الصيغة ما يشغّلها مشغّل آبل، أو جرّبناه قبل مع هالسيرفر وما مشى = VLC على طول
-        if Self.engineFor(r.url) == .vlc || (!r.url.isFileURL && Self.memo(r) == .vlc) { playVLC(r); return }
+        if Self.vlcAlways || Self.engineFor(r.url) == .vlc || (!r.url.isFileURL && Self.memo(r) == .vlc) { playVLC(r); return }
         stopVLC()
         engine = .av
         // نفس هوية التطبيقات المعروفة: بعض السيرفرات تبطّئ أو تحوّل الطلبات اللي بدونها
@@ -276,6 +276,9 @@ final class PlayerController {
         d[memoKey(r)] = e == .vlc ? "vlc" : "av"
         UserDefaults.standard.set(d, forKey: "engineMemo")
     }
+
+    /// محرك التشغيل من الإعدادات: "vlc" = VLC لكل شي (الافتراضي)، "auto" = مشغّل آبل وبعده VLC
+    static var vlcAlways: Bool { (UserDefaults.standard.string(forKey: "engineMode") ?? "vlc") == "vlc" }
 
     /// عدّاد الفتح: من الضغط لين أول صورة
     @ObservationIgnored private var startAt: Date?

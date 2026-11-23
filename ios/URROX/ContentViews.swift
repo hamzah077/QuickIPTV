@@ -854,6 +854,7 @@ struct HistoryDestination: View {
 struct SettingsView: View {
     @Environment(AppModel.self) private var model
     @AppStorage("appearance") private var appearance = "auto"
+    @AppStorage("engineMode") private var engineMode = "vlc"
     @State private var adding = false
     /// مفتوحة كنافذة من تحت (الجوال): نافذة التحديث لازم تطلع داخلها عشان تبان فوقها
     var inSheet = false
@@ -895,6 +896,15 @@ struct SettingsView: View {
                     Text("فاتح").tag("light")
                     Text("ليلي").tag("dark")
                 } label: { Label("المظهر", systemImage: "circle.lefthalf.filled") }
+            }
+            SwiftUI.Section {
+                Picker(selection: $engineMode) {
+                    Text("VLC لكل شي").tag("vlc")
+                    Text("تلقائي (آبل ثم VLC)").tag("auto")
+                } label: { Label("محرك التشغيل", systemImage: "play.rectangle") }
+            } footer: {
+                Text(engineMode == "vlc" ? "فتح أسرع وثابت مع سيرفرات IPTV. صورة داخل صورة وإرسال الفيديو بـ AirPlay ما يشتغلون."
+                                         : "يدعم صورة داخل صورة وAirPlay، والفتح ممكن يكون أبطأ مع بعض السيرفرات.")
             }
             SwiftUI.Section {
                 LabeledContent("URROX PLAYER", value: Self.version)
