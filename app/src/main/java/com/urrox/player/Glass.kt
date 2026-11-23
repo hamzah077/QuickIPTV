@@ -25,6 +25,15 @@ import java.lang.ref.WeakReference
 val dialogTheme: Int get() = if (Glass.on) R.style.GlassDialog else android.R.style.Theme_Material_Dialog_Alert
 
 object Glass {
+    /**
+     * شفافية الزجاج (مثل سلايدر iOS 27): 0 واضح جداً · 1 افتراضي · 2 ملوّن (أوضح للقراءة).
+     */
+    val level get() = Store.glassLevel.coerceIn(0, 2)
+    internal fun scaled(tint: Int): Int {
+        val a = (tint ushr 24) * when (level) { 0 -> 0.55f; 2 -> 1.9f; else -> 1.25f }
+        return (a.toInt().coerceIn(0, 255) shl 24) or (tint and 0xFFFFFF)
+    }
+
     /** الجهاز تلفزيون (يتحدد مع فتح كل صفحة): الثيم للتلفزيون بس. */
     var tv = false
     val on get() = tv && Store.tvTheme == "glass"
@@ -69,7 +78,7 @@ object Glass {
         d.bounds = old
         val px = IntArray(w * h)
         b.getPixels(px, 0, w, 0, 0, w, h)
-        repeat(3) { boxBlur(px, w, h, 3) }
+        repeat(5) { boxBlur(px, w, h, 4) }       // (iOS 27) يموّه اللي ورا أكثر = الكلام فوق الزجاج أوضح
         b.setPixels(px, 0, w, 0, 0, w, h)
         return b
     }
@@ -126,7 +135,8 @@ object Glass {
             }
             paint.shader = null
             if (frost != 0) { paint.color = frost; c.drawPath(path, paint) }
-            paint.color = if (dark) 0x8C0E1016.toInt() else tint
+            if (!dark && level == 2) { paint.color = 0x8C10131A.toInt(); c.drawPath(path, paint) }     // «ملوّن»: أساس غامق
+            paint.color = if (dark) 0x8C0E1016.toInt() else scaled(tint)
             c.drawPath(path, paint)
             if (dark) { paint.color = 0x14FFFFFF; c.drawPath(path, paint) }
             sheen(c, path, r, stroke, paint, radiusPx, host.resources.displayMetrics.density, dark)
@@ -152,12 +162,19 @@ object Glass {
         c.drawRect(r, paint)
         paint.shader = null
         c.restore()
-        stroke.strokeWidth = density * 2f          // (tvOS: بدون خطوط شعرية — تختفي من بعيد)
+        // (iOS 27) حافة خارجية غامقة تفصل الزجاج عن اللي وراه…
+        stroke.shader = null
+        stroke.strokeWidth = density * 1f
+        stroke.color = if (dark) 0x80000000.toInt() else 0x66000000
+        val ro = RectF(r); ro.inset(stroke.strokeWidth / 2, stroke.strokeWidth / 2)
+        c.drawRoundRect(ro, radiusPx, radiusPx, stroke)
+        // …وجوّاها لمعة (specular) أقوى: بيضاء ساطعة فوق-يمين وتخف بالنص (tvOS: مو خط شعري)
+        stroke.strokeWidth = density * 2f
         stroke.shader = LinearGradient(r.right, r.top, r.left, r.bottom,
-            intArrayOf(0xF2FFFFFF.toInt(), 0x38FFFFFF, 0x99FFFFFF.toInt()), floatArrayOf(0f, 0.55f, 1f), Shader.TileMode.CLAMP)
-        val inset = stroke.strokeWidth / 2
+            intArrayOf(0xFFFFFFFF.toInt(), 0x33FFFFFF, 0xA6FFFFFF.toInt()), floatArrayOf(0f, 0.55f, 1f), Shader.TileMode.CLAMP)
+        val inset = density * 1f + stroke.strokeWidth / 2
         val rr = RectF(r); rr.inset(inset, inset)
-        c.drawRoundRect(rr, radiusPx, radiusPx, stroke)
+        c.drawRoundRect(rr, maxOf(0f, radiusPx - density), maxOf(0f, radiusPx - density), stroke)
     }
 
     /** لوح/صف زجاج بدون ما يحتاج صورة وراه (للأزرار والصفوف): لون + لمعة + ظل + حافة لامعة. */
@@ -169,7 +186,9 @@ object Glass {
             val b = bounds
             r.set(b.left.toFloat(), b.top.toFloat(), b.right.toFloat(), b.bottom.toFloat())
             path.reset(); path.addRoundRect(r, radiusPx, radiusPx, Path.Direction.CW)
-            paint.shader = null; paint.color = tint; c.drawPath(path, paint)
+            paint.shader = null
+            if (level == 2) { paint.color = 0x8C10131A.toInt(); c.drawPath(path, paint) }
+            paint.color = scaled(tint); c.drawPath(path, paint)
             sheen(c, path, r, stroke, paint, radiusPx, density, false)
         }
         override fun setAlpha(alpha: Int) {}

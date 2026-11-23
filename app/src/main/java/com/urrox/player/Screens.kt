@@ -732,6 +732,8 @@ class SettingsScreen(private val a: MainActivity) : Screen {
         add(a.listRow(R.drawable.ic_settings, "شكل الواجهة", when (Store.uiMode) { "tv" -> "تلفزيون"; "phone" -> "جوال"; else -> "تلقائي" },
             subtitle = "تلقائي: يعرف لحاله إذا الجهاز تلفزيون") { chooseUiMode() })
         if (a.tv) add(a.listRow(R.drawable.ic_settings, "ثيم التلفزيون", if (Store.tvTheme == "glass") "ليكود جلاس" else "نتفلكس") { chooseTvTheme() })
+        if (a.tv && Store.tvTheme == "glass") add(a.listRow(R.drawable.ic_settings, "شفافية الزجاج", glassName(Store.glassLevel),
+            subtitle = "مثل iOS 27: من واضح جداً لين ملوّن") { chooseGlassLevel() })
         if (a.tv) add(a.listRow(R.drawable.ic_live, "شكل صفحة المباشر", liveStyleName(Store.liveStyle)) { chooseLiveStyle() })
         add(a.listRow(R.drawable.ic_live, "صيغة البث المباشر", if (Store.liveFormat == "ts") "MPEG-TS" else "HLS") { chooseFormat() })
         add(a.listRow(R.drawable.ic_guide, "دليل البرامج", Epg.status.ifEmpty { "—" }) { a.openExtra("epg") })
@@ -773,6 +775,19 @@ class SettingsScreen(private val a: MainActivity) : Screen {
                 d.dismiss()
                 Store.autoUpdateDays = days[w]
                 onShow(); first?.requestFocus()
+            }.show()
+    }
+
+    private fun glassName(l: Int) = when (l) { 0 -> "واضح جداً"; 2 -> "ملوّن"; else -> "افتراضي" }
+
+    /** شفافية الزجاج (مثل سلايدر iOS 27) — الواجهة تنبني من جديد بالمستوى الجديد. */
+    private fun chooseGlassLevel() {
+        val opts = arrayOf("واضح جداً", "افتراضي", "ملوّن (أوضح للقراءة)")
+        AlertDialog.Builder(a, dialogTheme)
+            .setTitle("شفافية الزجاج")
+            .setSingleChoiceItems(opts, Store.glassLevel.coerceIn(0, 2)) { d, w ->
+                d.dismiss()
+                if (w != Store.glassLevel) { Store.glassLevel = w; a.recreate() }
             }.show()
     }
 

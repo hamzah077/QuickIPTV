@@ -177,6 +177,11 @@ object Store {
         get() = p.getString("tvTheme", "netflix") ?: "netflix"
         set(v) = p.edit().putString("tvTheme", v).apply()
 
+    /** شفافية زجاج «ليكود جلاس»: 0 واضح جداً · 1 افتراضي · 2 ملوّن. */
+    var glassLevel: Int
+        get() = p.getInt("glassLevel", 1)
+        set(v) = p.edit().putInt("glassLevel", v).apply()
+
     var liveStyle: String
         get() = p.getString("liveStyle", "a") ?: "a"
         set(v) = p.edit().putString("liveStyle", v).apply()
