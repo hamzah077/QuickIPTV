@@ -280,14 +280,12 @@ struct HomeView: View {
     @Environment(AppModel.self) private var model
     @Environment(PlayerController.self) private var pc
     @State private var q = ""
-    @State private var fq = ""            // بعد ما توقف كتابة (أخف مع القوائم الكبيرة)
 
     var body: some View {
         Group {
-            if SearchNorm.tokens(fq).isEmpty { home } else { SearchResults(q: fq) }     // البحث في الرئيسية شامل
+            if SearchNorm.tokens(q).isEmpty { home } else { SearchResults(q: q) }     // البحث في الرئيسية شامل
         }
         .modifier(TopBar(query: $q, prompt: "ابحث في كل شي: قنوات، أفلام، مسلسلات", home: true))
-        .debounced(q, into: $fq)
     }
 
     private var home: some View {

@@ -31,6 +31,23 @@ final class NormCache: @unchecked Sendable {
     }
 }
 
+extension SearchNorm {
+    /// الفلترة برّا الخيط الرئيسي: الكتابة والكيبورد ما يتأثرون مهما كبرت القوائم
+    static func filter<T: Sendable>(_ items: [T], _ t: [String], limit: Int = .max, name: @escaping @Sendable (T) -> String) async -> [T] {
+        await Task.detached(priority: .userInitiated) {
+            var out: [T] = []
+            for it in items where matches(name(it), t) {
+                out.append(it); if out.count >= limit { break }
+            }
+            return out
+        }.value
+    }
+    /// بعد تحميل القوائم: نجهّز الأسماء بالخلفية عشان أول بحث يكون سريع
+    static func warm(_ names: [String]) {
+        Task.detached(priority: .utility) { for n in names { _ = cache.get(n) } }
+    }
+}
+
 /// البحث ينتظر لين توقف كتابة شوي (180ms) — المسح فوري
 struct Debounced: ViewModifier {
     let text: String
@@ -57,15 +74,14 @@ struct LiveView: View {
     var start: Channel? = nil
     @State private var cat: String = ""
     @State private var q = ""
-    @State private var fq = ""                // نص البحث بعد ما توقف كتابة
+    @State private var found: [Channel] = []    // نتايج البحث (تنحسب بالخلفية)
     @State private var current: Channel?
     @State private var epg: [EpgItem] = []
 
     private var visible: [Channel] {
-        let inCat = cat.isEmpty ? model.channels : model.channels.filter { $0.categoryId == cat }
-        let t = SearchNorm.tokens(fq)
-        return t.isEmpty ? inCat : inCat.filter { SearchNorm.matches($0.name, t) }
+        SearchNorm.tokens(q).isEmpty ? inCat : found
     }
+    private var inCat: [Channel] { cat.isEmpty ? model.channels : model.channels.filter { $0.categoryId == cat } }
 
     var body: some View {
         Group {
@@ -99,7 +115,11 @@ struct LiveView: View {
         .navigationTitle("المباشر")
         .navigationBarTitleDisplayMode(.inline)
         .modifier(TopBar(query: $q, prompt: "ابحث في القنوات"))
-        .debounced(q, into: $fq)
+        .task(id: "\(q)|\(cat)|\(model.channels.count)") {
+            let t = SearchNorm.tokens(q); guard !t.isEmpty else { return }
+            let r = await SearchNorm.filter(inCat, t) { $0.name }
+            if !Task.isCancelled { found = r }
+        }
         .onAppear {
             pc.hostAppear("live")
             if let s = start, current == nil {
@@ -174,9 +194,10 @@ struct LiveView: View {
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
+            .scrollDismissesKeyboard(.interactively)        // الكيبورد ينزل بس لما تسحب القائمة بنفسك
             .overlay {
                 if visible.isEmpty {
-                    if !fq.isEmpty { ContentUnavailableView.search(text: fq) }
+                    if !q.isEmpty { ContentUnavailableView.search(text: q) }
                     else if !model.loading {
                         ContentUnavailableView("ما فيه قنوات", systemImage: "dot.radiowaves.left.and.right",
                                                description: Text(cat.isEmpty ? "حدّث القوائم من الإعدادات" : "هذا التصنيف فاضي"))
@@ -217,14 +238,14 @@ struct VodGridView: View {
     let series: Bool
     @State private var cat = ""
     @State private var q = ""
-    @State private var fq = ""
+    @State private var found: [Vod] = []
 
-    private var items: [Vod] {
+    private var inCat: [Vod] {
         let all = series ? model.seriesList : model.movies
-        let inCat = cat.isEmpty ? all : all.filter { $0.categoryId == cat }
-        let t = SearchNorm.tokens(fq)                                   // البحث هنا خاص بالقسم (وبالتصنيف المختار)
-        return t.isEmpty ? inCat : inCat.filter { SearchNorm.matches($0.name, t) }
+        return cat.isEmpty ? all : all.filter { $0.categoryId == cat }
     }
+    /// البحث هنا خاص بالقسم (وبالتصنيف المختار) — النتايج تنحسب بالخلفية
+    private var items: [Vod] { SearchNorm.tokens(q).isEmpty ? inCat : found }
 
     var body: some View {
         ScrollView {
@@ -252,8 +273,8 @@ struct VodGridView: View {
         }
         .overlay {
             if items.isEmpty {
-                if !fq.isEmpty {
-                    ContentUnavailableView.search(text: fq)
+                if !q.isEmpty {
+                    ContentUnavailableView.search(text: q)
                 } else if !model.loading {
                     ContentUnavailableView(series ? "ما فيه مسلسلات" : "ما فيه أفلام", systemImage: series ? "tv" : "film",
                                            description: Text(cat.isEmpty ? "اسحب الرئيسية لتحت عشان تحدّث القوائم" : "هذا التصنيف فاضي"))
@@ -261,8 +282,13 @@ struct VodGridView: View {
             }
         }
         .navigationTitle(series ? "المسلسلات" : "الأفلام")
+        .scrollDismissesKeyboard(.interactively)
         .modifier(TopBar(query: $q, prompt: series ? "ابحث في المسلسلات" : "ابحث في الأفلام"))
-        .debounced(q, into: $fq)
+        .task(id: "\(q)|\(cat)|\((series ? model.seriesList : model.movies).count)") {
+            let t = SearchNorm.tokens(q); guard !t.isEmpty else { return }
+            let r = await SearchNorm.filter(inCat, t) { $0.name }
+            if !Task.isCancelled { found = r }
+        }
     }
 
     private func chip(_ t: String, _ id: String) -> some View {
@@ -554,37 +580,47 @@ struct SearchView: View {
 struct SearchResults: View {
     @Environment(AppModel.self) private var model
     let q: String
+    @State private var hits: (q: String, ch: [Channel], mv: [Vod], sr: [Vod])?
 
     var body: some View {
         let t = SearchNorm.tokens(q)
         List {
             if t.isEmpty {
                 Text("اكتب أي جزء من اسم الفيلم أو المسلسل أو القناة").foregroundStyle(Theme.muted)
-            } else {
-                let ch = model.channels.filter { SearchNorm.matches($0.name, t) }.prefix(50)
-                let mv = model.movies.filter { SearchNorm.matches($0.name, t) }.prefix(60)
-                let sr = model.seriesList.filter { SearchNorm.matches($0.name, t) }.prefix(60)
-                if ch.isEmpty && mv.isEmpty && sr.isEmpty {
-                    ContentUnavailableView.search(text: q).listRowBackground(Color.clear)
+            } else if let h = hits {
+                // النتايج السابقة تبقى لين تجهز الجديدة (بدون ما تفضى وترمش)
+                if h.ch.isEmpty && h.mv.isEmpty && h.sr.isEmpty {
+                    ContentUnavailableView.search(text: h.q).listRowBackground(Color.clear)
                 }
-                if !ch.isEmpty {
+                if !h.ch.isEmpty {
                     SwiftUI.Section("القنوات") {
-                        ForEach(Array(ch)) { c in
+                        ForEach(h.ch) { c in
                             NavigationLink { LiveView(start: c) } label: {
                                 HStack(spacing: 10) {
-                                    Poster(url: c.icon, radius: 8, contentMode: .fit).frame(width: 40, height: 40)
+                                    Poster(url: c.icon, radius: 8, contentMode: .fit).frame(width: 40, height: 40).accessibilityHidden(true)
                                     Text(c.name)
                                 }
                             }
                         }
                     }
                 }
-                if !mv.isEmpty { SwiftUI.Section("الأفلام") { ForEach(Array(mv)) { v in vodRow(v) } } }
-                if !sr.isEmpty { SwiftUI.Section("المسلسلات") { ForEach(Array(sr)) { v in vodRow(v) } } }
+                if !h.mv.isEmpty { SwiftUI.Section("الأفلام") { ForEach(h.mv) { v in vodRow(v) } } }
+                if !h.sr.isEmpty { SwiftUI.Section("المسلسلات") { ForEach(h.sr) { v in vodRow(v) } } }
+            } else {
+                ProgressView().frame(maxWidth: .infinity).listRowBackground(Color.clear)
             }
         }
         .scrollContentBackground(.hidden)
-        .scrollDismissesKeyboard(.immediately)
+        .scrollDismissesKeyboard(.interactively)      // قبل: .immediately = أي تغيّر بالقائمة ينزّل الكيبورد
+        .task(id: q) {
+            let t = SearchNorm.tokens(q); guard !t.isEmpty else { return }
+            let (chs, mvs, srs) = (model.channels, model.movies, model.seriesList)
+            async let c = SearchNorm.filter(chs, t, limit: 50) { $0.name }
+            async let m = SearchNorm.filter(mvs, t, limit: 60) { $0.name }
+            async let r = SearchNorm.filter(srs, t, limit: 60) { $0.name }
+            let res = (q: q, ch: await c, mv: await m, sr: await r)
+            if !Task.isCancelled { hits = res }
+        }
     }
 
     private func vodRow(_ v: Vod) -> some View {
@@ -601,6 +637,8 @@ struct TopBar: ViewModifier {
     @Binding var query: String
     var prompt: String
     var home = false
+    /// اللي تكتبه: يتحدّث فوراً بالحقل، والصفحة تاخذه بعد ما توقف كتابة (الصفحة ما تنعاد مع كل حرف = بدون لاق)
+    @State private var text = ""
     @State private var open = false
     @State private var showSettings = false
     @FocusState private var focused: Bool
@@ -618,7 +656,8 @@ struct TopBar: ViewModifier {
                     }
                 }
             } else {
-                content.searchable(text: $query, prompt: prompt)
+                content.searchable(text: $text, prompt: prompt)
+                    .task(id: text) { await push() }
             }
         } else {
             content
@@ -637,6 +676,7 @@ struct TopBar: ViewModifier {
                             .accessibilityLabel("الإعدادات")
                     }
                 }
+                .task(id: text) { await push() }
                 .sheet(isPresented: $showSettings) {
                     NavigationStack {
                         SettingsView(inSheet: true).toolbar {
@@ -652,21 +692,22 @@ struct TopBar: ViewModifier {
     private var bar: some View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass").foregroundStyle(Theme.muted)
-            TextField(prompt, text: $query)
+            TextField(prompt, text: $text)
                 .focused($focused)
                 .submitLabel(.search)
                 .autocorrectionDisabled()
                 .textInputAutocapitalization(.never)
                 .onSubmit { focused = false }
-            if !query.isEmpty {
-                Button { query = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(Theme.muted) }
+            if !text.isEmpty {
+                Button { text = ""; query = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(Theme.muted) }
                     .accessibilityLabel("مسح البحث")
                     .buttonStyle(.plain)
             }
         }
-        .padding(.horizontal, 12)
-        .frame(height: 40)
-        .glass(14)
+        .font(.body)
+        .padding(.horizontal, 10)
+        .frame(height: 36)                     // مقاس حقل البحث عند آبل (36 نقطة، زوايا 10)
+        .glass(10)
         .padding(.horizontal, 16)
         .padding(.vertical, 6)
         .background(Theme.bg)
@@ -677,8 +718,15 @@ struct TopBar: ViewModifier {
         if open {
             Task { try? await Task.sleep(for: .milliseconds(80)); focused = true }
         } else {
-            query = ""; focused = false
+            text = ""; query = ""; focused = false
         }
+    }
+
+    /// ينتظر 200ms من آخر حرف وبعدها يعطي الصفحة النص — المسح فوري
+    private func push() async {
+        if text.isEmpty { if !query.isEmpty { query = "" }; return }
+        try? await Task.sleep(for: .milliseconds(200))
+        if !Task.isCancelled, query != text { query = text }
     }
 }
 

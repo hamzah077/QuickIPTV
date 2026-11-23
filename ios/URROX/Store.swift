@@ -185,6 +185,7 @@ final class AppModel {
             }
         }
         loading = false
+        SearchNorm.warm(channels.map(\.name) + movies.map(\.name) + seriesList.map(\.name))   // أول بحث يكون سريع
         guard current?.id == acc.id else { return }
         if channels.isEmpty && movies.isEmpty && seriesList.isEmpty { error = "تعذّر تحميل المحتوى. تأكد من الاتصال والاشتراك."; return }
 
