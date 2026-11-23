@@ -58,7 +58,7 @@ struct PhoneShell: View {
     @State private var tab: AppSection = .home
 
     /// صفحة التشغيل/المشغّل الصغير ظاهر؟ (فيلم/مسلسل بصفحته، أو أي شي صغّرته)
-    private var panelOn: Bool { pc.req != nil && (pc.watchVod != nil || pc.mini) }
+    private var panelOn: Bool { pc.req != nil && (pc.watchVod != nil || pc.watchLive != nil || pc.mini) }
 
     var body: some View {
         ZStack {
@@ -82,6 +82,7 @@ struct PhoneShell: View {
             if pc.fullscreen { FullscreenPlayer().zIndex(10) }
         }
         .animation(PanelHost.spring, value: pc.watchVod?.id)
+        .animation(PanelHost.spring, value: pc.watchLive == nil)
         // (الآيفون عمودي دايماً: ملء الشاشة بس لما تضغط زر التكبير)
     }
 
@@ -170,7 +171,7 @@ struct PanelHost: View {
     /// تكبير: فيلم/مسلسل = صفحته ترجع كاملة، قناة = صفحة المباشر، بدون صفحة = ملء الشاشة
     private func expand() {
         guard let r = pc.req else { return }
-        if pc.watchVod != nil {
+        if pc.watchVod != nil || pc.watchLive != nil {
             withAnimation(Self.ease(1)) { pc.mini = false }
         } else if r.type == "live" {
             tab = .live

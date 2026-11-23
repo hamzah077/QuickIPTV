@@ -70,7 +70,6 @@ extension View {
 // MARK: - المباشر: شاشة صغيرة فوق + التصنيفات + القنوات
 
 struct LiveView: View {
-    @State private var screenHidden = false
     @Environment(AppModel.self) private var model
     @Environment(PlayerController.self) private var pc
     @Environment(\.horizontalSizeClass) private var hsize
@@ -94,25 +93,8 @@ struct LiveView: View {
                     ScrollView { VStack(alignment: .leading, spacing: 12) { screen; info }.padding(.trailing, 20) }
                 }
             } else {
-                VStack(spacing: 0) {                            // آيفون: الشاشة ثابتة فوق والقنوات تتحرك تحت
-                    // القناة بالنافذة العائمة: الشاشة تختفي والقنوات تاخذ المكان كله (نفس الأندرويد)
-                    if !screenHidden {
-                        VStack(spacing: 0) {
-                            screen
-                            info.padding(.horizontal, 16).padding(.vertical, 8)
-                        }
-                        // سحبت القناة للنافذة العائمة: مكان الشاشة يختفي فوراً بنفس اللحظة (بدون مربع أسود)
-                        // وبعدها القنوات تطلع لفوق بنعومة
-                        .opacity(pc.mini && pc.isLive ? 0 : 1)
-                        .transition(.opacity)
-                    }
-                    list
-                }
-                // القناة راحت للنافذة العائمة: الشاشة تختفي بحركة والقنوات تطلع لفوق بنعومة (بدل ما تقفز)
-                .onChange(of: pc.mini && pc.isLive) { _, v in
-                    withAnimation(.calm(.timingCurve(0.2, 0, 0, 1, duration: 0.32))) { screenHidden = v }
-                }
-                .onAppear { screenHidden = pc.mini && pc.isLive }
+                // آيفون: القنوات بس (بدون مكان للمشغّل) — القناة تنفتح بصفحتها الخاصة مثل الفيلم
+                list
             }
         }
         .navigationTitle("المباشر")
@@ -130,13 +112,14 @@ struct LiveView: View {
             }
             if pc.isLive {
                 if current == nil { current = model.channels.first { "live:\($0.id)" == pc.req?.key } }
-                if pc.mini { withAnimation(.calm(.spring(duration: 0.35, bounce: 0.05))) { pc.mini = false } }   // رجعت للمباشر: يكبر هنا
+                // الآيباد: رجعت للمباشر = يكبر هنا (الجوال: القناة بصفحتها الخاصة)
+                if pc.mini && !PlayerController.phone { withAnimation(.calm(.spring(duration: 0.35, bounce: 0.05))) { pc.mini = false } }
             }
         }
         // طلعت من صفحة المباشر: الجوال = يكمل في المشغّل الصغير تحت، الآيباد = يوقف
         .onDisappear {
             pc.hostDisappear("live")
-            if pc.isLive { pc.leftHost() }
+            if pc.isLive && !PlayerController.phone { pc.leftHost() }
             if pc.req == nil { current = nil }
         }
     }
@@ -225,12 +208,98 @@ struct LiveView: View {
     private func play(_ ch: Channel) {
         guard let api = model.api, let u = api.liveURL(ch.id) else { return }
         current = ch
-        pc.mini = false
-        pc.watchVod = nil
         pc.queue = nil
         pc.channels = visible
+        if PlayerController.phone {
+            // الجوال: صفحة القناة تطلع فوق كل شي (تنسحب لتحت وتصير مشغّل صغير — نفس الفيلم)
+            var t = Transaction(); t.disablesAnimations = pc.watchLive != nil       // صفحة قناة مفتوحة؟ نبدّل بدون حركة
+            withTransaction(t) { pc.watchVod = nil; pc.watchLive = ch; pc.mini = false }
+        } else {
+            pc.mini = false
+            pc.watchVod = nil
+        }
         pc.play(PlayRequest(url: u, key: "live:\(ch.id)", title: ch.name, sub: "", type: "live", image: ch.icon))
         Task { epg = (try? await api.shortEpg(ch.id, limit: 4)) ?? [] }
+    }
+}
+
+// MARK: - صفحة القناة (الجوال): تحت الفيديو — اسم القناة والبرنامج الحالي والقنوات للتنقّل
+
+struct LiveChannelPage: View {
+    @Environment(AppModel.self) private var model
+    @Environment(PlayerController.self) private var pc
+    let opened: Channel
+    @State private var epg: [EpgItem] = []
+
+    /// القناة الحالية فعلاً (لو قلّبت بالسحب على الفيديو تتغير)
+    private var ch: Channel { pc.channels.first { "live:\($0.id)" == pc.req?.key } ?? opened }
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack(alignment: .top, spacing: 12) {
+                        Poster(url: ch.icon, radius: 10, contentMode: .fit).frame(width: 52, height: 52)
+                            .background(Theme.surface, in: RoundedRectangle(cornerRadius: 10))
+                            .accessibilityHidden(true)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(ch.name).font(.title3.weight(.bold)).lineLimit(2)
+                            if let now = epg.first(where: { $0.isNow }) {
+                                Text("الآن: \(now.title)").font(.subheadline).foregroundStyle(Theme.muted).lineLimit(1)
+                                if let nx = epg.first(where: { $0.start >= now.end }) {
+                                    Text("بعده: \(nx.title) \(nx.start.formatted(date: .omitted, time: .shortened))")
+                                        .font(.caption.monospacedDigit()).foregroundStyle(Theme.muted).lineLimit(1)
+                                }
+                            }
+                        }
+                        Spacer(minLength: 0)
+                        Button { model.toggleFav("live:\(ch.id)") } label: {
+                            Image(systemName: model.isFav("live:\(ch.id)") ? "heart.fill" : "heart").font(.title3)
+                                .frame(width: 46, height: 46).contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain).glassCircle()
+                        .accessibilityLabel(model.isFav("live:\(ch.id)") ? "إزالة من المفضلة" : "إضافة للمفضلة")
+                        .sensoryFeedback(.selection, trigger: model.isFav("live:\(ch.id)"))
+                    }
+                    if !pc.channels.isEmpty {
+                        Text("القنوات").font(.headline).padding(.top, 4).accessibilityAddTraits(.isHeader)
+                        LazyVStack(spacing: 2) {
+                            ForEach(pc.channels) { c in row(c).id(c.id) }
+                        }
+                    }
+                }
+                .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 40)
+            }
+            .onAppear { proxy.scrollTo(ch.id, anchor: .center) }
+        }
+        .task(id: ch.id) {
+            epg = []
+            if let api = model.api { epg = (try? await api.shortEpg(ch.id, limit: 4)) ?? [] }
+        }
+    }
+
+    private func row(_ c: Channel) -> some View {
+        let on = c.id == ch.id
+        return Button { zap(c) } label: {
+            HStack(spacing: 12) {
+                Poster(url: c.icon, radius: 8, contentMode: .fit).frame(width: 40, height: 40)
+                    .background(Theme.surface, in: RoundedRectangle(cornerRadius: 8))
+                Text("\(c.num > 0 ? "\(c.num). " : "")\(c.name)").lineLimit(1)
+                Spacer(minLength: 0)
+                if on { Image(systemName: "speaker.wave.2.fill").foregroundStyle(Theme.muted) }
+            }
+            .padding(.horizontal, 8).padding(.vertical, 6)
+            .contentShape(Rectangle())
+            .background(on ? Theme.current : .clear, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(on ? .isSelected : [])
+    }
+
+    private func zap(_ c: Channel) {
+        guard c.id != ch.id, let api = model.api, let u = api.liveURL(c.id) else { return }
+        pc.watchLive = c
+        pc.play(PlayRequest(url: u, key: "live:\(c.id)", title: c.name, sub: "", type: "live", image: c.icon))
     }
 }
 
@@ -352,7 +421,7 @@ struct DetailsView: View {
         // صفحة التشغيل تطلع مكانها على طول (بدون حركة من تحت، وبنفس التفاصيل) — وتقدر تسحبها كاملة لتحت
         saveCache()
         var t = Transaction(); t.disablesAnimations = true
-        withTransaction(t) { pc.watchVod = vod; pc.mini = false }
+        withTransaction(t) { pc.watchLive = nil; pc.watchVod = vod; pc.mini = false }
         // الصفحة اللي تحتها تتسكّر بهدوء (مخفية تحت صفحة التشغيل) عشان السحب لتحت يبيّن اللي قبلها
         Task {
             try? await Task.sleep(for: .milliseconds(300))
@@ -409,6 +478,7 @@ struct DetailsView: View {
             if !PlayerController.phone, playingHere { pc.leftHost() }
             // الجوال: رجعت من الصفحة وهو شغّال = يصير نافذة عائمة (زي الأندرويد)، وتكبيرها يفتح صفحته
             else if PlayerController.phone, !inPanel, playingHere, !pc.mini, !pc.fullscreen, pc.watchVod == nil {
+                pc.watchLive = nil
                 pc.watchVod = vod
                 withAnimation(PanelHost.ease(1)) { pc.mini = true }
             }

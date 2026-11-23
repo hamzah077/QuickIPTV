@@ -37,6 +37,8 @@ final class PlayerController {
     var mini = false
     /// صفحة التشغيل (الجوال): الفيلم/المسلسل اللي صفحته فوق كل شي وتنسحب لتحت وتصير المشغّل الصغير
     var watchVod: Vod?
+    /// صفحة القناة (الجوال): نفس صفحة التشغيل بس للمباشر
+    var watchLive: Channel?
     /// زاوية النافذة العائمة: 0 فوق يسار، 1 فوق يمين، 2 تحت يسار، 3 تحت يمين
     var miniCorner = 3
     /// الصفحات اللي تعرض المشغّل الحين (عشان التكبير من الصغير يرجع لها لو هي ظاهرة)
@@ -348,6 +350,7 @@ final class PlayerController {
         saveNow()
         mini = false
         watchVod = nil
+        watchLive = nil
         stopVLC()
         player.pause()
         player.replaceCurrentItem(with: nil)

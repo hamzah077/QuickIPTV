@@ -64,12 +64,18 @@ struct WatchPanel: View {
         return CGRect(x: L(0, o.x), y: L(top + Self.head, o.y), width: L(W, fw), height: L(W * 9 / 16, fh))
     }
 
+    /// الصفحة تحت الفيديو: الفيلم/المسلسل أو القناة
+    @ViewBuilder private var page: some View {
+        if let vod = pc.watchVod { DetailsView(vod: vod, inPanel: true) }
+        else if let ch = pc.watchLive { LiveChannelPage(opened: ch) }
+    }
+
     var body: some View {
         let v = video
         ZStack(alignment: .topLeading) {
             // الصفحة تحت الفيديو: تنزل وتتلاشى (زي يوتيوب)
-            if t < 1, let vod = pc.watchVod {
-                DetailsView(vod: vod, inPanel: true)
+            if t < 1, pc.watchVod != nil || pc.watchLive != nil {
+                page
                     .environment(\.layoutDirection, .rightToLeft)
                     .frame(width: W, height: max(0, H - top - Self.head - W * 9 / 16))
                     .background(Theme.bg)

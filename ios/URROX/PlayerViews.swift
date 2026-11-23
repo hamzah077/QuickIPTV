@@ -733,7 +733,7 @@ struct FullscreenPlayer: View {
             pc.fullscreen = false
             pc.autoFullscreen = false
             // ما فيه صفحة تعرضه (مثل التشغيل من التحميلات)؟ يكمل في المشغّل الصغير تحت
-            if PlayerController.phone, let r = pc.req, pc.watchVod == nil, !pc.hostVisible(r), !pc.mini { pc.mini = true }
+            if PlayerController.phone, let r = pc.req, pc.watchVod == nil, pc.watchLive == nil, !pc.hostVisible(r), !pc.mini { pc.mini = true }
             Orientation.unlockWhenPortrait()            // يرجع يلف عادي بس لما تمسك الجوال عمودي
         }
     }
