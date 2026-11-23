@@ -65,6 +65,8 @@ struct Poster: View {
                 GeometryReader { g in
                     CachedImage(url: url, size: g.size, contentMode: contentMode)
                 }
+                // الصورة المعبّاة تطلع برا الإطار (مقصوصة بالشكل بس): كانت تسرق اللمس من البوستر اللي جنبها
+                .allowsHitTesting(false)
             }
             .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
             .contentShape(RoundedRectangle(cornerRadius: radius, style: .continuous))

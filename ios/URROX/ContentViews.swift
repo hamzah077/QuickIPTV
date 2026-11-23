@@ -210,6 +210,7 @@ struct LiveView: View {
     private func chip(_ t: String, _ id: String) -> some View {
         Button { cat = id } label: {
             Text(t).font(.subheadline).padding(.horizontal, 14).padding(.vertical, 8)
+                .contentShape(Capsule())
                 .foregroundStyle(cat == id ? Theme.bg : Color.primary)
                 .background { if cat == id { Capsule().fill(Color.primary) } }
         }
@@ -262,6 +263,7 @@ struct VodGridView: View {
                             Poster(url: v.icon).aspectRatio(2 / 3, contentMode: .fit).posterDepth()
                             Text(v.name).font(.caption).lineLimit(1).foregroundStyle(.primary)
                         }
+                        .contentShape(Rectangle())
                     }
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel(v.name)
@@ -294,6 +296,7 @@ struct VodGridView: View {
     private func chip(_ t: String, _ id: String) -> some View {
         Button { cat = id } label: {
             Text(t).font(.subheadline).padding(.horizontal, 14).padding(.vertical, 8)
+                .contentShape(Capsule())
                 .foregroundStyle(cat == id ? Theme.bg : Color.primary)
                 .background { if cat == id { Capsule().fill(Color.primary) } }
         }
@@ -433,6 +436,7 @@ struct DetailsView: View {
                     ForEach(seasons.keys.sorted(), id: \.self) { s in
                         Button { season = s } label: {
                             Text("الموسم \(s)").padding(.horizontal, 16).padding(.vertical, 8)
+                                .contentShape(Capsule())
                                 .foregroundStyle(season == s ? Theme.bg : Color.primary)
                                 .background { if season == s { Capsule().fill(Color.primary) } }
                         }.buttonStyle(.plain).glass()
@@ -469,6 +473,7 @@ struct DetailsView: View {
                 DownloadButton(req: { episodeRequest(e) }, key: k, size: 42)
             }
             .padding(8)
+            .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))       // السطر كله ينضغط (مو بس النص والصورة)
             .background(current ? Theme.current : .clear, in: RoundedRectangle(cornerRadius: 12, style: .continuous))     // رمادي خفيف
             .overlay { if current { RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.primary.opacity(0.2), lineWidth: 1) } }
         }

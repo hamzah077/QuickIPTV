@@ -381,7 +381,8 @@ struct ContinueCard: View {
                 Text(h.title).font(.subheadline).lineLimit(1)
                 Text(sub).font(.caption.monospacedDigit()).foregroundStyle(Theme.muted).lineLimit(1)
             }
-            .frame(width: 170)
+            .frame(width: 170, alignment: .leading)
+            .contentShape(Rectangle())                       // الكرت كله ينضغط
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .combine)
