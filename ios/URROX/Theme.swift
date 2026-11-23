@@ -48,16 +48,16 @@ extension View {
         if #available(iOS 26.0, *) {
             self.glassEffect(.regular.interactive(), in: .circle)
         } else {
-            self.background(.ultraThinMaterial, in: Circle()).overlay(Circle().stroke(.white.opacity(0.25), lineWidth: 0.5))
+            self.background(.ultraThinMaterial, in: Circle()).overlay(Circle().stroke(Color.primary.opacity(0.18), lineWidth: 0.5))
         }
         #else
-        self.background(.ultraThinMaterial, in: Circle()).overlay(Circle().stroke(.white.opacity(0.25), lineWidth: 0.5))
+        self.background(.ultraThinMaterial, in: Circle()).overlay(Circle().stroke(Color.primary.opacity(0.18), lineWidth: 0.5))
         #endif
     }
 
     fileprivate func legacyGlass(_ radius: CGFloat) -> some View {
         self.background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: radius, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: radius, style: .continuous).stroke(.white.opacity(0.22), lineWidth: 0.5))
+            .overlay(RoundedRectangle(cornerRadius: radius, style: .continuous).stroke(Color.primary.opacity(0.16), lineWidth: 0.5))
     }
 }
 

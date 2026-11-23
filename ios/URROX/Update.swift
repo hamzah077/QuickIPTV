@@ -37,7 +37,7 @@ struct UpdateRows: View {
 
     private func icon(_ s: AppModel.UpdStep) -> some View {
         let (t, fg, bg): (String, Color, Color) = switch s.state {
-        case 2: ("checkmark", Color(red: 0.44, green: 0.81, blue: 0.59), Color(red: 0.12, green: 0.30, blue: 0.20))
+        case 2: ("checkmark", Color.green, Color.green.opacity(0.18))
         case 1: ("arrow.triangle.2.circlepath", Color.primary, Color.primary.opacity(0.12))
         case 3: ("exclamationmark", Theme.red, Theme.red.opacity(0.2))
         default: ("circle.fill", Theme.muted, Color.primary.opacity(0.05))
@@ -110,7 +110,7 @@ struct UpdatePopup: View {
             }
             .padding(16)
             .frame(maxWidth: 380)
-            .background(Color(red: 0.11, green: 0.12, blue: 0.145), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 22, style: .continuous))     // يتبع الفاتح/الليلي
             .padding(.horizontal, 16)
             .environment(\.layoutDirection, .rightToLeft)
         }
