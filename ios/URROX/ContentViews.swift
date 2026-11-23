@@ -283,7 +283,7 @@ struct VodGridView: View {
         }
         .navigationTitle(series ? "المسلسلات" : "الأفلام")
         .scrollDismissesKeyboard(.interactively)
-        .modifier(TopBar(query: $q, prompt: series ? "ابحث في المسلسلات" : "ابحث في الأفلام"))
+        .modifier(TopBar(query: $q, prompt: series ? "ابحث في المسلسلات" : "ابحث في الأفلام", largeTitle: true))
         .task(id: "\(q)|\(cat)|\((series ? model.seriesList : model.movies).count)") {
             let t = SearchNorm.tokens(q); guard !t.isEmpty else { return }
             let r = await SearchNorm.filter(inCat, t) { $0.name }
@@ -637,6 +637,7 @@ struct TopBar: ViewModifier {
     @Binding var query: String
     var prompt: String
     var home = false
+    var largeTitle = false
     /// اللي تكتبه: يتحدّث فوراً بالحقل، والصفحة تاخذه بعد ما توقف كتابة (الصفحة ما تنعاد مع كل حرف = بدون لاق)
     @State private var text = ""
     @State private var open = false
@@ -660,7 +661,7 @@ struct TopBar: ViewModifier {
                     .task(id: text) { await push() }
             }
         } else {
-            content
+            titled(content)
                 // الحقل داخل شريط التنقّل نفسه (مكان العنوان): ثابت بنفس المكان بكل الصفحات،
                 // والمحتوى تحته ما يتحرك ولا ينعاد ترتيبه (قبل: ينزل تحت العنوان الكبير بالأفلام = مكان مختلف + تقطيع)
                 .toolbar {
@@ -691,6 +692,12 @@ struct TopBar: ViewModifier {
                     .presentationDragIndicator(.visible)
                 }
         }
+    }
+
+    /// الأفلام والمسلسلات عنوانها كبير، والحقل اللي مكان العنوان ما يطلع مع العنوان الكبير:
+    /// وقت البحث العنوان يصير صغير عشان يبان الحقل (نفس مكانه بالرئيسية والقنوات)
+    @ViewBuilder private func titled(_ c: Content) -> some View {
+        if largeTitle { c.navigationBarTitleDisplayMode(open ? .inline : .large) } else { c }
     }
 
     private var bar: some View {
