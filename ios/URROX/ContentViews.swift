@@ -181,7 +181,7 @@ struct LiveView: View {
                 HStack(spacing: 8) {
                     chip("الكل", "")
                     ForEach(model.liveCats) { c in chip(c.name, c.id) }
-                }.padding(.horizontal, 12).glassGroup()
+                }.padding(.horizontal, 12)
             }
             List(visible) { ch in
                 Button { play(ch) } label: {
@@ -215,10 +215,10 @@ struct LiveView: View {
             Text(t).font(.subheadline).padding(.horizontal, 14).padding(.vertical, 8)
                 .contentShape(Capsule())
                 .foregroundStyle(cat == id ? Theme.bg : Color.primary)
-                .background { if cat == id { Capsule().fill(Color.primary) } }
+                .background(cat == id ? Color.primary : Theme.surface, in: Capsule())
         }
         .buttonStyle(.plain)
-        .glass()
+        // (بدون زجاج: عشرات الأزرار الزجاجية بصف واحد ثقيلة جداً على iOS 26 — إرشادات آبل: الزجاج بقلّة)
         .accessibilityAddTraits(cat == id ? .isSelected : [])
     }
 
@@ -257,7 +257,7 @@ struct VodGridView: View {
                 HStack(spacing: 8) {
                     chip("الكل", "")
                     ForEach(series ? model.seriesCats : model.movieCats) { c in chip(c.name, c.id) }
-                }.padding(.horizontal, 16).glassGroup()
+                }.padding(.horizontal, 16)
             }
             LazyVGrid(columns: [GridItem(.adaptive(minimum: hsize == .regular ? 150 : 104), spacing: 12)], spacing: 14) {
                 ForEach(items) { v in
@@ -301,10 +301,10 @@ struct VodGridView: View {
             Text(t).font(.subheadline).padding(.horizontal, 14).padding(.vertical, 8)
                 .contentShape(Capsule())
                 .foregroundStyle(cat == id ? Theme.bg : Color.primary)
-                .background { if cat == id { Capsule().fill(Color.primary) } }
+                .background(cat == id ? Color.primary : Theme.surface, in: Capsule())
         }
         .buttonStyle(.plain)
-        .glass()
+        // (بدون زجاج: عشرات الأزرار الزجاجية بصف واحد ثقيلة جداً على iOS 26 — إرشادات آبل: الزجاج بقلّة)
         .accessibilityAddTraits(cat == id ? .isSelected : [])
     }
 }
@@ -452,8 +452,8 @@ struct DetailsView: View {
                             Text("الموسم \(s)").padding(.horizontal, 16).padding(.vertical, 8)
                                 .contentShape(Capsule())
                                 .foregroundStyle(season == s ? Theme.bg : Color.primary)
-                                .background { if season == s { Capsule().fill(Color.primary) } }
-                        }.buttonStyle(.plain).glass()
+                                .background(season == s ? Color.primary : Theme.surface, in: Capsule())
+                        }.buttonStyle(.plain)
                         .accessibilityAddTraits(season == s ? .isSelected : [])
                     }
                 }

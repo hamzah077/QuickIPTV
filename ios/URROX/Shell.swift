@@ -320,10 +320,8 @@ struct HomeView: View {
                 if !cont.isEmpty {
                     SectionHeader(title: "متابعة المشاهدة")
                     ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 12) { ForEach(Array(cont)) { h in ContinueCard(h: h) } }.padding(.horizontal, 16).padding(.vertical, 10)
+                        HStack(spacing: 12) { ForEach(Array(cont)) { h in ContinueCard(h: h) } }.padding(.horizontal, 16)
                     }
-                    .scrollClipDisabled()                       // الظل ما ينقص من فوق وتحت
-                    .padding(.vertical, -10)
                 }
 
                 // المفضلة قليلة: نمر عليها هي بدل ما نفحص آلاف القنوات كل مرة تنرسم الصفحة
@@ -335,14 +333,12 @@ struct HomeView: View {
                         HStack(spacing: 14) {
                             ForEach(favCh) { ch in
                                 NavigationLink { LiveView(start: ch) } label: {
-                                    Poster(url: ch.icon, radius: 32, contentMode: .fit).frame(width: 64, height: 64).padding(6).glass(40)
+                                    Poster(url: ch.icon, radius: 32, contentMode: .fit).frame(width: 64, height: 64).padding(6).background(Theme.surface, in: Circle())
                                 }
                                 .accessibilityLabel(ch.name)
                             }
-                        }.padding(.horizontal, 16).padding(.vertical, 10)
+                        }.padding(.horizontal, 16)
                     }
-                    .scrollClipDisabled()
-                    .padding(.vertical, -10)
                 }
 
                 posterRow("أحدث الأفلام", Array(model.movies.prefix(20)))
@@ -367,13 +363,11 @@ struct HomeView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: 10) {
                     ForEach(items) { v in
-                        DetailsLink(vod: v) { Poster(url: v.icon).frame(width: 110, height: 162).posterDepth() }
+                        DetailsLink(vod: v) { Poster(url: v.icon).frame(width: 110, height: 162) }
                             .accessibilityLabel(v.name)
                     }
-                }.padding(.horizontal, 16).padding(.vertical, 10)
+                }.padding(.horizontal, 16)
             }
-            .scrollClipDisabled()                               // ظل البوسترات كامل (ما ينقص من تحت)
-            .padding(.vertical, -10)
         }
     }
 }
@@ -386,7 +380,7 @@ struct ContinueCard: View {
         DetailsLink(vod: HistoryDestination.vod(h), autoplayKey: h.key) {
             VStack(alignment: .leading, spacing: 4) {
                 ZStack(alignment: .bottom) {
-                    Poster(url: h.image, radius: 14).frame(width: 170, height: 96).posterDepth(14)
+                    Poster(url: h.image, radius: 14).frame(width: 170, height: 96)
                     if h.dur > 0 { ProgressLine(value: h.pos / h.dur, height: 4).clipShape(Capsule()).padding(.horizontal, 6).padding(.bottom, 6) }
                 }
                 .frame(width: 170, height: 96)
