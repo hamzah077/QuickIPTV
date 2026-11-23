@@ -327,9 +327,10 @@ fun androidx.media3.common.Player.liveSeek(forward: Boolean): Boolean {
     return true
 }
 
-fun Context.iconButton(res: Int, desc: String, size: Int = 44, onClick: () -> Unit): FrameLayout =
+fun Context.iconButton(res: Int, desc: String, size: Int = 48, onClick: () -> Unit): FrameLayout =
     FrameLayout(this).apply {
         layoutParams = ViewGroup.LayoutParams(dp(size), dp(size))
+        minimumWidth = dp(minOf(size, 48)); minimumHeight = dp(minOf(size, 48))
         // التلفزيون: دائرة بنفس نظام القائمة الجانبية
         background = if (isTv()) focusBg(normal = 0x14FFFFFF, radius = size / 2) else focusBg()
         isFocusable = true

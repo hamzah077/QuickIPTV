@@ -142,6 +142,7 @@ class PosterAdapter(
             clipToOutline = true
         }
         val img = ImageView(this).apply {
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO      // زينة: الاسم مكتوب تحتها (قارئ الشاشة ما يكرر)
             layoutParams = FrameLayout.LayoutParams(MATCH, MATCH)
             scaleType = ImageView.ScaleType.CENTER_CROP
         }

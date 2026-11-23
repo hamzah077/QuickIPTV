@@ -165,7 +165,7 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
             setOnClickListener { pickCategory() }
         }
         phoneBar.addView(catBtn, lp(WRAP, WRAP).apply { marginEnd = a.dp(6) })
-        phoneBar.addView(a.iconButton(R.drawable.ic_search, "بحث في القنوات", 40) { toggleSearch() })
+        phoneBar.addView(a.iconButton(R.drawable.ic_search, "بحث في القنوات", 48) { toggleSearch() })
         searchBox.visibility = View.GONE
         arrange()
         view = root
@@ -635,7 +635,7 @@ class LiveScreen(private val a: MainActivity) : Screen, EpgAware {
             .setItems(items) { _, w ->
                 when (w) {
                     0 -> openFull(ch)
-                    1 -> { Store.toggleFav("live", ch.id); chAdapter.notifyDataSetChanged(); if (catId == Live.FAV) selectCategory(Live.FAV) }
+                    1 -> { Store.toggleFav("live", ch.id); chList.performHapticFeedback(android.view.HapticFeedbackConstants.CONTEXT_CLICK); chAdapter.notifyDataSetChanged(); if (catId == Live.FAV) selectCategory(Live.FAV) }
                     2 -> remapDialog(a, ch) { chAdapter.notifyDataSetChanged(); if (current?.id == ch.id) showEpg(ch) }
                 }
             }.show()

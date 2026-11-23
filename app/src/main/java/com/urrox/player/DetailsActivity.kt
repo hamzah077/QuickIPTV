@@ -583,7 +583,7 @@ class DetailsActivity : Activity() {
         }
         val kind = if (series) "series" else "movie"
         val fav = Store.isFav(kind, id)
-        addSec(button(if (fav) "مفضّل" else "المفضلة", R.drawable.ic_heart) { Store.toggleFav(kind, id); render() }.apply {
+        addSec(button(if (fav) "مفضّل" else "المفضلة", R.drawable.ic_heart) { Store.toggleFav(kind, id); window.decorView.performHapticFeedback(android.view.HapticFeedbackConstants.CONTEXT_CLICK); render() }.apply {
             tag = "fav"
             if (fav) (getChildAt(0) as? ImageView)?.imageTintList = ColorStateList.valueOf(C.HEART)
         })
@@ -775,7 +775,7 @@ class DetailsActivity : Activity() {
         }
         val kind = if (series) "series" else "movie"
         val fav = Store.isFav(kind, id)
-        row.addView(button(if (fav) "مفضّل" else "المفضلة", R.drawable.ic_heart) { Store.toggleFav(kind, id); render() }.apply {
+        row.addView(button(if (fav) "مفضّل" else "المفضلة", R.drawable.ic_heart) { Store.toggleFav(kind, id); window.decorView.performHapticFeedback(android.view.HapticFeedbackConstants.CONTEXT_CLICK); render() }.apply {
             tag = "fav"
             if (fav) (getChildAt(0) as? ImageView)?.imageTintList = ColorStateList.valueOf(C.HEART)
         }, lp(WRAP, WRAP).apply { marginStart = dp(10) })

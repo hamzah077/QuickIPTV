@@ -28,10 +28,11 @@ fun MainActivity.field(hint: String, value: String = "", password: Boolean = fal
     typeface = Fonts.regular
     setText(value)
     this.hint = hint
-    setHintTextColor(C.FAINT)
+    setHintTextColor(C.MUTED)          // تباين كافي للقراءة (الباهت كان أقل من المطلوب)
     setTextColor(C.TEXT)
     textSize = 15f
     isSingleLine = true
+    minimumHeight = dp(48)
     layoutDirection = if (rtl) View.LAYOUT_DIRECTION_RTL else View.LAYOUT_DIRECTION_LTR
     textDirection = if (rtl) View.TEXT_DIRECTION_FIRST_STRONG else View.TEXT_DIRECTION_LTR
     setPadding(dp(14), dp(12), dp(14), dp(12))
@@ -42,6 +43,8 @@ fun MainActivity.field(hint: String, value: String = "", password: Boolean = fal
         else -> InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
     }
     imeOptions = EditorInfo.IME_ACTION_NEXT or EditorInfo.IME_FLAG_NO_EXTRACT_UI
+    // كلمة المرور: ما تنقرى لتطبيقات الوصول الغريبة (أندرويد 14+)
+    if (password && android.os.Build.VERSION.SDK_INT >= 34) setAccessibilityDataSensitive(View.ACCESSIBILITY_DATA_SENSITIVE_YES)
 }
 
 fun MainActivity.sectionTitle(t: String): TextView = text(t, 17f, C.TEXT, bold = true).apply {

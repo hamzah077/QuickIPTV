@@ -103,7 +103,7 @@ class LibraryScreen(private val a: MainActivity, private val series: Boolean) : 
         } else {
             val head = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(a.dp(16), a.dp(12), a.dp(8), a.dp(4)) }
             head.addView(a.text(title, 20f, C.TEXT, bold = true), lp(0, WRAP, 1f))
-            head.addView(a.iconButton(R.drawable.ic_search, "بحث", 42) { a.openExtra("search") })
+            head.addView(a.iconButton(R.drawable.ic_search, "بحث", 48) { a.openExtra("search") })
             main.addView(head)
         }
         rows.layoutManager = SmoothLM(a).apply { initialPrefetchItemCount = 3; alignTop = a.tv }     // التلفزيون: الصف المحدد فوق
@@ -118,7 +118,7 @@ class LibraryScreen(private val a: MainActivity, private val series: Boolean) : 
         // شبكة "الكل"
         val gh = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(a.dp(8), a.dp(10), a.dp(16), a.dp(4)) }
         // التلفزيون: بدون زر رجوع على الشاشة (زر الريموت يرجع) — عنوان كبير بس
-        if (!a.tv) gh.addView(a.iconButton(R.drawable.ic_chev_right, "رجوع", 42) { closeGrid() })
+        if (!a.tv) gh.addView(a.iconButton(R.drawable.ic_chev_right, "رجوع", 48) { closeGrid() })
         else { gridTitle.textSize = 24f; gh.setPadding(a.dp(16), a.dp(14), a.dp(16), a.dp(6)) }
         gh.addView(gridTitle, lp(0, WRAP, 1f).apply { marginStart = a.dp(6) })
         gridBox.addView(gh)

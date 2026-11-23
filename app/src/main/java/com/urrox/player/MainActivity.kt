@@ -284,18 +284,18 @@ class MainActivity : Activity() {
             useController = false; isClickable = false; isFocusable = false
             setShutterBackgroundColor(0xFF000000.toInt())
         }
-        val playBtn = iconButton(R.drawable.ic_pause, "إيقاف مؤقت", 32) {
+        val playBtn = iconButton(R.drawable.ic_pause, "إيقاف مؤقت", 40) {
             val p = MiniDock.player ?: (if (MiniDock.live) LivePlayer.player else null)
             p?.let { it.playWhenReady = !it.playWhenReady; syncDock(); flashBtns() }
-        }.apply { background = rounded(0x80000000.toInt(), dpf(16f)) }
-        val closeBtn = iconButton(R.drawable.ic_close, "إغلاق", 32) { MiniDock.stop() }
-            .apply { background = rounded(0x80000000.toInt(), dpf(16f)) }
+        }.apply { background = rounded(0x80000000.toInt(), dpf(20f)) }
+        val closeBtn = iconButton(R.drawable.ic_close, "إغلاق", 40) { MiniDock.stop() }
+            .apply { background = rounded(0x80000000.toInt(), dpf(20f)) }
         // الزرين ثابتين فوق الفيديو (زي يوتيوب)، والتظليل وراهم يختفي بعد شوي
         val scrim = View(this).apply { setBackgroundColor(0x52000000); alpha = 0f }
         val btns = FrameLayout(this).apply {
             layoutDirection = View.LAYOUT_DIRECTION_LTR
-            addView(playBtn, FrameLayout.LayoutParams(dp(32), dp(32), Gravity.TOP or Gravity.LEFT).apply { setMargins(dp(5), dp(5), 0, 0) })
-            addView(closeBtn, FrameLayout.LayoutParams(dp(32), dp(32), Gravity.TOP or Gravity.RIGHT).apply { setMargins(0, dp(5), dp(5), 0) })
+            addView(playBtn, FrameLayout.LayoutParams(dp(40), dp(40), Gravity.TOP or Gravity.LEFT).apply { setMargins(dp(4), dp(4), 0, 0) })
+            addView(closeBtn, FrameLayout.LayoutParams(dp(40), dp(40), Gravity.TOP or Gravity.RIGHT).apply { setMargins(0, dp(4), dp(4), 0) })
         }
         val prog = View(this).apply { setBackgroundColor(C.LIVE) }
         val box = FrameLayout(this).apply {
