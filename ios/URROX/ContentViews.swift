@@ -896,7 +896,13 @@ struct SettingsView: View {
                     Text("ليلي").tag("dark")
                 } label: { Label("المظهر", systemImage: "circle.lefthalf.filled") }
             }
-            SwiftUI.Section { LabeledContent("URROX PLAYER", value: Self.version) }
+            SwiftUI.Section {
+                LabeledContent("URROX PLAYER", value: Self.version)
+                // سرعة آخر فتح (من الضغط لين أول صورة) والمشغّل اللي اشتغل
+                if !PlayerController.lastStart.isEmpty {
+                    LabeledContent("آخر فتح", value: PlayerController.lastStart)
+                }
+            }
         }
         .scrollContentBackground(.hidden)
         .navigationTitle("الإعدادات")

@@ -85,6 +85,7 @@ final class PlayerController {
             Task { @MainActor in
                 guard let self, self.engine == .av else { return }
                 self.isPlaying = st == .playing
+                if st == .playing { self.markStarted() }
                 self.waitTask?.cancel()
                 if st == .waitingToPlayAtSpecifiedRate && !noItem {
                     // علامة التحميل تطلع بس إذا الانتظار طوّل (نص ثانية) — ما ترمش مع كل لحظة تعبئة
@@ -126,7 +127,9 @@ final class PlayerController {
         if r.type == "live", Self.liveTs, r.url.pathExtension.lowercased() == "m3u8" {
             r.url = r.url.deletingPathExtension().appendingPathExtension("ts"); req = r
         }
-        if Self.engineFor(r.url) == .vlc { playVLC(r); return }
+        startAt = Date()
+        // الصيغة ما يشغّلها مشغّل آبل، أو جرّبناه قبل مع هالسيرفر وما مشى = VLC على طول
+        if Self.engineFor(r.url) == .vlc || (!r.url.isFileURL && Self.memo(r) == .vlc) { playVLC(r); return }
         stopVLC()
         engine = .av
         // نفس هوية التطبيقات المعروفة: بعض السيرفرات تبطّئ أو تحوّل الطلبات اللي بدونها
@@ -176,7 +179,7 @@ final class PlayerController {
         avStartTask?.cancel()
         let started = item
         avStartTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(r.type == "live" ? 3.5 : 6))
+            try? await Task.sleep(for: .seconds(r.type == "live" ? 3 : 4.5))
             guard !Task.isCancelled, let self, self.engine == .av, self.player.currentItem === started,
                   self.player.timeControlStatus != .playing, !self.userPaused, var rr = self.req else { return }
             if rr.type == "live", rr.url.pathExtension.lowercased() == "m3u8" {
@@ -199,8 +202,8 @@ final class PlayerController {
         let m = VLCMedia(url: r.url)
         // بفر: كافي يمنع التقطيع، وصغير يخلي البداية سريعة
         // بفر أصغر = يبدأ أسرع (ثانية تكفي مع إعادة الاتصال التلقائي)
-        m.addOption(r.type == "live" ? ":network-caching=1000" : ":network-caching=1200")
-        m.addOption(":live-caching=1000")
+        m.addOption(r.type == "live" ? ":network-caching=800" : ":network-caching=900")
+        m.addOption(":live-caching=800")
         m.addOption(":clock-jitter=0")
         m.addOption(":clock-synchro=0")
         m.addOption(":http-reconnect")                                                    // ينقطع السيرفر؟ يرجع يتصل
@@ -242,6 +245,7 @@ final class PlayerController {
             buffering = t <= 0                               // أول قراءة (بداية أو بعد تقديم): لسه ما بدأ؟ تحميل
         } else if t > lastVlcT + 0.05 {
             buffering = false; vlcStallTicks = 0             // الوقت يتقدّم = شغّال (حتى لو VLC يقول buffering)
+            markStarted()
         } else {
             vlcStallTicks += 1                               // وقف التقدّم ثانية كاملة = فعلاً يحمّل
             if vlcStallTicks >= 2 { buffering = true }
@@ -253,6 +257,52 @@ final class PlayerController {
         } else { vlcEndHandled = false }
         if Date().timeIntervalSince(lastSave) > 10 { saveNow() }
         checkSkips()
+    }
+
+    // MARK: سرعة الفتح
+
+    /// المشغّل اللي نجح مع هالسيرفر ونوع المحتوى (مباشر/فيلم/حلقة): المرة الجاية يبدأ فيه على طول
+    /// (قبل: كل مرة يجرّب مشغّل آبل وينتظر 3.5–6 ثواني قبل ما يتحول لـ VLC)
+    private static func memoKey(_ r: PlayRequest) -> String { "\(r.url.host ?? "")|\(r.type)" }
+    private static func memo(_ r: PlayRequest) -> Engine? {
+        switch (UserDefaults.standard.dictionary(forKey: "engineMemo") as? [String: String])?[memoKey(r)] {
+        case "vlc": .vlc
+        case "av": .av
+        default: nil
+        }
+    }
+    private static func remember(_ r: PlayRequest, _ e: Engine) {
+        var d = (UserDefaults.standard.dictionary(forKey: "engineMemo") as? [String: String]) ?? [:]
+        d[memoKey(r)] = e == .vlc ? "vlc" : "av"
+        UserDefaults.standard.set(d, forKey: "engineMemo")
+    }
+
+    /// عدّاد الفتح: من الضغط لين أول صورة
+    @ObservationIgnored private var startAt: Date?
+    /// آخر وقت فتح (يطلع بالإعدادات): مثلاً "1.4 ث · VLC · مباشر"
+    static var lastStart: String {
+        get { UserDefaults.standard.string(forKey: "lastStart") ?? "" }
+        set { UserDefaults.standard.set(newValue, forKey: "lastStart") }
+    }
+    private func markStarted() {
+        guard let t0 = startAt, let r = req else { return }
+        startAt = nil
+        let secs = Date().timeIntervalSince(t0)
+        let kind = r.type == "live" ? "مباشر" : r.type == "movie" ? "فيلم" : "حلقة"
+        Self.lastStart = String(format: "%.1f ث · %@ · %@", secs, engine == .vlc ? "VLC" : "آبل", kind)
+        if !r.url.isFileURL { Self.remember(r, engine) }
+    }
+
+    /// الحلقة الجاية: نفتح الاتصال بالسيرفر قبل ما تخلص الحالية (تبدأ أسرع)
+    @ObservationIgnored private var prewarmed: String?
+    private func prewarmNext() {
+        guard let q = queue, let r = req, let i = q.index(of: r.key), let n = q.request(i + 1),
+              prewarmed != n.key, !n.url.isFileURL else { return }
+        prewarmed = n.key
+        var rq = URLRequest(url: n.url, timeoutInterval: 8)
+        rq.setValue("bytes=0-1", forHTTPHeaderField: "Range")
+        rq.setValue("IPTVSmartersPro", forHTTPHeaderField: "User-Agent")
+        URLSession.shared.dataTask(with: rq) { _, _, _ in }.resume()
     }
 
     /// المباشر بصيغة TS على VLC (لو بث آبل تأخّر أو فشل مرة مع هالسيرفر) — ينحفظ
@@ -422,6 +472,7 @@ final class PlayerController {
         let left = duration - position
         let learned = m.credits(r.seriesId).flatMap { $0 < duration / 3 ? $0 : nil }
         showNextUp = left <= (learned ?? 30)
+        if left <= 90 { prewarmNext() }                  // آخر دقيقة ونص: نجهّز اتصال الحلقة الجاية
         if showNextUp, learned != nil {
             if countdownEnd == nil { countdownEnd = Date().addingTimeInterval(10) }
             nextCountdown = max(0, Int(ceil(countdownEnd!.timeIntervalSinceNow)))
