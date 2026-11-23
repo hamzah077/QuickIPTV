@@ -709,10 +709,10 @@ struct TopBar: ViewModifier {
             }
         }
         .font(.body)
-        .padding(.horizontal, 14)
-        .frame(height: 44)                     // نفس حقل البحث في iOS 26+: كبسولة 44
+        .padding(.horizontal, 10)
+        .frame(height: 40)                     // نفس ارتفاع الشريط اللي فوق
         .frame(maxWidth: .infinity)
-        .glass(22)
+        .glass(12)
         .onAppear { Task { @MainActor in focused = true } }     // الكيبورد يطلع أول ما يظهر الحقل
     }
 
@@ -731,9 +731,9 @@ struct TopBar: ViewModifier {
 }
 
 extension Image {
-    /// أيقونات الشريط اللي فوق (بحث · تحميلات · إعدادات): أكبر بنفس أسلوب iOS 26+ (كبسولة زجاج بأزرار 44)
+    /// أيقونات الشريط اللي فوق (بحث · تحميلات · إعدادات): بحجمها الأصلي، والشريط أعلى شوي (40)
     func topIcon() -> some View {
-        font(.system(size: 19, weight: .medium)).frame(width: 44, height: 44).contentShape(Rectangle())
+        frame(minWidth: 30, minHeight: 40).contentShape(Rectangle())
     }
 }
 
