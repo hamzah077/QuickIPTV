@@ -20,15 +20,25 @@ final class MPVView: UIView {
     override init(frame: CGRect) {
         super.init(frame: frame)
         metalLayer.contentsScale = UIScreen.main.nativeScale
+        // مقاس مبدئي (مو صفر): MPV يجهّز الرسم أول ما يبدأ، ومقاس صفر يطيّح مكتبة الرسم
+        let w = UIScreen.main.bounds.width
+        metalLayer.frame = CGRect(x: 0, y: 0, width: w, height: w * 9 / 16)
         layer.addSublayer(metalLayer)
     }
     required init?(coder: NSCoder) { fatalError() }
     override func layoutSubviews() {
         super.layoutSubviews()
+        guard bounds.width > 1, bounds.height > 1 else { return }
         CATransaction.begin(); CATransaction.setDisableActions(true)
         metalLayer.frame = bounds
         CATransaction.commit()
     }
+}
+
+/// MPV ينادي هذي من خيطه الخاص (مو الرئيسي) لما يكون فيه أحداث — دالة عادية بدون ارتباط بالخيط الرئيسي
+private func mpvWakeup(_ ctx: UnsafeMutableRawPointer?) {
+    guard let ctx else { return }
+    Unmanaged<MPVEngine>.fromOpaque(ctx).takeUnretainedValue().drain()
 }
 
 @MainActor
@@ -72,11 +82,7 @@ final class MPVEngine {
         ]
         for (k, v) in opts { mpv_set_option_string(h, k, v) }
         guard mpv_initialize(h) >= 0 else { mpv_terminate_destroy(h); mpv = nil; return }
-        mpv_set_wakeup_callback(h, { ctx in
-            guard let ctx else { return }
-            let me = Unmanaged<MPVEngine>.fromOpaque(ctx).takeUnretainedValue()
-            me.drain()
-        }, Unmanaged.passUnretained(self).toOpaque())
+        mpv_set_wakeup_callback(h, mpvWakeup, Unmanaged.passUnretained(self).toOpaque())
 
         // بالخلفية: نوقف الصورة (وإلا ترجع شاشة سودا لما ترجع للتطبيق)
         NotificationCenter.default.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in
@@ -129,7 +135,7 @@ final class MPVEngine {
 
     // MARK: الأحداث (نهاية الملف / خطأ)
 
-    nonisolated private func drain() {
+    nonisolated fileprivate func drain() {
         events.async { [weak self] in
             guard let self, let h = self.mpv else { return }
             while true {
