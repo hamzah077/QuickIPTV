@@ -146,7 +146,10 @@ class MainActivity : Activity() {
         }
         if (tv) {
             // التلفزيون: قائمة جانبية فوق المحتوى — أيقونات بس، وتتوسّع بأسمائها لما توقف عليها (مثل Google TV)
-            val root = FrameLayout(this).apply { setBackgroundColor(C.BG); layoutDirection = View.LAYOUT_DIRECTION_RTL }
+            val root = FrameLayout(this).apply {
+                setBackgroundColor(C.BG); layoutDirection = View.LAYOUT_DIRECTION_RTL
+                if (Glass.on) background = Glass.ambient()        // ليكود جلاس: ألوان ناعمة ورا الزجاج بكل الصفحات
+            }
             nav.gravity = Gravity.CENTER_VERTICAL or Gravity.START
             // حافة الشاشة (يمين): مسافة أمان أكبر لأن بعض التلفزيونات تقص الأطراف — التحديد ما ينقص
             nav.setPaddingRelative(dp(26), dp(16), dp(10), dp(16))
@@ -165,6 +168,7 @@ class MainActivity : Activity() {
                 root.addView(bl, FrameLayout.LayoutParams(MATCH, MATCH))
                 val cb: (android.graphics.Bitmap?) -> Unit = { b -> bl.setImageBitmap(b) }
                 blurCb = cb; Glass.onBlurred = cb
+                Glass.setBackdrop(Glass.ambient())       // من أول لحظة: الزجاج يعكس الألوان اللي ورا
             }
             val bg = C.BG and 0x00FFFFFF
             backdropScrim = FrameLayout(this).apply {
@@ -488,7 +492,7 @@ class MainActivity : Activity() {
         if (u == backdropUrl) return
         backdropUrl = u
         if (u == null) {
-            if (Glass.on) Glass.setBackdrop(null)
+            if (Glass.on) Glass.setBackdrop(Glass.ambient())      // بدون صورة: الزجاج يعكس الألوان الناعمة اللي ورا
             bd.animate().alpha(0f).setDuration(250).start()
             backdropScrim?.animate()?.alpha(0f)?.setDuration(250)?.start()
             return
@@ -708,7 +712,10 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         // ليكود جلاس: صفحة الفيلم غيّرت الصورة الممَوّهة — نرجّع صورة هالشاشة
-        if (Glass.on && backdropUrl != null) backdrop?.drawable?.let { Glass.setBackdrop(it) }
+        if (Glass.on) {
+            val d = if (backdropUrl != null) backdrop?.drawable else null
+            Glass.setBackdrop(d ?: Glass.ambient())
+        }
         if (MiniDock.live) LivePlayer.player?.playWhenReady = true     // رجعت للتطبيق: البث الصغير يكمل
         refreshDock()
         val p = pendingOpen

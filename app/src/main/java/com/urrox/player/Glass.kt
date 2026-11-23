@@ -50,6 +50,15 @@ object Glass {
         val w = 96; val h = 54
         val b = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
         val c = Canvas(b)
+        if (d is android.graphics.drawable.LayerDrawable) {
+            // الخلفية الملوّنة (مقاساتها بحجم الشاشة): نرسمها بحجم الشاشة ونصغّرها
+            val dm = android.content.res.Resources.getSystem().displayMetrics
+            val old = Rect(d.bounds)
+            c.save(); c.scale(w / dm.widthPixels.toFloat(), h / dm.heightPixels.toFloat())
+            d.setBounds(0, 0, dm.widthPixels, dm.heightPixels); d.draw(c); c.restore()
+            d.bounds = old
+            return b
+        }
         // centerCrop مثل ImageView
         val iw = d.intrinsicWidth.takeIf { it > 0 } ?: w; val ih = d.intrinsicHeight.takeIf { it > 0 } ?: h
         val s = maxOf(w / iw.toFloat(), h / ih.toFloat())
@@ -88,7 +97,7 @@ object Glass {
     /**
      * لوح زجاج: [radiusPx] الزوايا، [tint] لون أبيض شفاف فوق الضبابية، [dark] = زجاج داكن (فوق الفيديو).
      */
-    class Pane(private val host: View, private val radiusPx: Float, private val tint: Int = 0x24FFFFFF, private val dark: Boolean = false,
+    class Pane(private val host: View, private val radiusPx: Float, private val tint: Int = 0x2EFFFFFF, private val dark: Boolean = false,
                private val backdrop: Boolean = true,
                /** طبقة «مثلّجة» تحت اللون (0 = بدون): تغطي اللي ورا اللوح (مثل القائمة الجانبية) */
                private val frost: Int = 0) : Drawable() {
@@ -120,19 +129,75 @@ object Glass {
             paint.color = if (dark) 0x8C0E1016.toInt() else tint
             c.drawPath(path, paint)
             if (dark) { paint.color = 0x14FFFFFF; c.drawPath(path, paint) }
-            // الحافة اللامعة: أقوى فوق ويسار، وتخف بالنص
-            stroke.strokeWidth = host.resources.displayMetrics.density * 1.6f      // (tvOS: بدون خطوط شعرية — تختفي من بعيد)
-            stroke.shader = LinearGradient(r.left, r.top, r.right, r.bottom,
-                intArrayOf(0xB3FFFFFF.toInt(), 0x1FFFFFFF, 0x66FFFFFF), floatArrayOf(0f, 0.5f, 1f), Shader.TileMode.CLAMP)
-            val inset = stroke.strokeWidth / 2
-            r.inset(inset, inset)
-            c.drawRoundRect(r, radiusPx, radiusPx, stroke)
+            sheen(c, path, r, stroke, paint, radiusPx, host.resources.displayMetrics.density, dark)
         }
 
         override fun setAlpha(alpha: Int) {}
         override fun setColorFilter(cf: ColorFilter?) {}
         @Deprecated("Deprecated in Java")
         override fun getOpacity() = PixelFormat.TRANSLUCENT
+    }
+
+    /**
+     * طبقات «الزجاج السائل» فوق اللون: لمعة فوق (ضوء ينعكس)، ظل خفيف تحت (عمق)، وحافة لامعة عريضة
+     * أقوى فوق-يمين وتخف بالنص — هذا اللي يخلي الزجاج يبان زجاج مو مستطيل رمادي.
+     */
+    internal fun sheen(c: Canvas, path: Path, r: RectF, stroke: Paint, paint: Paint, radiusPx: Float, density: Float, dark: Boolean) {
+        c.save(); c.clipPath(path)
+        paint.shader = LinearGradient(0f, r.top, 0f, r.top + r.height() * 0.5f,
+            intArrayOf(if (dark) 0x1FFFFFFF else 0x47FFFFFF, 0x00FFFFFF), null, Shader.TileMode.CLAMP)
+        c.drawRect(r, paint)
+        paint.shader = LinearGradient(0f, r.bottom - r.height() * 0.35f, 0f, r.bottom,
+            intArrayOf(0x00000000, if (dark) 0x33000000 else 0x24000000), null, Shader.TileMode.CLAMP)
+        c.drawRect(r, paint)
+        paint.shader = null
+        c.restore()
+        stroke.strokeWidth = density * 2f          // (tvOS: بدون خطوط شعرية — تختفي من بعيد)
+        stroke.shader = LinearGradient(r.right, r.top, r.left, r.bottom,
+            intArrayOf(0xF2FFFFFF.toInt(), 0x38FFFFFF, 0x99FFFFFF.toInt()), floatArrayOf(0f, 0.55f, 1f), Shader.TileMode.CLAMP)
+        val inset = stroke.strokeWidth / 2
+        val rr = RectF(r); rr.inset(inset, inset)
+        c.drawRoundRect(rr, radiusPx, radiusPx, stroke)
+    }
+
+    /** لوح/صف زجاج بدون ما يحتاج صورة وراه (للأزرار والصفوف): لون + لمعة + ظل + حافة لامعة. */
+    class Sheet(private val radiusPx: Float, private val tint: Int, private val density: Float) : Drawable() {
+        private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+        private val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
+        private val r = RectF(); private val path = Path()
+        override fun draw(c: Canvas) {
+            val b = bounds
+            r.set(b.left.toFloat(), b.top.toFloat(), b.right.toFloat(), b.bottom.toFloat())
+            path.reset(); path.addRoundRect(r, radiusPx, radiusPx, Path.Direction.CW)
+            paint.shader = null; paint.color = tint; c.drawPath(path, paint)
+            sheen(c, path, r, stroke, paint, radiusPx, density, false)
+        }
+        override fun setAlpha(alpha: Int) {}
+        override fun setColorFilter(cf: ColorFilter?) {}
+        @Deprecated("Deprecated in Java")
+        override fun getOpacity() = PixelFormat.TRANSLUCENT
+        override fun getOutline(outline: android.graphics.Outline) { outline.setRoundRect(bounds, radiusPx); outline.alpha = 0f }
+    }
+
+    /**
+     * خلفية الصفحات اللي ما فيها صورة (الإعدادات، المباشر، البحث…): ألوان ناعمة غامقة —
+     * الزجاج يحتاج شي ملوّن وراه عشان يبان زجاج.
+     */
+    fun ambient(): Drawable {
+        fun blob(color: Int, cx: Float, cy: Float, radius: Float) = android.graphics.drawable.GradientDrawable().apply {
+            gradientType = android.graphics.drawable.GradientDrawable.RADIAL_GRADIENT
+            colors = intArrayOf(color, color and 0x00FFFFFF)
+            setGradientCenter(cx, cy); gradientRadius = radius
+        }
+        val dm = android.content.res.Resources.getSystem().displayMetrics
+        val big = maxOf(dm.widthPixels, dm.heightPixels).toFloat()
+        return android.graphics.drawable.LayerDrawable(arrayOf(
+            android.graphics.drawable.ColorDrawable(0xFF0B0D14.toInt()),
+            blob(0x8C3A4FD8.toInt(), 0.22f, 0.25f, big * 0.55f),
+            blob(0x738A3FD1.toInt(), 0.82f, 0.72f, big * 0.5f),
+            blob(0x591FA39A, 0.62f, 0.12f, big * 0.38f),
+            blob(0x4DD96A3F, 0.12f, 0.88f, big * 0.4f),
+        ))
     }
 
     /** زر زجاج: عادي = زجاج، محدد = أبيض (كبسولة). */

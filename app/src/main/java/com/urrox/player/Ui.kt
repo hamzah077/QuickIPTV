@@ -115,15 +115,15 @@ fun Context.focusBg(
             // ليكود جلاس (إرشادات Apple TV): المحدد عدسة بيضاء واضحة، والضغط يغمّقها لحظة، والعادي زجاج بحافة
             addState(intArrayOf(android.R.attr.state_pressed), Glass.pressedLens(r))
             addState(intArrayOf(android.R.attr.state_focused), Glass.lens(r))
-            addState(intArrayOf(android.R.attr.state_selected), rounded(0x2EFFFFFF, r, 0x59FFFFFF, dp(2)))
-            addState(intArrayOf(android.R.attr.state_activated), rounded(0x2EFFFFFF, r, 0x59FFFFFF, dp(2)))
+            addState(intArrayOf(android.R.attr.state_selected), Glass.Sheet(r, 0x3DFFFFFF, resources.displayMetrics.density))
+            addState(intArrayOf(android.R.attr.state_activated), Glass.Sheet(r, 0x3DFFFFFF, resources.displayMetrics.density))
             // العادي: شفاف يبقى شفاف — والملوّن ينقسم: «مختار» (أبيض قوي/لون أساسي) = زجاج أوضح، والباقي زجاج خفيف
             val a8 = normal ushr 24
             val strong = normal == C.PRIMARY || ((normal and 0xFFFFFF) == 0xFFFFFF && a8 >= 0x26)
             addState(intArrayOf(), when {
                 normal == Color.TRANSPARENT -> rounded(Color.TRANSPARENT, r)
-                strong -> rounded(0x2EFFFFFF, r, 0x59FFFFFF, dp(2))
-                else -> rounded(0x1AFFFFFF, r, 0x26FFFFFF, (resources.displayMetrics.density * 1.5f).toInt())
+                strong -> Glass.Sheet(r, 0x3DFFFFFF, resources.displayMetrics.density)
+                else -> Glass.Sheet(r, 0x1FFFFFFF, resources.displayMetrics.density)
             })
             return@apply
         }
