@@ -81,6 +81,8 @@ schemes:
     # التشغيل من Xcode على الجوال بنسخة Release (محسّنة): نسخة Debug بطيئة ومعلّقة مع القوائم الكبيرة
     run:
       config: Release
+      # مكتبة MPV (MoltenVK) تكرش مع فحص Metal اللي يشغّله Xcode وقت التشغيل منه — نطفيه (تنبيه MPVKit نفسها)
+      enableGPUValidationMode: false
     test:
       targets:
         - URROXUITests

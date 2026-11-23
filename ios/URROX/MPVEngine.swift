@@ -14,12 +14,20 @@ final class MPVMetalLayer: CAMetalLayer {
 }
 
 /// شاشة MPV (وحدة، تنتقل بين الشاشة الصغيرة وملء الشاشة مثل شاشات المشغّلات الثانية)
+/// طبقة الرسم "طبقة فرعية" داخل الشاشة — نفس تطبيق MPVKit التجريبي بالضبط (مو طبقة الشاشة نفسها)
 final class MPVView: UIView {
-    override class var layerClass: AnyClass { MPVMetalLayer.self }
-    var metalLayer: MPVMetalLayer { layer as! MPVMetalLayer }
+    let metalLayer = MPVMetalLayer()
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        metalLayer.contentsScale = UIScreen.main.nativeScale
+        layer.addSublayer(metalLayer)
+    }
+    required init?(coder: NSCoder) { fatalError() }
     override func layoutSubviews() {
         super.layoutSubviews()
-        metalLayer.contentsScale = window?.screen.nativeScale ?? traitCollection.displayScale
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        metalLayer.frame = bounds
+        CATransaction.commit()
     }
 }
 
