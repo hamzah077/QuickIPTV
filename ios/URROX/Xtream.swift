@@ -78,29 +78,29 @@ final class Xtream: @unchecked Sendable {
     }
 
     func liveCategories() async throws -> [Category] {
-        try await list("get_live_categories").map { Category(id: $0.str("category_id"), name: $0.str("category_name")) }
+        try await list("get_live_categories").map { Category(id: $0.str("category_id"), name: $0.str("category_name")) }.uniqued()
     }
     func liveStreams(progress: Progress? = nil) async throws -> [Channel] {
         try await list("get_live_streams", progress: progress).map {
             Channel(id: $0.str("stream_id"), num: $0.int("num"), name: $0.str("name"), icon: $0.str("stream_icon"),
                     categoryId: $0.str("category_id"), epgId: $0.str("epg_channel_id"))
-        }
+        }.uniqued()
     }
     func vodCategories(series: Bool) async throws -> [Category] {
-        try await list(series ? "get_series_categories" : "get_vod_categories").map { Category(id: $0.str("category_id"), name: $0.str("category_name")) }
+        try await list(series ? "get_series_categories" : "get_vod_categories").map { Category(id: $0.str("category_id"), name: $0.str("category_name")) }.uniqued()
     }
     func movies(progress: Progress? = nil) async throws -> [Vod] {
         try await list("get_vod_streams", progress: progress).map {
             Vod(id: $0.str("stream_id"), name: $0.str("name"), icon: $0.str("stream_icon"), categoryId: $0.str("category_id"),
                 ext: $0.str("container_extension").isEmpty ? "mp4" : $0.str("container_extension"), rating: $0.str("rating"),
                 isSeries: false, added: $0.int("added"))
-        }
+        }.uniqued()
     }
     func series(progress: Progress? = nil) async throws -> [Vod] {
         try await list("get_series", progress: progress).map {
             Vod(id: $0.str("series_id"), name: $0.str("name"), icon: $0.str("cover"), categoryId: $0.str("category_id"),
                 ext: "", rating: $0.str("rating"), isSeries: true, added: $0.int("last_modified"))
-        }
+        }.uniqued()
     }
 
     /// معلومات المسلسل + الحلقات مرتّبة حسب الموسم
@@ -123,7 +123,7 @@ final class Xtream: @unchecked Sendable {
         } else if let eps = o["episodes"] as? [[[String: Any]]] {
             for (i, arr) in eps.enumerated() { add(i + 1, arr) }
         }
-        for k in out.keys { out[k]?.sort { $0.num < $1.num } }
+        for k in out.keys { out[k] = out[k]?.uniqued().sorted { $0.num < $1.num } }
         return (info, out)
     }
 

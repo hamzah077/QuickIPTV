@@ -114,3 +114,13 @@ func fmtTime(_ secs: Double) -> String {
     let h = s / 3600, m = (s % 3600) / 60, ss = s % 60
     return h > 0 ? String(format: "%d:%02d:%02d", h, m, ss) : String(format: "%d:%02d", m, ss)
 }
+
+
+extension Array where Element: Identifiable, Element.ID: Hashable {
+    /// بدون تكرار بنفس الرقم — بعض السيرفرات ترجع نفس القناة/الفيلم مرتين،
+    /// والقوائم (List/ForEach) ممكن تكرش لو تكرر نفس المعرّف
+    func uniqued() -> [Element] {
+        var seen = Set<Element.ID>()
+        return filter { seen.insert($0.id).inserted }
+    }
+}

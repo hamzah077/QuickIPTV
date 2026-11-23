@@ -196,8 +196,9 @@ final class AppModel {
     }
 
     private func apply(_ c: ContentCache) {
-        liveCats = c.liveCats; channels = c.channels; movieCats = c.movieCats
-        movies = c.movies; seriesCats = c.seriesCats; seriesList = c.seriesList
+        // المحفوظ من نسخ قديمة ممكن فيه تكرار
+        liveCats = c.liveCats.uniqued(); channels = c.channels.uniqued(); movieCats = c.movieCats.uniqued()
+        movies = c.movies.uniqued(); seriesCats = c.seriesCats.uniqued(); seriesList = c.seriesList.uniqued()
     }
 
     // MARK: المفضلة
@@ -259,7 +260,7 @@ final class AppModel {
             if !seen.insert(h.seriesId).inserted { continue }
             out.append(seriesFrontier(h.seriesId) ?? h)
         }
-        return out
+        return out.uniqued()          // نفس المعرّف مرتين بالقائمة = ممكن كراش
     }
 
     var continueWatching: [HistoryItem] {

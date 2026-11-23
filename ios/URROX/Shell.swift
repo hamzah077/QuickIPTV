@@ -310,8 +310,10 @@ struct HomeView: View {
                 if !cont.isEmpty {
                     SectionHeader(title: "متابعة المشاهدة")
                     ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 12) { ForEach(Array(cont)) { h in ContinueCard(h: h) } }.padding(.horizontal, 16)
+                        HStack(spacing: 12) { ForEach(Array(cont)) { h in ContinueCard(h: h) } }.padding(.horizontal, 16).padding(.vertical, 10)
                     }
+                    .scrollClipDisabled()                       // الظل ما ينقص من فوق وتحت
+                    .padding(.vertical, -10)
                 }
 
                 let favCh = model.channels.filter { model.isFav("live:\($0.id)") }
@@ -325,8 +327,10 @@ struct HomeView: View {
                                 }
                                 .accessibilityLabel(ch.name)
                             }
-                        }.padding(.horizontal, 16)
+                        }.padding(.horizontal, 16).padding(.vertical, 10)
                     }
+                    .scrollClipDisabled()
+                    .padding(.vertical, -10)
                 }
 
                 posterRow("أحدث الأفلام", Array(model.movies.prefix(20)))
@@ -354,8 +358,10 @@ struct HomeView: View {
                         NavigationLink { DetailsView(vod: v) } label: { Poster(url: v.icon).frame(width: 110, height: 162).posterDepth() }
                             .accessibilityLabel(v.name)
                     }
-                }.padding(.horizontal, 16)
+                }.padding(.horizontal, 16).padding(.vertical, 10)
             }
+            .scrollClipDisabled()                               // ظل البوسترات كامل (ما ينقص من تحت)
+            .padding(.vertical, -10)
         }
     }
 }
