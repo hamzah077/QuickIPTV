@@ -386,7 +386,7 @@ struct ContinueCard: View {
         DetailsLink(vod: HistoryDestination.vod(h), autoplayKey: h.key) {
             VStack(alignment: .leading, spacing: 4) {
                 ZStack(alignment: .bottom) {
-                    Poster(url: h.image, radius: 14).frame(width: 170, height: 96).posterDepth()
+                    Poster(url: h.image, radius: 14).frame(width: 170, height: 96).posterDepth(14)
                     if h.dur > 0 { ProgressLine(value: h.pos / h.dur, height: 4).clipShape(Capsule()).padding(.horizontal, 6).padding(.bottom, 6) }
                 }
                 .frame(width: 170, height: 96)

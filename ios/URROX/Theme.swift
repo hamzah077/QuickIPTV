@@ -100,7 +100,10 @@ struct SectionHeader: View {
 
 extension View {
     /// ظل خفيف تحت البوستر: يرفعه شوي عن الخلفية الداكنة
-    func posterDepth() -> some View { shadow(color: .black.opacity(0.45), radius: 6, y: 3) }
+    /// الظل على شكل مستطيل مدوّر ثابت تحت البوستر (مو على الصورة نفسها) = أخف بكثير بالرسم
+    func posterDepth(_ r: CGFloat = 12) -> some View {
+        background(RoundedRectangle(cornerRadius: r, style: .continuous).fill(.black).shadow(color: .black.opacity(0.45), radius: 6, y: 3))
+    }
 }
 
 /// خط التقدّم الأحمر

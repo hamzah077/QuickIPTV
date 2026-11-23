@@ -263,7 +263,7 @@ struct VodGridView: View {
                 ForEach(items) { v in
                     DetailsLink(vod: v) {
                         VStack(alignment: .leading, spacing: 4) {
-                            Poster(url: v.icon).aspectRatio(2 / 3, contentMode: .fit).posterDepth()
+                            Poster(url: v.icon).aspectRatio(2 / 3, contentMode: .fit)    // بدون ظل: عشرات الظلال بالشبكة تثقّل التمرير
                             Text(v.name).font(.caption).lineLimit(1).foregroundStyle(.primary)
                         }
                         .contentShape(Rectangle())
