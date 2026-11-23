@@ -194,9 +194,15 @@ struct PlayerOverlay: View {
         .animation(.easeOut(duration: 0.2), value: showChannels)
         .animation(.easeOut(duration: 0.2), value: toast)
         .onAppear { scheduleHide() }
-        .confirmationDialog(menuTitle, isPresented: Binding(get: { menu != nil }, set: { if !$0 { menu = nil } }), titleVisibility: .visible) {
+        // ملء الشاشة: القائمة داخل المشغّل (ملفوفة معه بالعرض) — نوافذ النظام تطلع عمودي لأن الجوال نفسه عمودي
+        .overlay {
+            if menu != nil && !compact { menuPanel.transition(.opacity) }
+        }
+        .animation(.easeOut(duration: 0.18), value: menu)
+        .confirmationDialog(menuTitle, isPresented: Binding(get: { menu != nil && compact }, set: { if !$0 { menu = nil } }), titleVisibility: .visible) {
             menuButtons
         }
+        .environment(\.colorScheme, .dark)          // المشغّل فوق الفيديو: دايماً ليلي (حتى لو التطبيق فاتح)
     }
 
     // MARK: الطبقات
@@ -477,6 +483,68 @@ struct PlayerOverlay: View {
             Button("الترجمة") { reopen(.subs) }
         }
         Button("إلغاء", role: .cancel) {}
+    }
+
+    struct MenuRow: Identifiable { let id: String; let title: String; var on = false; let act: () -> Void }
+
+    /// صفوف القائمة (نفس خيارات نافذة النظام)
+    private var menuRows: [MenuRow] {
+        switch menu {
+        case .speed:
+            return [Float(0.5), 0.75, 1, 1.25, 1.5, 2].map { r in
+                MenuRow(id: "\(r)", title: fmtSpeed(r), on: pc.rate == r) { pc.setRate(r); menu = nil }
+            }
+        case .audio:
+            return pc.tracks(audio: true).map { t in MenuRow(id: "a\(t.id)", title: t.name) { pc.selectTrack(t, audio: true); menu = nil } }
+        case .subs:
+            var rows = [MenuRow(id: "off", title: "إيقاف") { pc.selectTrack(nil, audio: false); menu = nil }]
+            rows += pc.tracks(audio: false).map { t in MenuRow(id: "s\(t.id)", title: t.name) { pc.selectTrack(t, audio: false); menu = nil } }
+            return rows
+        default:
+            return [MenuRow(id: "speed", title: "سرعة التشغيل  (\(fmtSpeed(pc.rate)))") { openMenu(.speed) },
+                    MenuRow(id: "audio", title: "الصوت") { openMenu(.audio) },
+                    MenuRow(id: "subs", title: "الترجمة") { openMenu(.subs) }]
+        }
+    }
+
+    /// قائمة الإعدادات بملء الشاشة: لوحة زجاج بالنص داخل المشغّل
+    private var menuPanel: some View {
+        ZStack {
+            Color.black.opacity(0.35).contentShape(Rectangle()).onTapGesture { menu = nil }
+            VStack(spacing: 0) {
+                Text(menuTitle).font(.headline).padding(.vertical, 12)
+                Divider().overlay(.white.opacity(0.15))
+                ScrollView {
+                    VStack(spacing: 2) {
+                        ForEach(menuRows) { r in
+                            Button { r.act() } label: {
+                                HStack {
+                                    Text(r.title).font(.body)
+                                    Spacer()
+                                    if r.on { Image(systemName: "checkmark").font(.body.weight(.semibold)) }
+                                }
+                                .padding(.horizontal, 16).frame(height: 46)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(6)
+                }
+                .scrollBounceBehavior(.basedOnSize)
+                Divider().overlay(.white.opacity(0.15))
+                Button { menu = nil } label: {
+                    Text("إلغاء").font(.body.weight(.semibold)).frame(maxWidth: .infinity).frame(height: 48).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+            .foregroundStyle(.white)
+            .frame(width: 320)
+            .frame(maxHeight: 300)
+            .fixedSize(horizontal: false, vertical: true)
+            .glass(24)
+            .environment(\.layoutDirection, .rightToLeft)
+        }
     }
 
     /// من قائمة الإعدادات لقائمة فرعية (بعد ما تتقفل الأولى)

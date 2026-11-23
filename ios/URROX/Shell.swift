@@ -230,7 +230,7 @@ struct LoginView: View {
                 Button { focus = nil; Task { await submit() } } label: {
                     HStack { if busy { ProgressView() }; Text("دخول").font(.headline) }
                         .frame(maxWidth: .infinity).frame(height: 52)
-                        .background(.white, in: Capsule()).foregroundStyle(.black)
+                        .background(Color.primary, in: Capsule()).foregroundStyle(Theme.bg)
                 }
                 .disabled(busy)
                 .padding(.top, 6)

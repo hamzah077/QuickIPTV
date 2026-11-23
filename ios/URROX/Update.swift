@@ -20,7 +20,7 @@ struct UpdateRows: View {
                         }
                         GeometryReader { g in
                             ZStack(alignment: .leading) {
-                                Capsule().fill(.white.opacity(0.1))
+                                Capsule().fill(Color.primary.opacity(0.1))
                                 Capsule().fill(Theme.red).frame(width: g.size.width * (s.state >= 2 ? 1 : s.frac))
                             }
                         }
@@ -29,7 +29,7 @@ struct UpdateRows: View {
                     }
                 }
                 .padding(.horizontal, 12).padding(.vertical, 10)
-                .background(.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                 .animation(.linear(duration: 0.2), value: s.frac)
             }
         }
@@ -38,9 +38,9 @@ struct UpdateRows: View {
     private func icon(_ s: AppModel.UpdStep) -> some View {
         let (t, fg, bg): (String, Color, Color) = switch s.state {
         case 2: ("checkmark", Color(red: 0.44, green: 0.81, blue: 0.59), Color(red: 0.12, green: 0.30, blue: 0.20))
-        case 1: ("arrow.triangle.2.circlepath", .white, .white.opacity(0.12))
+        case 1: ("arrow.triangle.2.circlepath", Color.primary, Color.primary.opacity(0.12))
         case 3: ("exclamationmark", Theme.red, Theme.red.opacity(0.2))
-        default: ("circle.fill", Theme.muted, .white.opacity(0.05))
+        default: ("circle.fill", Theme.muted, Color.primary.opacity(0.05))
         }
         return Image(systemName: t).font(.system(size: s.state == 0 ? 5 : 12, weight: .bold)).foregroundStyle(fg)
             .frame(width: 30, height: 30).background(bg, in: Circle())
@@ -73,9 +73,9 @@ struct UpdateFullView: View {
             Spacer()
             // السيرفر بطيء؟ تقدر تدخل والتحديث يكمل بالخلفية
             Button("تخطّي — كمّل بالخلفية") { model.updFull = false }
-                .font(.subheadline.weight(.semibold)).foregroundStyle(.white)
+                .font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
                 .padding(.horizontal, 18).padding(.vertical, 10)
-                .background(.white.opacity(0.1), in: Capsule())
+                .background(Color.primary.opacity(0.1), in: Capsule())
                 .padding(.bottom, 10)
             Text("أول مرة بس — بعدها يفتح على طول").font(.footnote).foregroundStyle(Theme.muted).padding(.bottom, 24)
         }
@@ -104,7 +104,7 @@ struct UpdatePopup: View {
                 Button { model.updPopup = false } label: {
                     Text(model.updating ? "إخفاء" : "تم").font(.subheadline.weight(.semibold))
                         .frame(maxWidth: .infinity).frame(height: 42)
-                        .background(.white.opacity(0.1), in: Capsule())
+                        .background(Color.primary.opacity(0.1), in: Capsule())
                 }
                 .buttonStyle(.plain)
             }
@@ -114,6 +114,6 @@ struct UpdatePopup: View {
             .padding(.horizontal, 16)
             .environment(\.layoutDirection, .rightToLeft)
         }
-        .foregroundStyle(.white)
+        .foregroundStyle(.primary)
     }
 }

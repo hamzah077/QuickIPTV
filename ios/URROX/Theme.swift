@@ -2,11 +2,12 @@ import SwiftUI
 import UIKit
 
 enum Theme {
-    static let bg = Color(red: 0.043, green: 0.047, blue: 0.063)          // #0B0C10
-    static let surface = Color.white.opacity(0.07)
-    static let muted = Color(red: 0.66, green: 0.68, blue: 0.72)
+    /// الخلفية: نفس خلفية النظام (أسود بالليلي، أبيض بالفاتح)
+    static let bg = Color(uiColor: .systemBackground)
+    static let surface = Color.primary.opacity(0.07)
+    static let muted = Color(uiColor: UIColor { $0.userInterfaceStyle == .dark ? UIColor(red: 0.66, green: 0.68, blue: 0.72, alpha: 1) : .secondaryLabel })
     static let red = Color(red: 0.898, green: 0.282, blue: 0.302)         // #E5484D (التقدّم والمباشر)
-    static let current = Color.white.opacity(0.12)                        // تحديد الحالي (رمادي)
+    static let current = Color.primary.opacity(0.12)                        // تحديد الحالي (رمادي)
 }
 
 // MARK: - الزجاج: Liquid Glass على iOS 26، وزجاج عادي على 17/18

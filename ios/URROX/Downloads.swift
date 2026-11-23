@@ -199,8 +199,8 @@ struct DownloadButton: View {
             ZStack {
                 switch it?.status {
                 case "running":
-                    Circle().stroke(.white.opacity(0.25), lineWidth: 3).frame(width: size * 0.5)
-                    Circle().trim(from: 0, to: it?.frac ?? 0).stroke(.white, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                    Circle().stroke(.primary.opacity(0.25), lineWidth: 3).frame(width: size * 0.5)
+                    Circle().trim(from: 0, to: it?.frac ?? 0).stroke(.primary, style: StrokeStyle(lineWidth: 3, lineCap: .round))
                         .rotationEffect(.degrees(-90)).frame(width: size * 0.5)
                     Image(systemName: "pause.fill").font(.system(size: size * 0.18))
                 case "paused": Image(systemName: "arrow.down.circle")
@@ -250,7 +250,7 @@ struct DownloadsView: View {
                             case "done": Text("جاهز · \(ByteCountFormatter.string(fromByteCount: it.total, countStyle: .file))").font(.caption).foregroundStyle(.green.opacity(0.8))
                             case "failed": Text("فشل — اضغط إعادة").font(.caption).foregroundStyle(Theme.red)
                             default:
-                                ProgressView(value: it.frac).tint(.white)
+                                ProgressView(value: it.frac).tint(Color.primary)
                                 Text(it.status == "paused" ? "موقّف · \(Int(it.frac * 100))٪" : "\(Int(it.frac * 100))٪").font(.caption).foregroundStyle(Theme.muted)
                             }
                         }

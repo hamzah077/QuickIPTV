@@ -81,7 +81,7 @@ struct WatchPanel: View {
                     Spacer()
                     Button { onDrag(10_000, true) } label: {
                         Image(systemName: "chevron.down").font(.body.weight(.semibold))          // يكبر مع حجم الخط (Dynamic Type)
-                            .foregroundStyle(.white).frame(width: 44, height: 44).contentShape(Rectangle())
+                            .foregroundStyle(.primary).frame(width: 44, height: 44).contentShape(Rectangle())
                     }
                     .accessibilityLabel("تصغير")
                     .padding(.trailing, 8)

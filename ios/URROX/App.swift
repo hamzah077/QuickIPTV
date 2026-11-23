@@ -9,12 +9,12 @@ struct URROXApp: App {
     var body: some Scene {
         WindowGroup {
             RootView()
+                .modifier(AppearanceMode())
                 .environment(model)
                 .environment(PlayerController.shared)
                 .environment(Downloads.shared)
                 .environment(\.layoutDirection, .rightToLeft)       // التطبيق بالعربي
-                .preferredColorScheme(.dark)
-                .tint(.white)
+                .tint(Color.primary)
         }
     }
 }
@@ -103,5 +103,14 @@ struct RootView: View {
         .animation(.easeOut(duration: 0.2), value: model.updPopup)
         .animation(.easeOut(duration: 0.25), value: model.updFull)
         .task(id: model.currentId) { await model.loadAll() }
+    }
+}
+
+
+/// المظهر: تلقائي (حسب الجوال — الافتراضي) · فاتح · ليلي — من الإعدادات
+struct AppearanceMode: ViewModifier {
+    @AppStorage("appearance") private var mode = "auto"
+    func body(content: Content) -> some View {
+        content.preferredColorScheme(mode == "light" ? .light : mode == "dark" ? .dark : nil)
     }
 }

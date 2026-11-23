@@ -210,8 +210,8 @@ struct LiveView: View {
     private func chip(_ t: String, _ id: String) -> some View {
         Button { cat = id } label: {
             Text(t).font(.subheadline).padding(.horizontal, 14).padding(.vertical, 8)
-                .foregroundStyle(cat == id ? .black : .white)
-                .background { if cat == id { Capsule().fill(.white) } }
+                .foregroundStyle(cat == id ? Theme.bg : Color.primary)
+                .background { if cat == id { Capsule().fill(Color.primary) } }
         }
         .buttonStyle(.plain)
         .glass()
@@ -260,7 +260,7 @@ struct VodGridView: View {
                     NavigationLink { DetailsView(vod: v) } label: {
                         VStack(alignment: .leading, spacing: 4) {
                             Poster(url: v.icon).aspectRatio(2 / 3, contentMode: .fit).posterDepth()
-                            Text(v.name).font(.caption).lineLimit(1).foregroundStyle(.white)
+                            Text(v.name).font(.caption).lineLimit(1).foregroundStyle(.primary)
                         }
                     }
                     .accessibilityElement(children: .ignore)
@@ -294,8 +294,8 @@ struct VodGridView: View {
     private func chip(_ t: String, _ id: String) -> some View {
         Button { cat = id } label: {
             Text(t).font(.subheadline).padding(.horizontal, 14).padding(.vertical, 8)
-                .foregroundStyle(cat == id ? .black : .white)
-                .background { if cat == id { Capsule().fill(.white) } }
+                .foregroundStyle(cat == id ? Theme.bg : Color.primary)
+                .background { if cat == id { Capsule().fill(Color.primary) } }
         }
         .buttonStyle(.plain)
         .glass()
@@ -375,7 +375,7 @@ struct DetailsView: View {
                         if !meta.isEmpty { Text(meta).font(.subheadline).foregroundStyle(Theme.muted) }
                         Text(vod.name).font(.title.weight(.bold))
                         actions
-                        if !plot.isEmpty { Text(plot).font(.body).foregroundStyle(.white.opacity(0.85)).frame(maxWidth: 680, alignment: .leading) }   // الآيباد: عرض قراءة مريح
+                        if !plot.isEmpty { Text(plot).font(.body).foregroundStyle(.primary.opacity(0.85)).frame(maxWidth: 680, alignment: .leading) }   // الآيباد: عرض قراءة مريح
                         if vod.isSeries { episodes }
                     }
                     .padding(.horizontal, 16)
@@ -409,7 +409,7 @@ struct DetailsView: View {
             } label: {
                 Label(primaryTitle, systemImage: "play.fill").font(.headline)
                     .frame(maxWidth: .infinity).frame(height: 50)
-                    .foregroundStyle(.black)
+                    .foregroundStyle(Theme.bg)
             }
             .buttonStyle(PressGray())
             .sensoryFeedback(.impact(weight: .light), trigger: playTaps)      // تحس إن الضغطة وصلت
@@ -433,8 +433,8 @@ struct DetailsView: View {
                     ForEach(seasons.keys.sorted(), id: \.self) { s in
                         Button { season = s } label: {
                             Text("الموسم \(s)").padding(.horizontal, 16).padding(.vertical, 8)
-                                .foregroundStyle(season == s ? .black : .white)
-                                .background { if season == s { Capsule().fill(.white) } }
+                                .foregroundStyle(season == s ? Theme.bg : Color.primary)
+                                .background { if season == s { Capsule().fill(Color.primary) } }
                         }.buttonStyle(.plain).glass()
                         .accessibilityAddTraits(season == s ? .isSelected : [])
                     }
@@ -461,7 +461,7 @@ struct DetailsView: View {
                 }
                 .frame(width: 124, height: 70)      // خط التقدّم ما يوسّع الصورة (كان يزحزحها ويطلع برّاها)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("\(e.num). \(e.title.isEmpty ? "الحلقة \(e.num)" : e.title)").font(.subheadline).lineLimit(2).foregroundStyle(.white)
+                    Text("\(e.num). \(e.title.isEmpty ? "الحلقة \(e.num)" : e.title)").font(.subheadline).lineLimit(2).foregroundStyle(.primary)
                     Text(playing ? "▶ تعرض الآن" : current ? "آخر حلقة شاهدتها" : watched ? "✓ شاهدتها" : e.duration)
                         .font(.caption.monospacedDigit()).foregroundStyle(watched && !current ? Color.green.opacity(0.8) : Theme.muted)
                 }
@@ -470,7 +470,7 @@ struct DetailsView: View {
             }
             .padding(8)
             .background(current ? Theme.current : .clear, in: RoundedRectangle(cornerRadius: 12, style: .continuous))     // رمادي خفيف
-            .overlay { if current { RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.white.opacity(0.2), lineWidth: 1) } }
+            .overlay { if current { RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.primary.opacity(0.2), lineWidth: 1) } }
         }
         .buttonStyle(.plain)
     }
@@ -716,11 +716,11 @@ struct TopBar: ViewModifier {
                     .accessibilityAddTraits(.isHeader)
             }
         }
-        .foregroundStyle(.white)
+        .foregroundStyle(.primary)
         .padding(.horizontal, 16)
         .padding(.top, 2)
         .padding(.bottom, 6)
-        .background(Theme.bg.ignoresSafeArea(edges: .top))
+        .background(Theme.bg.ignoresSafeArea(edges: .top))      // نفس خلفية الصفحات بالضبط (ليلي وفاتح)
     }
 
     private var capsule: some View {
@@ -742,7 +742,7 @@ struct TopBar: ViewModifier {
                         .buttonStyle(.plain)
                         .accessibilityLabel("مسح البحث")
                     }
-                    Rectangle().fill(.white.opacity(0.2)).frame(width: 1, height: 26)
+                    Rectangle().fill(.primary.opacity(0.2)).frame(width: 1, height: 26)
                     capIcon("xmark", "إغلاق البحث") { toggle() }
                 }
                 .padding(.leading, 16).padding(.trailing, 4)
@@ -853,6 +853,7 @@ struct HistoryDestination: View {
 
 struct SettingsView: View {
     @Environment(AppModel.self) private var model
+    @AppStorage("appearance") private var appearance = "auto"
     @State private var adding = false
     /// مفتوحة كنافذة من تحت (الجوال): نافذة التحديث لازم تطلع داخلها عشان تبان فوقها
     var inSheet = false
@@ -888,6 +889,13 @@ struct SettingsView: View {
                     Text("كل شهر").tag(30)
                 } label: { Label("التحديث التلقائي للقوائم", systemImage: "clock.arrow.2.circlepath") }
             }
+            SwiftUI.Section {
+                Picker(selection: $appearance) {
+                    Text("تلقائي").tag("auto")
+                    Text("فاتح").tag("light")
+                    Text("ليلي").tag("dark")
+                } label: { Label("المظهر", systemImage: "circle.lefthalf.filled") }
+            }
             SwiftUI.Section { LabeledContent("URROX PLAYER", value: Self.version) }
         }
         .scrollContentBackground(.hidden)
@@ -904,7 +912,7 @@ struct SettingsView: View {
 struct PressGray: ButtonStyle {
     func makeBody(configuration c: Configuration) -> some View {
         c.label
-            .background(c.isPressed ? Color(white: 0.7) : .white, in: Capsule())
+            .background(c.isPressed ? Color.primary.opacity(0.7) : Color.primary, in: Capsule())
             .contentShape(Capsule())
             .transaction { $0.animation = nil }
     }
