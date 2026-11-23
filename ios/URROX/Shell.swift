@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 enum AppSection: String, CaseIterable, Identifiable {
     case home, live, movies, series, downloads, history, settings
@@ -55,7 +56,7 @@ struct PhoneShell: View {
             if panelOn {
                 PanelHost(tab: $tab)
                     // تطلع من تحت، وتختفي (إغلاق/رجوع للمباشر) بتصغير خفيف وتلاشي — نفس الأندرويد
-                    .transition(.asymmetric(insertion: .move(edge: .bottom), removal: .scale(scale: 0.85).combined(with: .opacity)))
+                    .transition(reduceMotion ? .opacity : .asymmetric(insertion: .move(edge: .bottom), removal: .scale(scale: 0.85).combined(with: .opacity)))
                     .zIndex(5)
             }
             if pc.fullscreen { FullscreenPlayer().zIndex(10) }
@@ -65,6 +66,7 @@ struct PhoneShell: View {
     }
 
     @Environment(\.verticalSizeClass) private var vsize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @ViewBuilder private var tabs: some View {
         if #available(iOS 18.0, *) {
@@ -84,6 +86,11 @@ struct PhoneShell: View {
     }
 }
 
+extension Animation {
+    /// "تقليل الحركة" مفعّل: تلاشي قصير بدل النابض/الانزلاق
+    static func calm(_ a: Animation) -> Animation { PanelHost.reduceMotion ? .easeInOut(duration: 0.2) : a }
+}
+
 // MARK: - طبقة صفحة التشغيل والنافذة العائمة (حالة السحب هنا لحالها)
 
 struct PanelHost: View {
@@ -95,9 +102,13 @@ struct PanelHost: View {
     @State private var miniHidden = 0
 
     /// نابض ناعم: يبدأ بسرعة إصبعك ويهدى بدون ارتداد مزعج
-    static let spring = Animation.interpolatingSpring(mass: 1, stiffness: 210, damping: 27)
+    /// "تقليل الحركة" مفعّل في الجهاز: تلاشي قصير هادي بدل النابض والانزلاق
+    static var reduceMotion: Bool { UIAccessibility.isReduceMotionEnabled }
+    static var spring: Animation { reduceMotion ? .easeInOut(duration: 0.2) : .interpolatingSpring(mass: 1, stiffness: 210, damping: 27) }
     /// نفس منحنى الأندرويد بالضبط: يبدأ بسرعة ويهدى بالتدريج، والمدة حسب المسافة الباقية
-    static func ease(_ dist: CGFloat) -> Animation { .timingCurve(0.2, 0, 0, 1, duration: 0.3 + 0.18 * Double(min(1, abs(dist)))) }
+    static func ease(_ dist: CGFloat) -> Animation {
+        reduceMotion ? .easeInOut(duration: 0.2) : .timingCurve(0.2, 0, 0, 1, duration: 0.3 + 0.18 * Double(min(1, abs(dist))))
+    }
 
     var body: some View {
         GeometryReader { g in
@@ -269,12 +280,14 @@ struct HomeView: View {
     @Environment(AppModel.self) private var model
     @Environment(PlayerController.self) private var pc
     @State private var q = ""
+    @State private var fq = ""            // بعد ما توقف كتابة (أخف مع القوائم الكبيرة)
 
     var body: some View {
         Group {
-            if SearchNorm.tokens(q).isEmpty { home } else { SearchResults(q: q) }     // البحث في الرئيسية شامل
+            if SearchNorm.tokens(fq).isEmpty { home } else { SearchResults(q: fq) }     // البحث في الرئيسية شامل
         }
         .modifier(TopBar(query: $q, prompt: "ابحث في كل شي: قنوات، أفلام، مسلسلات", home: true))
+        .debounced(q, into: $fq)
     }
 
     private var home: some View {
@@ -301,6 +314,7 @@ struct HomeView: View {
                                 NavigationLink { LiveView(start: ch) } label: {
                                     Poster(url: ch.icon, radius: 32, contentMode: .fit).frame(width: 64, height: 64).padding(6).glass(40)
                                 }
+                                .accessibilityLabel(ch.name)
                             }
                         }.padding(.horizontal, 16)
                     }
@@ -310,6 +324,11 @@ struct HomeView: View {
                 posterRow("أحدث المسلسلات", Array(model.seriesList.prefix(20)))
                 let favV = model.favoriteVods
                 posterRow("مفضلتك", favV)
+                if !model.loading && model.error == nil && model.movies.isEmpty && model.seriesList.isEmpty && model.channels.isEmpty {
+                    ContentUnavailableView("ما فيه محتوى للحين", systemImage: "play.rectangle",
+                                           description: Text("اسحب الصفحة لتحت عشان تحدّث القوائم"))
+                        .padding(.top, 40)
+                }
             }
             .padding(.bottom, 90)
         }
@@ -323,7 +342,8 @@ struct HomeView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: 10) {
                     ForEach(items) { v in
-                        NavigationLink { DetailsView(vod: v) } label: { Poster(url: v.icon).frame(width: 110, height: 162) }
+                        NavigationLink { DetailsView(vod: v) } label: { Poster(url: v.icon).frame(width: 110, height: 162).posterDepth() }
+                            .accessibilityLabel(v.name)
                     }
                 }.padding(.horizontal, 16)
             }
@@ -336,25 +356,20 @@ struct ContinueCard: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        NavigationLink {
-            if h.type == "episode" {
-                DetailsView(vod: Vod(id: h.seriesId, name: h.title, icon: h.image, categoryId: "", ext: "", rating: "", isSeries: true, added: 0), autoplayKey: h.key)
-            } else {
-                DetailsView(vod: Vod(id: String(h.key.dropFirst(6)), name: h.title, icon: h.image, categoryId: "",
-                                     ext: (h.url as NSString).pathExtension, rating: "", isSeries: false, added: 0), autoplayKey: h.key)
-            }
-        } label: {
+        NavigationLink { HistoryDestination(h: h) } label: {
             VStack(alignment: .leading, spacing: 4) {
                 ZStack(alignment: .bottom) {
-                    Poster(url: h.image, radius: 14).frame(width: 170, height: 96)
+                    Poster(url: h.image, radius: 14).frame(width: 170, height: 96).posterDepth()
                     if h.dur > 0 { ProgressLine(value: h.pos / h.dur, height: 4).clipShape(Capsule()).padding(.horizontal, 6).padding(.bottom, 6) }
                 }
                 Text(h.title).font(.subheadline).lineLimit(1)
-                Text(sub).font(.caption).foregroundStyle(Theme.muted).lineLimit(1)
+                Text(sub).font(.caption.monospacedDigit()).foregroundStyle(Theme.muted).lineLimit(1)
             }
             .frame(width: 170)
         }
         .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+        .accessibilityHint("يكمل من وين وقفت")
     }
 
     private var sub: String {

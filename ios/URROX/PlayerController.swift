@@ -271,7 +271,7 @@ final class PlayerController {
     /// طلعت من صفحة التشغيل وهو شغّال: الجوال = يكمل في المشغّل الصغير، الآيباد = يوقف
     func leftHost() {
         guard req != nil, !fullscreen, !PiP.shared.active, !mini else { return }
-        if Self.phone { withAnimation(.spring(duration: 0.35, bounce: 0.05)) { mini = true } } else { stop() }
+        if Self.phone { withAnimation(.calm(.spring(duration: 0.35, bounce: 0.05))) { mini = true } } else { stop() }
     }
 
     func stop() {

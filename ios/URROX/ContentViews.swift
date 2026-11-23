@@ -14,8 +14,37 @@ enum SearchNorm {
         q.split(whereSeparator: { !$0.isLetter && !$0.isNumber }).map { norm(String($0)) }.filter { !$0.isEmpty }
     }
     static func matches(_ name: String, _ t: [String]) -> Bool {
-        let n = norm(name); return t.allSatisfy { n.contains($0) }
+        let n = cache.get(name); return t.allSatisfy { n.contains($0) }
     }
+    /// الأسماء المطبّعة تنحفظ مرة وحدة (قبل: كل حرف تكتبه يعيد تطبيع آلاف الأسماء = تقطيع في الكتابة)
+    static let cache = NormCache()
+}
+
+final class NormCache: @unchecked Sendable {
+    private var map: [String: String] = [:]
+    private let lock = NSLock()
+    func get(_ name: String) -> String {
+        lock.lock(); defer { lock.unlock() }
+        if let n = map[name] { return n }
+        if map.count > 120_000 { map.removeAll(keepingCapacity: true) }
+        let n = SearchNorm.norm(name); map[name] = n; return n
+    }
+}
+
+/// البحث ينتظر لين توقف كتابة شوي (180ms) — المسح فوري
+struct Debounced: ViewModifier {
+    let text: String
+    @Binding var out: String
+    func body(content: Content) -> some View {
+        content.task(id: text) {
+            if text.isEmpty { out = ""; return }
+            try? await Task.sleep(for: .milliseconds(180))
+            if !Task.isCancelled { out = text }
+        }
+    }
+}
+extension View {
+    func debounced(_ text: String, into out: Binding<String>) -> some View { modifier(Debounced(text: text, out: out)) }
 }
 
 // MARK: - المباشر: شاشة صغيرة فوق + التصنيفات + القنوات
@@ -28,12 +57,13 @@ struct LiveView: View {
     var start: Channel? = nil
     @State private var cat: String = ""
     @State private var q = ""
+    @State private var fq = ""                // نص البحث بعد ما توقف كتابة
     @State private var current: Channel?
     @State private var epg: [EpgItem] = []
 
     private var visible: [Channel] {
         let inCat = cat.isEmpty ? model.channels : model.channels.filter { $0.categoryId == cat }
-        let t = SearchNorm.tokens(q)
+        let t = SearchNorm.tokens(fq)
         return t.isEmpty ? inCat : inCat.filter { SearchNorm.matches($0.name, t) }
     }
 
@@ -61,7 +91,7 @@ struct LiveView: View {
                 }
                 // القناة راحت للنافذة العائمة: الشاشة تختفي بحركة والقنوات تطلع لفوق بنعومة (بدل ما تقفز)
                 .onChange(of: pc.mini && pc.isLive) { _, v in
-                    withAnimation(.timingCurve(0.2, 0, 0, 1, duration: 0.32)) { screenHidden = v }
+                    withAnimation(.calm(.timingCurve(0.2, 0, 0, 1, duration: 0.32))) { screenHidden = v }
                 }
                 .onAppear { screenHidden = pc.mini && pc.isLive }
             }
@@ -69,6 +99,7 @@ struct LiveView: View {
         .navigationTitle("المباشر")
         .navigationBarTitleDisplayMode(.inline)
         .modifier(TopBar(query: $q, prompt: "ابحث في القنوات"))
+        .debounced(q, into: $fq)
         .onAppear {
             pc.hostAppear("live")
             if let s = start, current == nil {
@@ -76,7 +107,7 @@ struct LiveView: View {
             }
             if pc.isLive {
                 if current == nil { current = model.channels.first { "live:\($0.id)" == pc.req?.key } }
-                if pc.mini { withAnimation(.spring(duration: 0.35, bounce: 0.05)) { pc.mini = false } }   // رجعت للمباشر: يكبر هنا
+                if pc.mini { withAnimation(.calm(.spring(duration: 0.35, bounce: 0.05))) { pc.mini = false } }   // رجعت للمباشر: يكبر هنا
             }
         }
         // طلعت من صفحة المباشر: الجوال = يكمل في المشغّل الصغير تحت، الآيباد = يوقف
@@ -139,9 +170,19 @@ struct LiveView: View {
                     }
                 }
                 .listRowBackground(current?.id == ch.id ? Theme.current : Color.clear)
+                .accessibilityAddTraits(current?.id == ch.id ? .isSelected : [])
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
+            .overlay {
+                if visible.isEmpty {
+                    if !fq.isEmpty { ContentUnavailableView.search(text: fq) }
+                    else if !model.loading {
+                        ContentUnavailableView("ما فيه قنوات", systemImage: "dot.radiowaves.left.and.right",
+                                               description: Text(cat.isEmpty ? "حدّث القوائم من الإعدادات" : "هذا التصنيف فاضي"))
+                    }
+                }
+            }
         }
     }
 
@@ -153,6 +194,7 @@ struct LiveView: View {
         }
         .buttonStyle(.plain)
         .glass()
+        .accessibilityAddTraits(cat == id ? .isSelected : [])
     }
 
     private func play(_ ch: Channel) {
@@ -175,11 +217,12 @@ struct VodGridView: View {
     let series: Bool
     @State private var cat = ""
     @State private var q = ""
+    @State private var fq = ""
 
     private var items: [Vod] {
         let all = series ? model.seriesList : model.movies
         let inCat = cat.isEmpty ? all : all.filter { $0.categoryId == cat }
-        let t = SearchNorm.tokens(q)                                    // البحث هنا خاص بالقسم (وبالتصنيف المختار)
+        let t = SearchNorm.tokens(fq)                                   // البحث هنا خاص بالقسم (وبالتصنيف المختار)
         return t.isEmpty ? inCat : inCat.filter { SearchNorm.matches($0.name, t) }
     }
 
@@ -195,20 +238,31 @@ struct VodGridView: View {
                 ForEach(items) { v in
                     NavigationLink { DetailsView(vod: v) } label: {
                         VStack(alignment: .leading, spacing: 4) {
-                            Poster(url: v.icon).aspectRatio(2 / 3, contentMode: .fit)
+                            Poster(url: v.icon).aspectRatio(2 / 3, contentMode: .fit).posterDepth()
                             Text(v.name).font(.caption).lineLimit(1).foregroundStyle(.white)
                         }
                     }
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(v.name)
+                    .accessibilityAddTraits(.isButton)
                 }
             }
             .padding(16)
             .padding(.bottom, 80)
         }
         .overlay {
-            if items.isEmpty && !q.isEmpty { Text("ما فيه نتايج في هذا القسم").foregroundStyle(Theme.muted) }
+            if items.isEmpty {
+                if !fq.isEmpty {
+                    ContentUnavailableView.search(text: fq)
+                } else if !model.loading {
+                    ContentUnavailableView(series ? "ما فيه مسلسلات" : "ما فيه أفلام", systemImage: series ? "tv" : "film",
+                                           description: Text(cat.isEmpty ? "اسحب الرئيسية لتحت عشان تحدّث القوائم" : "هذا التصنيف فاضي"))
+                }
+            }
         }
         .navigationTitle(series ? "المسلسلات" : "الأفلام")
         .modifier(TopBar(query: $q, prompt: series ? "ابحث في المسلسلات" : "ابحث في الأفلام"))
+        .debounced(q, into: $fq)
     }
 
     private func chip(_ t: String, _ id: String) -> some View {
@@ -219,6 +273,7 @@ struct VodGridView: View {
         }
         .buttonStyle(.plain)
         .glass()
+        .accessibilityAddTraits(cat == id ? .isSelected : [])
     }
 }
 
@@ -294,7 +349,7 @@ struct DetailsView: View {
                         if !meta.isEmpty { Text(meta).font(.subheadline).foregroundStyle(Theme.muted) }
                         Text(vod.name).font(.title.weight(.bold))
                         actions
-                        if !plot.isEmpty { Text(plot).font(.body).foregroundStyle(.white.opacity(0.85)) }
+                        if !plot.isEmpty { Text(plot).font(.body).foregroundStyle(.white.opacity(0.85)).frame(maxWidth: 680, alignment: .leading) }   // الآيباد: عرض قراءة مريح
                         if vod.isSeries { episodes }
                     }
                     .padding(.horizontal, 16)
@@ -355,6 +410,7 @@ struct DetailsView: View {
                                 .foregroundStyle(season == s ? .black : .white)
                                 .background { if season == s { Capsule().fill(.white) } }
                         }.buttonStyle(.plain).glass()
+                        .accessibilityAddTraits(season == s ? .isSelected : [])
                     }
                 }
             }
@@ -380,7 +436,7 @@ struct DetailsView: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("\(e.num). \(e.title.isEmpty ? "الحلقة \(e.num)" : e.title)").font(.subheadline).lineLimit(2).foregroundStyle(.white)
                     Text(playing ? "▶ تعرض الآن" : current ? "آخر حلقة شاهدتها" : watched ? "✓ شاهدتها" : e.duration)
-                        .font(.caption).foregroundStyle(watched && !current ? Color.green.opacity(0.8) : Theme.muted)
+                        .font(.caption.monospacedDigit()).foregroundStyle(watched && !current ? Color.green.opacity(0.8) : Theme.muted)
                 }
                 Spacer()
                 DownloadButton(req: { episodeRequest(e) }, key: k, size: 42)
@@ -483,10 +539,12 @@ struct DetailsView: View {
 
 struct SearchView: View {
     @State private var q = ""
+    @State private var fq = ""
 
     var body: some View {
-        SearchResults(q: q)
+        SearchResults(q: fq)
             .searchable(text: $q, prompt: "بحث")
+            .debounced(q, into: $fq)
             .navigationTitle("بحث")
     }
 }
@@ -506,7 +564,7 @@ struct SearchResults: View {
                 let mv = model.movies.filter { SearchNorm.matches($0.name, t) }.prefix(60)
                 let sr = model.seriesList.filter { SearchNorm.matches($0.name, t) }.prefix(60)
                 if ch.isEmpty && mv.isEmpty && sr.isEmpty {
-                    Text("ما فيه نتايج").foregroundStyle(Theme.muted)
+                    ContentUnavailableView.search(text: q).listRowBackground(Color.clear)
                 }
                 if !ch.isEmpty {
                     SwiftUI.Section("القنوات") {
@@ -530,7 +588,7 @@ struct SearchResults: View {
 
     private func vodRow(_ v: Vod) -> some View {
         NavigationLink { DetailsView(vod: v) } label: {
-            HStack(spacing: 10) { Poster(url: v.icon, radius: 6).frame(width: 40, height: 58); Text(v.name).lineLimit(2) }
+            HStack(spacing: 10) { Poster(url: v.icon, radius: 6).frame(width: 40, height: 58).accessibilityHidden(true); Text(v.name).lineLimit(2) }
         }
     }
 }
@@ -629,16 +687,50 @@ struct HistoryView: View {
     @Environment(AppModel.self) private var model
     var body: some View {
         List(model.displayHistory) { h in
-            HStack(spacing: 12) {
-                Poster(url: h.image, radius: 8).frame(width: 90, height: 52)
-                VStack(alignment: .leading) {
-                    Text(h.title).lineLimit(1)
-                    Text(h.sub).font(.caption).foregroundStyle(Theme.muted)
-                }
+            // الضغط يفتح العمل ويكمل من مكانك (قبل: السجل يعرض بس وما يفتح شي)
+            if h.type == "live" {
+                if let ch = model.channels.first(where: { "live:\($0.id)" == h.key }) {
+                    NavigationLink { LiveView(start: ch) } label: { row(h) }
+                } else { row(h) }
+            } else {
+                NavigationLink { HistoryDestination(h: h) } label: { row(h) }
             }
         }
         .scrollContentBackground(.hidden)
+        .overlay {
+            if model.displayHistory.isEmpty {
+                ContentUnavailableView("السجل فاضي", systemImage: "clock.arrow.circlepath",
+                                       description: Text("الأفلام والحلقات والقنوات اللي تشوفها تطلع هنا"))
+            }
+        }
         .navigationTitle("السجل")
+    }
+
+    private func row(_ h: HistoryItem) -> some View {
+        HStack(spacing: 12) {
+            ZStack(alignment: .bottom) {
+                Poster(url: h.image, radius: 8, contentMode: h.type == "live" ? .fit : .fill).frame(width: 90, height: 52)
+                if h.dur > 0, !h.finished { ProgressLine(value: h.pos / h.dur, height: 3).padding(.horizontal, 4).padding(.bottom, 3) }
+            }
+            .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(h.title).lineLimit(1)
+                if !h.sub.isEmpty { Text(h.sub).font(.caption).foregroundStyle(Theme.muted).lineLimit(1) }
+            }
+        }
+    }
+}
+
+/// صفحة العمل من السجل / متابعة المشاهدة: يفتح ويكمل من مكانك
+struct HistoryDestination: View {
+    let h: HistoryItem
+    var body: some View {
+        if h.type == "episode" {
+            DetailsView(vod: Vod(id: h.seriesId, name: h.title, icon: h.image, categoryId: "", ext: "", rating: "", isSeries: true, added: 0), autoplayKey: h.key)
+        } else {
+            DetailsView(vod: Vod(id: String(h.key.dropFirst(6)), name: h.title, icon: h.image, categoryId: "",
+                                 ext: (h.url as NSString).pathExtension, rating: "", isSeries: false, added: 0), autoplayKey: h.key)
+        }
     }
 }
 
@@ -647,6 +739,13 @@ struct SettingsView: View {
     @State private var adding = false
     /// مفتوحة كنافذة من تحت (الجوال): نافذة التحديث لازم تطلع داخلها عشان تبان فوقها
     var inSheet = false
+    /// رقم الإصدار من التطبيق نفسه (قبل: "1.0" ثابت)
+    static let version: String = {
+        let i = Bundle.main.infoDictionary
+        let v = i?["CFBundleShortVersionString"] as? String ?? "1.0"
+        let b = i?["CFBundleVersion"] as? String ?? ""
+        return b.isEmpty || b == v ? v : "\(v) (\(b))"
+    }()
 
     var body: some View {
         List {
@@ -672,7 +771,7 @@ struct SettingsView: View {
                     Text("كل شهر").tag(30)
                 } label: { Label("التحديث التلقائي للقوائم", systemImage: "clock.arrow.2.circlepath") }
             }
-            SwiftUI.Section { LabeledContent("URROX PLAYER", value: "1.0") }
+            SwiftUI.Section { LabeledContent("URROX PLAYER", value: Self.version) }
         }
         .scrollContentBackground(.hidden)
         .navigationTitle("الإعدادات")

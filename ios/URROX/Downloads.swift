@@ -212,6 +212,17 @@ struct DownloadButton: View {
             .frame(width: size, height: size)
         }
         .buttonStyle(.plain)
+        // قارئ الشاشة: حالة التحميل بالعربي (قبل: يقرا اسم الأيقونة بالإنجليزي)
+        .accessibilityLabel(Self.label(it?.status, frac: it?.frac ?? 0))
+    }
+
+    static func label(_ status: String?, frac: Double) -> String {
+        switch status {
+        case "running": return "يحمّل \(Int(frac * 100))٪، اضغط للإيقاف"
+        case "paused": return "التحميل موقف، اضغط للإكمال"
+        case "done": return "محمّل"
+        default: return "تحميل"
+        }
     }
 }
 
@@ -224,7 +235,9 @@ struct DownloadsView: View {
     var body: some View {
         List {
             if dl.items.isEmpty {
-                Text("ما فيه تحميلات. اضغط زر التحميل في صفحة أي فيلم أو حلقة.").foregroundStyle(Theme.muted)
+                ContentUnavailableView("ما فيه تحميلات", systemImage: "arrow.down.circle",
+                                       description: Text("اضغط زر التحميل في صفحة أي فيلم أو حلقة، وتقدر تشوفه بدون نت"))
+                    .listRowBackground(Color.clear)
             }
             ForEach(dl.items) { it in
                 Button { play(it) } label: {

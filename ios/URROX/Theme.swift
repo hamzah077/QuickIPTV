@@ -72,16 +72,22 @@ struct Poster: View {
 
 /// عنوان قسم + "الكل"
 struct SectionHeader: View {
+    // (العنوان أثقل من النص عشان الأقسام تنفصل بالعين)
     let title: String
     var more: (() -> Void)? = nil
     var body: some View {
         HStack {
-            Text(title).font(.title3.weight(.semibold))
+            Text(title).font(.title3.weight(.bold)).accessibilityAddTraits(.isHeader)
             Spacer()
-            if let more { Button("الكل", action: more).font(.subheadline).foregroundStyle(Theme.muted) }
+            if let more { Button("الكل", action: more).font(.subheadline.weight(.medium)).foregroundStyle(Theme.muted) }
         }
         .padding(.horizontal, 16)
     }
+}
+
+extension View {
+    /// ظل خفيف تحت البوستر: يرفعه شوي عن الخلفية الداكنة
+    func posterDepth() -> some View { shadow(color: .black.opacity(0.45), radius: 6, y: 3) }
 }
 
 /// خط التقدّم الأحمر

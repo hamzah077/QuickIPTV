@@ -192,7 +192,7 @@ struct WatchPanel: View {
                 let startX = hiddenSide == 0 ? base.x : (hiddenSide < 0 ? -fw - 6 : W + 6)
                 let x = startX + d.translation.width, y = base.y + d.translation.height
                 let px = startX + d.predictedEndTranslation.width
-                withAnimation(.timingCurve(0.2, 0, 0, 1, duration: 0.34)) {        // نفس الأندرويد
+                withAnimation(.calm(.timingCurve(0.2, 0, 0, 1, duration: 0.34))) {        // نفس الأندرويد
                     move = .zero
                     if x < -fw * 0.35 || px < -fw * 0.6 { hide(-1) }
                     else if x > W - fw * 0.65 || px > W - fw * 0.4 { hide(1) }
@@ -212,7 +212,7 @@ struct WatchPanel: View {
     }
 
     private var handle: some View {
-        Button { withAnimation(.timingCurve(0.2, 0, 0, 1, duration: 0.34)) { unhide() } } label: {
+        Button { withAnimation(.calm(.timingCurve(0.2, 0, 0, 1, duration: 0.34))) { unhide() } } label: {
             Image(systemName: hiddenSide < 0 ? "chevron.right" : "chevron.left")
                 .font(.system(size: 15, weight: .bold)).foregroundStyle(.white)
                 .frame(width: 24, height: 60)

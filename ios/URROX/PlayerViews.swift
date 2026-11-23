@@ -81,6 +81,7 @@ struct PlayerOverlay: View {
     @State private var tapSide: Int = 0      // -1 يسار، 1 يمين
     @State private var tapAccum = 0
     @State private var tapReset: Task<Void, Never>?
+    @State private var lastTap: (side: Int, at: Date, wasVisible: Bool)?    // نكشف الضغطتين بأنفسنا
     @State private var showSettings = false
     /// القوائم (نفس الأندرويد): الإعدادات ← السرعة / الصوت / الترجمة، وزر الترجمة لحاله
     enum PMenu: Identifiable { case main, speed, audio, subs; var id: Self { self } }
@@ -131,7 +132,7 @@ struct PlayerOverlay: View {
                         pc.autoFullscreen = false
                         pc.fullscreen = true                         // نفس حركة زر التكبير (يكبر ويلف)
                     } else {
-                        withAnimation(.spring(duration: 0.35, bounce: 0.3)) { pc.fsPull = 0 }
+                        withAnimation(.calm(.spring(duration: 0.35, bounce: 0.3))) { pc.fsPull = 0 }
                     }
                     return
                 }
@@ -290,11 +291,21 @@ struct PlayerOverlay: View {
     // MARK: عناصر صغيرة
 
     private func tapZone(_ side: Int) -> some View {
+        // ضغطة وحدة بس: الأزرار تطلع على طول (قبل: النظام ينتظر ثلث ثانية يتأكد إنها مو ضغطتين)
+        // ضغطة ثانية سريعة بنفس الجهة = تقديم/تأخير 10 ثواني، والأزرار ترجع مثل ما كانت
         Color.clear.contentShape(Rectangle())
-            .onTapGesture(count: 2) { doubleTap(side) }
-            .onTapGesture(count: 1) {
+            .onTapGesture {
                 if showChannels { showChannels = false; return }                   // قائمة القنوات مفتوحة: ضغطة برا = تقفلها
                 if tapSide == side && tapAccum > 0 { doubleTap(side); return }      // ضغطات ورا بعض = +10 كل وحدة
+                let now = Date()
+                if !pc.isLive, let l = lastTap, l.side == side, now.timeIntervalSince(l.at) < 0.3 {
+                    lastTap = nil
+                    visible = l.wasVisible                                          // نرجّع الأزرار لحالتها قبل الضغطة الأولى
+                    if visible { scheduleHide() }
+                    doubleTap(side)
+                    return
+                }
+                lastTap = (side, now, visible)
                 if pc.showNextUp { pc.cancelAutoNext() }
                 visible.toggle()
                 if visible { scheduleHide() }
@@ -599,12 +610,12 @@ struct FullscreenPlayer: View {
             if UIDevice.current.userInterfaceIdiom == .phone && !pc.autoFullscreen { Orientation.lock(.portrait) }
             // جاي من السحب لفوق: الحركة يقودها إصبعك (shown يصير جاهز بدون حركة)
             if pc.fsDrag != nil { shown = true }
-            else { withAnimation(.spring(duration: 0.5, bounce: 0.06)) { shown = true } }
+            else { withAnimation(.calm(.spring(duration: 0.5, bounce: 0.06))) { shown = true } }
         }
     }
 
     private func exit() {
-        withAnimation(.spring(duration: 0.45, bounce: 0.04)) { shown = false } completion: {
+        withAnimation(.calm(.spring(duration: 0.45, bounce: 0.04))) { shown = false } completion: {
             pc.fullscreen = false
             pc.autoFullscreen = false
             // ما فيه صفحة تعرضه (مثل التشغيل من التحميلات)؟ يكمل في المشغّل الصغير تحت
