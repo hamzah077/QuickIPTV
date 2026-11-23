@@ -581,8 +581,8 @@ class MainActivity : Activity() {
             setEnterFadeDuration(120); setExitFadeDuration(100)
             // ليكود جلاس (iOS 27): المحدد زجاج ساطع بحافة لامعة (مو أبيض)، والضغط يخففه لحظة
             // ليكود جلاس: مثل قوائم الآيفون — المحدد رمادي غامق شفاف (بدون أبيض)، والضغط أغمق لحظة
-            if (Glass.on) addState(intArrayOf(android.R.attr.state_pressed), rounded(0x99505058.toInt(), dpf(24f)))
-            addState(intArrayOf(android.R.attr.state_focused), if (Glass.on) rounded(0x8C5A5A64.toInt(), dpf(24f)) else rounded(C.FOCUS, dpf(24f)))
+            if (Glass.on) addState(intArrayOf(android.R.attr.state_pressed), rounded(0x2EFFFFFF, dpf(24f)))
+            addState(intArrayOf(android.R.attr.state_focused), if (Glass.on) rounded(0x47FFFFFF, dpf(24f)) else rounded(C.FOCUS, dpf(24f)))      // التنقل: أبيض شفاف خفيف
             // ليكود جلاس: القسم اللي أنت فيه كبسولة زجاج أوضح (بدل الكلام الأحمر)
             if (Glass.on) addState(intArrayOf(android.R.attr.state_selected), rounded(0x4D5A5A64, dpf(24f)))       // القسم الحالي: رمادي أخف
             addState(intArrayOf(), rounded(android.graphics.Color.TRANSPARENT, dpf(24f)))
