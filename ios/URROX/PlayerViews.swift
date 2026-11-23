@@ -14,8 +14,11 @@ struct VideoSurface: View {
     @Environment(PlayerController.self) private var pc
     var active: Bool = true
     var body: some View {
-        if pc.engine == .vlc { HostedSurface(view: pc.vlcView, active: active) }
-        else { HostedSurface(view: pc.avView, active: active) }
+        switch pc.engine {
+        case .vlc: HostedSurface(view: pc.vlcView, active: active)
+        case .mpv: HostedSurface(view: pc.mpvView, active: active)
+        case .av: HostedSurface(view: pc.avView, active: active)
+        }
     }
 }
 

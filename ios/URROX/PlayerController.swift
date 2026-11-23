@@ -5,7 +5,7 @@ import SwiftUI
 import VLCKitSPM
 
 /// المحرّك: مشغّل آبل (HLS/MP4 — يدعم صورة داخل صورة و AirPlay) أو VLC (كل الصيغ الثانية)
-enum Engine { case av, vlc }
+enum Engine { case av, vlc, mpv }
 
 /// مشغّل واحد مشترك: الشاشة الصغيرة وملء الشاشة يعرضون نفس المشغّل = التكبير والتصغير بدون إعادة تحميل
 @MainActor
@@ -22,6 +22,14 @@ final class PlayerController {
     /// شاشة مشغّل آبل (وحدة، تنتقل بين الشاشة الصغيرة وملء الشاشة)
     let avView: PlayerLayerView = { let v = PlayerLayerView(); v.backgroundColor = .black; v.isUserInteractionEnabled = false; return v }()
     private(set) var engine: Engine = .av
+    /// MPV (تجريبي): ينشأ أول مرة تختاره بس (مكتبته كبيرة)
+    @ObservationIgnored private var mpvEngine: MPVEngine?
+    @ObservationIgnored private var mpvTimer: Timer?
+    @ObservationIgnored private var lastMpvT: Double = -1
+    var mpvView: UIView {
+        if mpvEngine == nil { mpvEngine = MPVEngine() }
+        return mpvEngine!.view
+    }
     private(set) var req: PlayRequest?
     var queue: SeriesQueue?                 // حلقات المسلسل (السابقة/التالية)
     var channels: [Channel] = []            // قنوات التصنيف (المباشر: التالية/السابقة)
@@ -131,6 +139,8 @@ final class PlayerController {
         }
         startAt = Date()
         // الصيغة ما يشغّلها مشغّل آبل، أو جرّبناه قبل مع هالسيرفر وما مشى = VLC على طول
+        if Self.mpvMode, mpvReady { playMPV(r); return }
+        stopMPV()
         if Self.vlcAlways || Self.engineFor(r.url) == .vlc || (!r.url.isFileURL && Self.memo(r) == .vlc) { playVLC(r); return }
         stopVLC()
         engine = .av
@@ -197,6 +207,7 @@ final class PlayerController {
 
     private func playVLC(_ r: PlayRequest) {
         avStartTask?.cancel()
+        stopMPV()
         stopVLC()
         engine = .vlc
         clearTracks()
@@ -288,6 +299,68 @@ final class PlayerController {
     /// محرك التشغيل من الإعدادات: "auto" (الافتراضي) = مشغّل آبل وبعده VLC ويتذكر اللي نجح، "vlc" = VLC لكل شي
     /// (قياس الأداء: VLC يرسم الفيديو بطريقة أثقل على الجوال من مشغّل آبل = لاق بالواجهة وهو شغّال)
     static var vlcAlways: Bool { (UserDefaults.standard.string(forKey: "engineMode") ?? "auto") == "vlc" }
+    /// MPV (تجريبي) لكل شي
+    static var mpvMode: Bool { UserDefaults.standard.string(forKey: "engineMode") == "mpv" }
+
+    // MARK: MPV
+
+    /// MPV جاهز؟ (لو ما قدر يشتغل على الجهاز نرجع للمشغّلات الثانية)
+    private var mpvReady: Bool {
+        if mpvEngine == nil { mpvEngine = MPVEngine() }
+        guard let m = mpvEngine, m.available else { return false }
+        m.onEnd = { [weak self] in self?.ended() }
+        m.onError = { [weak self] in
+            guard let self, self.engine == .mpv, var r = self.req else { return }
+            // MPV ما قدر عليه؟ نجرّب VLC بدال ما نوقف
+            if r.type == "live", r.url.pathExtension.lowercased() == "m3u8" {
+                r.url = r.url.deletingPathExtension().appendingPathExtension("ts"); self.req = r
+            }
+            self.playVLC(r)
+        }
+        return true
+    }
+
+    private func playMPV(_ r: PlayRequest) {
+        guard let m = mpvEngine else { return }
+        avStartTask?.cancel()
+        stopVLC()
+        player.pause(); player.replaceCurrentItem(with: nil)
+        engine = .mpv
+        clearTracks()
+        lastMpvT = -1
+        m.load(r.url, start: r.start, live: r.type == "live")
+        if playRate != 1 { m.setSpeed(playRate) }
+        mpvTimer?.invalidate()
+        mpvTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.mpvTick() }
+        }
+    }
+
+    private func stopMPV() {
+        mpvTimer?.invalidate(); mpvTimer = nil
+        if engine == .mpv { mpvEngine?.stop() }
+    }
+
+    private func mpvTick() {
+        guard engine == .mpv, let m = mpvEngine else { return }
+        let t = m.time
+        if t > 0, seekTarget == nil, t != position { position = t }
+        let d = m.duration
+        if d > 0, d != duration { duration = d }
+        let playing = !m.paused && !m.idle
+        if playing != isPlaying { isPlaying = playing }
+        let advancing = t > lastMpvT + 0.05 && t > 0
+        let buf = !advancing && (m.buffering || t <= 0) && !m.paused
+        if buf != buffering { buffering = buf }
+        if advancing { markStarted() }
+        if t > 0 { lastMpvT = t }
+        if audioTracks.isEmpty && subTracks.isEmpty && advancing {
+            audioTracks = m.tracks("audio").map { Track(id: $0.id, name: $0.name) }
+            subTracks = m.tracks("sub").map { Track(id: $0.id, name: $0.name) }
+        }
+        if Date().timeIntervalSince(lastSave) > 10 { saveNow() }
+        checkSkips()
+    }
 
     /// عدّاد الفتح: من الضغط لين أول صورة
     @ObservationIgnored private var startAt: Date?
@@ -301,8 +374,8 @@ final class PlayerController {
         startAt = nil
         let secs = Date().timeIntervalSince(t0)
         let kind = r.type == "live" ? "مباشر" : r.type == "movie" ? "فيلم" : "حلقة"
-        Self.lastStart = String(format: "%.1f ث · %@ · %@", secs, engine == .vlc ? "VLC" : "آبل", kind)
-        if !r.url.isFileURL { Self.remember(r, engine) }
+        Self.lastStart = String(format: "%.1f ث · %@ · %@", secs, engine == .vlc ? "VLC" : engine == .mpv ? "MPV" : "آبل", kind)
+        if !r.url.isFileURL, engine != .mpv { Self.remember(r, engine) }
     }
 
     /// الحلقة الجاية: نفتح الاتصال بالسيرفر قبل ما تخلص الحالية (تبدأ أسرع)
@@ -352,6 +425,7 @@ final class PlayerController {
         mini = false
         watchVod = nil
         watchLive = nil
+        stopMPV()
         stopVLC()
         player.pause()
         player.replaceCurrentItem(with: nil)
@@ -363,6 +437,7 @@ final class PlayerController {
 
     func togglePlay() {
         if engine == .vlc { if vlc.isPlaying { vlc.pause() } else { vlc.play() }; isPlaying = vlc.isPlaying; return }
+        if engine == .mpv, let m = mpvEngine { m.setPaused(!m.paused); isPlaying = !m.paused; return }
         if player.timeControlStatus == .paused { userPaused = false; player.playImmediately(atRate: playRate) }
         else { userPaused = true; player.pause() }
     }
@@ -376,7 +451,9 @@ final class PlayerController {
     var playRate: Float { isLive ? 1 : rate }
     func setRate(_ r: Float) {
         rate = r
-        if engine == .vlc { vlc.rate = r } else if player.timeControlStatus != .paused { player.rate = r }
+        if engine == .vlc { vlc.rate = r }
+        else if engine == .mpv { mpvEngine?.setSpeed(r) }
+        else if player.timeControlStatus != .paused { player.rate = r }
     }
 
     /// المباشر: البث يدعم التأخير والتقديم؟
@@ -405,6 +482,12 @@ final class PlayerController {
         let t = max(0, duration > 0 ? min(t0, duration - 1) : t0)
         position = t
         seekTarget = t
+        if engine == .mpv {
+            mpvEngine?.seek(to: t)
+            lastMpvT = -1
+            Task { try? await Task.sleep(for: .milliseconds(700)); if seekTarget == t { seekTarget = nil } }
+            return
+        }
         if engine == .vlc {
             vlc.time = VLCTime(int: Int32(t * 1000))
             lastVlcT = -1; vlcStallTicks = 0
@@ -430,6 +513,7 @@ final class PlayerController {
     /// المباشر: يرجع للحظة الحالية
     func goLive() {
         if engine == .vlc { if let r = req { playVLC(r) }; return }
+        if engine == .mpv { if let r = req { playMPV(r) }; return }
         userPaused = false
         guard let it = player.currentItem, let r = it.seekableTimeRanges.last?.timeRangeValue else { player.playImmediately(atRate: 1); return }
         player.seek(to: r.end) { [weak self] _ in Task { @MainActor in self?.player.playImmediately(atRate: 1) } }
@@ -563,6 +647,7 @@ final class PlayerController {
     }
 
     func selectTrack(_ t: Track?, audio: Bool) {
+        if engine == .mpv { mpvEngine?.selectTrack(audio ? "audio" : "sub", id: t?.id); return }
         if engine == .vlc {
             let i = Int32(t?.id ?? "-1") ?? -1
             if audio { vlc.currentAudioTrackIndex = i } else { vlc.currentVideoSubTitleIndex = i }

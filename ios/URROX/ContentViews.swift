@@ -1055,9 +1055,11 @@ struct SettingsView: View {
                 Picker(selection: $engineMode) {
                     Text("تلقائي (آبل ثم VLC)").tag("auto")
                     Text("VLC لكل شي").tag("vlc")
+                    Text("MPV (تجريبي)").tag("mpv")
                 } label: { Label("محرك التشغيل", systemImage: "play.rectangle") }
             } footer: {
-                Text(engineMode == "vlc" ? "يفتح على طول مع كل السيرفرات، بس أثقل على الجوال. صورة داخل صورة وAirPlay ما يشتغلون."
+                Text(engineMode == "mpv" ? "تجريبي: مشغّل MPV لكل شي (يشغّل كل الصيغ). لو ما اشتغل مع محتوى يتحول لـ VLC لحاله. صورة داخل صورة وAirPlay ما يشتغلون."
+                     : engineMode == "vlc" ? "يفتح على طول مع كل السيرفرات، بس أثقل على الجوال. صورة داخل صورة وAirPlay ما يشتغلون."
                                          : "الأخف والأنعم (مشغّل آبل)، ويتحول لـ VLC لحاله مع السيرفرات اللي ما تمشي ويتذكرها. يدعم صورة داخل صورة وAirPlay.")
             }
             SwiftUI.Section {

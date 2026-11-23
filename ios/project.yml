@@ -11,6 +11,10 @@ packages:
   VLCKitSPM:
     url: https://github.com/koombea/vlckit-spm
     from: 3.6.0
+  # MPV (تجريبي): libmpv + FFmpeg — نسخة LGPL
+  MPVKit:
+    url: https://github.com/mpvkit/MPVKit
+    exactVersion: 0.41.0
 settings:
   base:
     SWIFT_VERSION: "5.10"
@@ -25,6 +29,8 @@ targets:
       - path: URROX
     dependencies:
       - package: VLCKitSPM
+      - package: MPVKit
+        product: MPVKit
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.urrox.player
