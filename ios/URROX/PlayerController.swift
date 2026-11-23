@@ -207,6 +207,10 @@ final class PlayerController {
         m.addOption(":clock-jitter=0")
         m.addOption(":clock-synchro=0")
         m.addOption(":http-reconnect")                                                    // ينقطع السيرفر؟ يرجع يتصل
+        if r.type == "live" {
+            m.addOption(":http-continuous")                                               // بث مستمر: بدون انتظار حجم الملف
+            if r.url.pathExtension.lowercased() == "ts" { m.addOption(":demux=ts") }      // نعرف الصيغة: بدون فحص = يبدأ أسرع
+        }
         m.addOption(":http-user-agent=IPTVSmartersPro")
         if r.start > 0 { m.addOption(":start-time=\(Int(r.start))") }
         vlc.media = m
@@ -302,7 +306,18 @@ final class PlayerController {
         guard let q = queue, let r = req, let i = q.index(of: r.key), let n = q.request(i + 1),
               prewarmed != n.key, !n.url.isFileURL else { return }
         prewarmed = n.key
-        var rq = URLRequest(url: n.url, timeoutInterval: 8)
+        Self.prewarm(n.url)
+    }
+
+    /// يفتح الاتصال بالسيرفر مسبقاً (اسم السيرفر + الاتصال + التحويل) بطلب صغير جداً (بايتين)
+    /// — لما تضغط تشغيل، التشغيل يبدأ بدون انتظار هالخطوات
+    @ObservationIgnored private static var warmed: [String: Date] = [:]
+    @MainActor static func prewarm(_ url: URL) {
+        guard !url.isFileURL else { return }
+        let k = url.absoluteString
+        if let t = warmed[k], Date().timeIntervalSince(t) < 60 { return }
+        warmed[k] = Date()
+        var rq = URLRequest(url: url, timeoutInterval: 8)
         rq.setValue("bytes=0-1", forHTTPHeaderField: "Range")
         rq.setValue("IPTVSmartersPro", forHTTPHeaderField: "User-Agent")
         URLSession.shared.dataTask(with: rq) { _, _, _ in }.resume()

@@ -394,6 +394,12 @@ struct DetailsView: View {
         }
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
+        // فتحت صفحة الفيلم: نجهّز الاتصال بالسيرفر من الحين، فلما تضغط تشغيل يبدأ على طول
+        .task(id: loaded) {
+            guard !inPanel, !playingHere else { return }
+            if vod.isSeries { if let e = resumeEpisode()?.0, let r = episodeRequest(e) { PlayerController.prewarm(r.url) } }
+            else if let r = movieRequest() { PlayerController.prewarm(r.url) }
+        }
         // الآيباد: رجعت أو رحت لقسم ثاني وهو شغّال = يوقف ويحفظ وين وقفت
         // (الجوال: التشغيل بصفحته الخاصة فوق كل شي، تسحبها لتحت تصير مشغّل صغير)
         .onDisappear {
