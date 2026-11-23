@@ -475,7 +475,7 @@ class DetailsActivity : Activity() {
 
     /** أفقي/تلفزيون: عمودين بدون ما تحتاج تسحب عشان توصل للأزرار. */
     private fun renderWide() {
-        if (isTv()) { renderTvSeries(); return }           // التلفزيون: فيلم ومسلسل بشكل نتفليكس
+        if (isTv() && (series || Store.tvTheme != "classic")) { renderTvSeries(); return }      // نتفلكس/جلاس: فيلم ومسلسل بشكل نتفلكس — الكلاسيكي: الفيلم بالشكل القديم
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             setPadding(inL + dp(12), inT + dp(10), inR + dp(12), 0)

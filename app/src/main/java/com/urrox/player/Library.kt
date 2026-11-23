@@ -29,9 +29,9 @@ class LibraryScreen(private val a: MainActivity, private val series: Boolean) : 
     override val view: View
     private val posterW = a.dp(if (a.tv) 124 else 100)
     private val rows = object : RecyclerView(a) {
-        override fun getBottomFadingEdgeStrength(): Float = if (a.tv) 0f else super.getBottomFadingEdgeStrength()
+        override fun getBottomFadingEdgeStrength(): Float = if (a.nf) 0f else super.getBottomFadingEdgeStrength()
     }.apply {
-        if (a.tv) {
+        if (a.nf) {
             // الصفوف تقص على حدودها (ما تطلع فوق الإعلان) والصف اللي فوق يذوب بنعومة
             clipToPadding = true; setTag(R.id.keep_clip, true)
             isVerticalFadingEdgeEnabled = true; setFadingEdgeLength(a.dp(40))
@@ -52,7 +52,7 @@ class LibraryScreen(private val a: MainActivity, private val series: Boolean) : 
     private var lastRowFocus = 0
     private val rowScroll = HashMap<String, Pair<Int, Int>>()     // وين وقفت في كل صف
     /** التلفزيون: إعلان نتفلكس فوق الصفوف. */
-    private val hero: TvHero? = if (a.tv) TvHero(a, if (series) "series" else "movie") else null
+    private val hero: TvHero? = if (a.nf) TvHero(a, if (series) "series" else "movie") else null
     private var mainBox: LinearLayout? = null
 
     private fun onTvFocus(nv: View?) {
@@ -106,7 +106,7 @@ class LibraryScreen(private val a: MainActivity, private val series: Boolean) : 
             head.addView(a.iconButton(R.drawable.ic_search, "بحث", 48) { a.openExtra("search") })
             main.addView(head)
         }
-        rows.layoutManager = SmoothLM(a).apply { initialPrefetchItemCount = 3; alignTop = a.tv }     // التلفزيون: الصف المحدد فوق
+        rows.layoutManager = SmoothLM(a).apply { initialPrefetchItemCount = 3; alignTop = a.nf }     // التلفزيون: الصف المحدد فوق
         rows.adapter = shelfAdapter
         rows.setHasFixedSize(true)
         rows.itemAnimator = null              // بدون حركات = سحب أنعم
@@ -232,7 +232,7 @@ class LibraryScreen(private val a: MainActivity, private val series: Boolean) : 
     private fun closeGrid() {
         if (a.tv) mainBox?.visibility = View.VISIBLE
         gridBox.fadeOut(a.dp(24)) { gridBox.visibility = View.GONE }
-        if (a.tv) {
+        if (a.nf) {
             // نرجع لخانة «المزيد» بنفس الصف
             rows.post {
                 val vh = rows.findViewHolderForAdapterPosition(lastRowFocus) as? ShelfAdapter.VH
@@ -240,7 +240,10 @@ class LibraryScreen(private val a: MainActivity, private val series: Boolean) : 
             }
             return
         }
-        rows.post { (rows.findViewHolderForAdapterPosition(lastRowFocus)?.itemView ?: rows).requestFocus() }
+        rows.post {
+            val vh = rows.findViewHolderForAdapterPosition(lastRowFocus) as? ShelfAdapter.VH
+            (vh?.more ?: vh?.itemView ?: rows).requestFocus()       // الكلاسيكي: نرجع لزر «الكل» بنفس الصف
+        }
     }
 
     override fun onBack(): Boolean {
@@ -312,13 +315,13 @@ class LibraryScreen(private val a: MainActivity, private val series: Boolean) : 
                 background = a.focusBg(radius = 8)
                 isFocusable = true; isClickable = true
             }
-            if (a.tv) more.visibility = View.GONE        // التلفزيون (نتفلكس): الصف فيه كل التصنيف — بدون زر بين الصفوف يلخبط التنقل
+            if (a.nf) more.visibility = View.GONE        // التلفزيون (نتفلكس): الصف فيه كل التصنيف — بدون زر بين الصفوف يلخبط التنقل
             head.addView(more)
             root.addView(head)
             val posters = PosterAdapter(a, posterW) { a.openDetails(it) }
             // صف أفقي بـ RecyclerView (يدعم الاتجاه من اليمين لليسار تلقائياً ويعيد استخدام الخانات)
             val strip = RecyclerView(a).apply {
-                layoutManager = SmoothLM(a, LinearLayoutManager.HORIZONTAL).apply { initialPrefetchItemCount = 5; alignStart = a.tv }
+                layoutManager = SmoothLM(a, LinearLayoutManager.HORIZONTAL).apply { initialPrefetchItemCount = 5; alignStart = a.nf }
                 setRecycledViewPool(posterPool(posterW))      // خانات مشتركة بين كل الصفوف
                 adapter = posters
                 setHasFixedSize(true)
@@ -344,7 +347,7 @@ class LibraryScreen(private val a: MainActivity, private val series: Boolean) : 
             (h.strip.layoutManager as LinearLayoutManager).scrollToPositionWithOffset(p, off)
             h.more.setOnClickListener { lastRowFocus = h.bindingAdapterPosition; openGrid(s) }
             // التلفزيون: «المزيد» بآخر الصف = كل التصنيف بصفحة (نتفلكس) — بدل زر بين الصفوف
-            if (a.tv) h.posters.onMore = { lastRowFocus = h.bindingAdapterPosition; openGrid(s) }
+            if (a.nf) h.posters.onMore = { lastRowFocus = h.bindingAdapterPosition; openGrid(s) }
         }
     }
 

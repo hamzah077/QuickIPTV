@@ -828,7 +828,7 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
             intArrayOf(0xF0000000.toInt(), 0xB3000000.toInt(), 0x00000000))
         panel.setPadding(act.dp(48), act.dp(90), act.dp(48), act.dp(30))
         panel.clipChildren = false; panel.clipToPadding = false
-        if (!live) { arrangeNetflix(); return }
+        if (!live && Store.tvTheme != "classic") { arrangeNetflix(); return }      // الكلاسيكي: الشريط القديم
         // العنوان كبير
         tvTitleBox.addView(tvTitle); tvTitleBox.addView(tvSub)
         panel.addView(tvTitleBox, LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = act.dp(14) })

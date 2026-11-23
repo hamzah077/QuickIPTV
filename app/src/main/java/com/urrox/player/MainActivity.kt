@@ -39,6 +39,8 @@ interface Screen {
 class MainActivity : Activity() {
     val scope: CoroutineScope = MainScope()
     val tv by lazy { isTv() }
+    /** التلفزيون بنمط نتفلكس (نتفلكس أو ليكود جلاس) — الكلاسيكي (الافتراضي) هو التصميم القديم. */
+    val nf by lazy { tv && Store.tvTheme != "classic" }
     private lateinit var content: FrameLayout
     private lateinit var nav: LinearLayout
     private val screens = HashMap<String, Screen>()
@@ -158,6 +160,8 @@ class MainActivity : Activity() {
             // حواف آمنة (دليل Google: ~48 من الجنب و27 من فوق وتحت) — بعض التلفزيونات تقص أطراف الصورة
             content.setPadding(0, dp(27), dp(48), dp(27))
             // نمط نتفلكس: صورة كبيرة خلف كل شي (حتى خلف القائمة الجانبية) للعمل المحدد بالرئيسية، مع تظليل
+            // الكلاسيكي: بدون صورة خلفية ولا تظليل — خلفية ثابتة وقائمة جانبية صلبة
+            if (nf) {
             val bd = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; alpha = 0f }
             backdrop = bd
             root.addView(bd, FrameLayout.LayoutParams(MATCH, MATCH))
@@ -183,11 +187,12 @@ class MainActivity : Activity() {
                 }, FrameLayout.LayoutParams(MATCH, (resources.displayMetrics.heightPixels * 0.62f).toInt(), Gravity.BOTTOM))
             }
             root.addView(backdropScrim, FrameLayout.LayoutParams(MATCH, MATCH))
+            }
             root.addView(content, FrameLayout.LayoutParams(MATCH, MATCH).apply { marginStart = dp(RAIL_W) })
             // القائمة مفتوحة: المحتوى يغمق وراها (نمط نتفلكس)
             railScrim = View(this).apply { setBackgroundColor(0x8C000000.toInt()); alpha = 0f; visibility = View.GONE }
             root.addView(railScrim, FrameLayout.LayoutParams(MATCH, MATCH))
-            nav.setBackgroundColor(android.graphics.Color.TRANSPARENT)
+            if (nf) nav.setBackgroundColor(android.graphics.Color.TRANSPARENT)
             if (Glass.on) {
                 // ليكود جلاس: القائمة كبسولة زجاج عائمة بالنص
                 // زجاج «مثلّج»: صورة ممَوّهة + طبقة غامقة كثيفة = ما يبان اللي وراها
@@ -554,7 +559,7 @@ class MainActivity : Activity() {
                 tx.visibility = View.GONE; tx.alpha = 1f; tx.translationX = 0f
             }
         }
-        if (!Glass.on) nav.setBackgroundColor(if (open) 0xF20C0E11.toInt() else android.graphics.Color.TRANSPARENT)
+        if (!Glass.on) nav.setBackgroundColor(if (open) 0xF20C0E11.toInt() else if (nf) android.graphics.Color.TRANSPARENT else C.RAIL)
         nav.elevation = if (open) dp(12).toFloat() else 0f
         if (Glass.on) {
             setBlur(blurLevel)
@@ -610,7 +615,7 @@ class MainActivity : Activity() {
         b.isSelected = glass && key == current
         val col = when {
             focused -> if (glass) 0xFFFFFFFF.toInt() else C.PRIMARY_TEXT
-            key == current -> if (glass) C.TEXT else 0xFFE50914.toInt()
+            key == current -> if (glass || !nf) C.TEXT else 0xFFE50914.toInt()
             else -> if (glass) 0xFFD3D7DF.toInt() else C.MUTED
         }
         b.findViewWithTag<android.widget.ImageView>("ic")?.imageTintList = android.content.res.ColorStateList.valueOf(col)

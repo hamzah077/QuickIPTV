@@ -174,7 +174,7 @@ object Store {
     /** شكل صفحة المباشر بالتلفزيون: a = البث يملى الشاشة (الافتراضي)، c = أعمدة، z = مشغّل كبير + قائمة */
     /** ثيم واجهة التلفزيون: netflix (الافتراضي) | glass (ليكود جلاس). */
     var tvTheme: String
-        get() = p.getString("tvTheme", "netflix") ?: "netflix"
+        get() = p.getString("tvTheme", "classic") ?: "classic"
         set(v) = p.edit().putString("tvTheme", v).apply()
 
     /** شفافية زجاج «ليكود جلاس»: 0 واضح جداً · 1 افتراضي · 2 ملوّن. */

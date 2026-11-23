@@ -54,7 +54,7 @@ fun MainActivity.sectionTitle(t: String): TextView = text(t, 17f, C.TEXT, bold =
 /** صف أفقي من البوسترات (للرئيسية). */
 fun MainActivity.posterRow(items: List<Vod>, posterW: Int, onClick: (Vod) -> Unit): RecyclerView =
     RecyclerView(this).apply {
-        layoutManager = SmoothLM(this@posterRow, LinearLayoutManager.HORIZONTAL).apply { initialPrefetchItemCount = 5; alignStart = tv }
+        layoutManager = SmoothLM(this@posterRow, LinearLayoutManager.HORIZONTAL).apply { initialPrefetchItemCount = 5; alignStart = nf }
         setRecycledViewPool(posterPool(posterW))
         adapter = PosterAdapter(this@posterRow, posterW, onClick).also { it.items = items }
         setHasFixedSize(true)
@@ -222,21 +222,21 @@ class LoginScreen(private val a: MainActivity, edit: Account?) : Screen {
 /** الرئيسية: متابعة المشاهدة، قنواتك المفضلة، أفلامك ومسلسلاتك المفضلة. بدون طلبات ثقيلة. */
 class HomeScreen(private val a: MainActivity) : Screen, EpgAware {
     // التلفزيون: مسافة كبيرة تحت عشان آخر صف يقدر يطلع لفوق (كل صف تنزل له يصير أول الشاشة — نمط نتفلكس)
-    private val col = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL; setPadding(0, a.dp(6), 0, a.dp(if (a.tv) 220 else 24)) }
+    private val col = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL; setPadding(0, a.dp(6), 0, a.dp(if (a.nf) 220 else 24)) }
     // التلفزيون: التمرير الرأسي كله منّا (الصف المحدد يطلع لأول الشاشة) — نوقف تمرير ScrollView التلقائي عشان ما يتعاركون
     private val scroll = object : ScrollView(a) {
         override fun computeScrollDeltaToGetChildRectOnScreen(rect: android.graphics.Rect): Int =
-            if (a.tv) 0 else super.computeScrollDeltaToGetChildRectOnScreen(rect)
-        override fun getBottomFadingEdgeStrength(): Float = if (a.tv) 0f else super.getBottomFadingEdgeStrength()
+            if (a.nf) 0 else super.computeScrollDeltaToGetChildRectOnScreen(rect)
+        override fun getBottomFadingEdgeStrength(): Float = if (a.nf) 0f else super.getBottomFadingEdgeStrength()
     }.apply {
         addView(col); isFillViewport = true; isVerticalScrollBarEnabled = false
-        if (a.tv) {
+        if (a.nf) {
             // الصفوف تقص على حدودها (ما تطلع فوق الإعلان) والصف اللي فوق يذوب بنعومة
             clipToPadding = true; setTag(R.id.keep_clip, true)
             isVerticalFadingEdgeEnabled = true; setFadingEdgeLength(a.dp(40))
         } else clipToPadding = false
     }
-    private val tvRoot: LinearLayout? = if (a.tv) LinearLayout(a).apply {
+    private val tvRoot: LinearLayout? = if (a.nf) LinearLayout(a).apply {
         orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
         clipChildren = false; clipToPadding = false
     } else null
@@ -303,7 +303,7 @@ class HomeScreen(private val a: MainActivity) : Screen, EpgAware {
             }
         }
         spinner.visibility = if (newMovies == null && newSeries == null && quickLive == null && live == null) View.VISIBLE else View.GONE
-        if (a.tv) pickFeatured(cont)
+        if (a.nf) pickFeatured(cont)
         if (a.current == "home" && a.currentFocus == null) focusDefault()
     }
 
@@ -318,7 +318,7 @@ class HomeScreen(private val a: MainActivity) : Screen, EpgAware {
     private fun buildShell() {
         shell = true
         col.removeAllViews()
-        if (a.tv) {
+        if (a.nf) {
             // التلفزيون (نتفلكس): بدون ترحيب — الإعلان الكبير فوق هو أول الشاشة
             val ls = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL }
             liveSlot = ls
@@ -382,7 +382,7 @@ class HomeScreen(private val a: MainActivity) : Screen, EpgAware {
         val h = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(padH, a.dp(18), a.dp(8), a.dp(8)) }
         if (dot) h.addView(View(a).apply { background = rounded(C.LIVE, a.dpf(4f)) }, lp(a.dp(8), a.dp(8)).apply { marginEnd = a.dp(8) })
         h.addView(a.text(title, 16.5f, C.TEXT, bold = true), lp(0, WRAP, 1f))
-        if (onMore != null && !a.tv) h.addView(a.text("$more  ‹", 13f, C.ACCENT).apply {
+        if (onMore != null && !a.nf) h.addView(a.text("$more  ‹", 13f, C.ACCENT).apply {
             tag = "more"          // التلفزيون: الدخول من القائمة الجانبية يتخطّاه ويروح لأول عنصر
             setPadding(a.dp(10), a.dp(6), a.dp(10), a.dp(6)); background = a.focusBg(radius = 8)
             isFocusable = true; isClickable = true; setOnClickListener { onMore() }
@@ -395,7 +395,7 @@ class HomeScreen(private val a: MainActivity) : Screen, EpgAware {
         // التلفزيون (نتفلكس): المحدد يبقى أول الصف والصف يتحرك
         val sc = object : HorizontalScrollView(a) {
             override fun computeScrollDeltaToGetChildRectOnScreen(rect: android.graphics.Rect): Int {
-                if (!a.tv) return super.computeScrollDeltaToGetChildRectOnScreen(rect)
+                if (!a.nf) return super.computeScrollDeltaToGetChildRectOnScreen(rect)
                 return if (layoutDirection == View.LAYOUT_DIRECTION_RTL) rect.right + a.dp(6) - (scrollX + width - paddingRight)
                 else rect.left - a.dp(6) - (scrollX + paddingLeft)
             }
@@ -517,7 +517,7 @@ class HomeScreen(private val a: MainActivity) : Screen, EpgAware {
     // التلفزيون — نمط نتفلكس: إعلان كبير فوق (TvHero) وخلفه صورة العمل بكامل الشاشة.
     // تنزل للصفوف: الإعلان يتحوّل لتفاصيل اللي واقف عليه والصف يطلع لأول الشاشة.
     // =================================================================================
-    private val heroBox: TvHero? = if (a.tv) TvHero(a, "home") else null
+    private val heroBox: TvHero? = if (a.nf) TvHero(a, "home") else null
 
     init {
         val h = heroBox
@@ -737,7 +737,7 @@ class SettingsScreen(private val a: MainActivity) : Screen {
         col.addView(a.sectionHeader("الإعدادات"))
         add(a.listRow(R.drawable.ic_settings, "شكل الواجهة", when (Store.uiMode) { "tv" -> "تلفزيون"; "phone" -> "جوال"; else -> "تلقائي" },
             subtitle = "تلقائي: يعرف لحاله إذا الجهاز تلفزيون") { chooseUiMode() })
-        if (a.tv) add(a.listRow(R.drawable.ic_settings, "ثيم التلفزيون", if (Store.tvTheme == "glass") "ليكود جلاس" else "نتفلكس") { chooseTvTheme() })
+        if (a.tv) add(a.listRow(R.drawable.ic_settings, "ثيم التلفزيون", when (Store.tvTheme) { "glass" -> "ليكود جلاس"; "netflix" -> "نتفلكس"; else -> "الكلاسيكي" }) { chooseTvTheme() })
         if (a.tv && Store.tvTheme == "glass") add(a.listRow(R.drawable.ic_settings, "شفافية الزجاج", glassName(Store.glassLevel),
             subtitle = "مثل iOS 27: من واضح جداً لين ملوّن") { chooseGlassLevel() })
         if (a.tv) add(a.listRow(R.drawable.ic_live, "شكل صفحة المباشر", liveStyleName(Store.liveStyle)) { chooseLiveStyle() })
@@ -797,10 +797,10 @@ class SettingsScreen(private val a: MainActivity) : Screen {
             }.show()
     }
 
-    /** ثيم التلفزيون: نتفلكس (الافتراضي) أو ليكود جلاس — الواجهة تنبني من جديد. */
+    /** ثيم التلفزيون: الكلاسيكي (الافتراضي) أو نتفلكس أو ليكود جلاس — الواجهة تنبني من جديد. */
     private fun chooseTvTheme() {
-        val keys = listOf("netflix", "glass")
-        val opts = arrayOf("نتفلكس (الافتراضي)", "ليكود جلاس")
+        val keys = listOf("classic", "netflix", "glass")
+        val opts = arrayOf("الكلاسيكي (الافتراضي)", "نتفلكس", "ليكود جلاس")
         AlertDialog.Builder(a, dialogTheme)
             .setTitle("ثيم التلفزيون")
             .setSingleChoiceItems(opts, keys.indexOf(Store.tvTheme).coerceAtLeast(0)) { d, w ->
