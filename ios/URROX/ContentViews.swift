@@ -258,7 +258,7 @@ struct VodGridView: View {
             }
             LazyVGrid(columns: [GridItem(.adaptive(minimum: hsize == .regular ? 150 : 104), spacing: 12)], spacing: 14) {
                 ForEach(items) { v in
-                    NavigationLink { DetailsView(vod: v) } label: {
+                    DetailsLink(vod: v) {
                         VStack(alignment: .leading, spacing: 4) {
                             Poster(url: v.icon).aspectRatio(2 / 3, contentMode: .fit).posterDepth()
                             Text(v.name).font(.caption).lineLimit(1).foregroundStyle(.primary)
@@ -351,7 +351,12 @@ struct DetailsView: View {
         var t = Transaction(); t.disablesAnimations = true
         withTransaction(t) { pc.watchVod = vod; pc.mini = false }
         // الصفحة اللي تحتها تتسكّر بهدوء (مخفية تحت صفحة التشغيل) عشان السحب لتحت يبيّن اللي قبلها
-        Task { try? await Task.sleep(for: .milliseconds(300)); withTransaction(t) { dismiss() } }
+        Task {
+            try? await Task.sleep(for: .milliseconds(300))
+            // مفتوحة بالحركة الجديدة (فوق الأقسام)؟ نسكّرها بدون حركة — وإلا رجوع عادي
+            if DetailsNav.shared.item?.vod.id == vod.id { DetailsNav.close(animated: false) }
+            else { withTransaction(t) { dismiss() } }
+        }
     }
     private var playingHere: Bool {
         guard let r = pc.req else { return false }
@@ -629,8 +634,13 @@ struct SearchResults: View {
     }
 
     private func vodRow(_ v: Vod) -> some View {
-        NavigationLink { DetailsView(vod: v) } label: {
-            HStack(spacing: 10) { Poster(url: v.icon, radius: 6).frame(width: 40, height: 58).accessibilityHidden(true); Text(v.name).lineLimit(2) }
+        DetailsLink(vod: v) {
+            HStack(spacing: 10) {
+                Poster(url: v.icon, radius: 6).frame(width: 40, height: 58).accessibilityHidden(true)
+                Text(v.name).lineLimit(2)
+                Spacer(minLength: 0)
+            }
+            .contentShape(Rectangle())
         }
     }
 }
@@ -846,13 +856,73 @@ struct HistoryView: View {
 /// صفحة العمل من السجل / متابعة المشاهدة: يفتح ويكمل من مكانك
 struct HistoryDestination: View {
     let h: HistoryItem
+    var body: some View { DetailsView(vod: Self.vod(h), autoplayKey: h.key) }
+
+    static func vod(_ h: HistoryItem) -> Vod {
+        h.type == "episode"
+            ? Vod(id: h.seriesId, name: h.title, icon: h.image, categoryId: "", ext: "", rating: "", isSeries: true, added: 0)
+            : Vod(id: String(h.key.dropFirst(6)), name: h.title, icon: h.image, categoryId: "",
+                  ext: (h.url as NSString).pathExtension, rating: "", isSeries: false, added: 0)
+    }
+}
+
+// MARK: - فتح صفحة الفيلم/المسلسل (الجوال): تطلع من النص بتلاشي وتكبير خفيف بدل الانزلاق من الجنب
+
+@Observable final class DetailsNav {
+    static let shared = DetailsNav()
+    struct Item: Identifiable { let id = UUID(); let vod: Vod; let autoplayKey: String? }
+    var item: Item?
+
+    @MainActor static func open(_ vod: Vod, autoplayKey: String? = nil) {
+        withAnimation(.calm(.timingCurve(0.2, 0, 0, 1, duration: 0.32))) { shared.item = Item(vod: vod, autoplayKey: autoplayKey) }
+    }
+    @MainActor static func close(animated: Bool = true) {
+        if animated { withAnimation(.calm(.easeIn(duration: 0.2))) { shared.item = nil } }
+        else { var t = Transaction(); t.disablesAnimations = true; withTransaction(t) { shared.item = nil } }
+    }
+}
+
+/// رابط صفحة الفيلم: الجوال = الحركة الجديدة، الآيباد = نفس التنقّل العادي
+struct DetailsLink<L: View>: View {
+    @Environment(\.horizontalSizeClass) private var hsize
+    let vod: Vod
+    var autoplayKey: String? = nil
+    @ViewBuilder let label: () -> L
+
     var body: some View {
-        if h.type == "episode" {
-            DetailsView(vod: Vod(id: h.seriesId, name: h.title, icon: h.image, categoryId: "", ext: "", rating: "", isSeries: true, added: 0), autoplayKey: h.key)
+        if hsize == .regular {
+            NavigationLink { DetailsView(vod: vod, autoplayKey: autoplayKey) } label: { label() }
         } else {
-            DetailsView(vod: Vod(id: String(h.key.dropFirst(6)), name: h.title, icon: h.image, categoryId: "",
-                                 ext: (h.url as NSString).pathExtension, rating: "", isSeries: false, added: 0), autoplayKey: h.key)
+            Button { DetailsNav.open(vod, autoplayKey: autoplayKey) } label: { label() }
+                .buttonStyle(.plain)
         }
+    }
+}
+
+/// الصفحة نفسها فوق الأقسام (الجوال)
+struct DetailsOverlay: View {
+    let item: DetailsNav.Item
+    @State private var width: CGFloat = 0
+    var body: some View {
+        NavigationStack {
+            DetailsView(vod: item.vod, autoplayKey: item.autoplayKey)
+                .toolbar {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button { DetailsNav.close() } label: { Image(systemName: "chevron.backward").font(.body.weight(.semibold)) }
+                            .accessibilityLabel("رجوع")
+                    }
+                }
+        }
+        .background(Theme.bg.ignoresSafeArea())
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
+        // سحبة من طرف الشاشة لجوّا = رجوع (نفس سحبة الرجوع المعتادة)
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 20).onEnded { d in
+                let w = width
+                let x0 = d.startLocation.x, dx = d.translation.width
+                if (x0 < 28 && dx > 90) || (x0 > w - 28 && dx < -90), abs(d.translation.height) < 80 { DetailsNav.close() }
+            }
+        )
     }
 }
 

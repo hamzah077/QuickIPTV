@@ -63,6 +63,15 @@ struct PhoneShell: View {
     var body: some View {
         ZStack {
             tabs
+            // صفحة الفيلم/المسلسل: تطلع من النص بتلاشي وتكبير خفيف (بدل الانزلاق من الجنب)
+            if let it = nav.item {
+                DetailsOverlay(item: it)
+                    .id(it.id)
+                    .transition(reduceMotion ? .opacity : .asymmetric(
+                        insertion: .opacity.combined(with: .scale(scale: 0.94)),
+                        removal: .opacity.combined(with: .scale(scale: 0.97))))
+                    .zIndex(2)
+            }
             // (السحب كله داخل PanelHost: إصبعك يتحرك = هي بس اللي تنرسم، مو الأقسام كلها — بدون لاج)
             if panelOn {
                 PanelHost(tab: $tab)
@@ -78,6 +87,7 @@ struct PhoneShell: View {
 
     @Environment(\.verticalSizeClass) private var vsize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    private let nav = DetailsNav.shared
 
     @ViewBuilder private var tabs: some View {
         if #available(iOS 18.0, *) {
@@ -355,7 +365,7 @@ struct HomeView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: 10) {
                     ForEach(items) { v in
-                        NavigationLink { DetailsView(vod: v) } label: { Poster(url: v.icon).frame(width: 110, height: 162).posterDepth() }
+                        DetailsLink(vod: v) { Poster(url: v.icon).frame(width: 110, height: 162).posterDepth() }
                             .accessibilityLabel(v.name)
                     }
                 }.padding(.horizontal, 16).padding(.vertical, 10)
@@ -371,7 +381,7 @@ struct ContinueCard: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        NavigationLink { HistoryDestination(h: h) } label: {
+        DetailsLink(vod: HistoryDestination.vod(h), autoplayKey: h.key) {
             VStack(alignment: .leading, spacing: 4) {
                 ZStack(alignment: .bottom) {
                     Poster(url: h.image, radius: 14).frame(width: 170, height: 96).posterDepth()
