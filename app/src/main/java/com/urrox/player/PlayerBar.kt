@@ -806,7 +806,7 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
         tvTintChildren(b, b.isFocused)
     }
     private fun tvTintChildren(b: View, focused: Boolean) {
-        val col = if (focused) 0xFF111214.toInt() else 0xFFFFFFFF.toInt()
+        val col = if (focused && !Glass.on) 0xFF111214.toInt() else 0xFFFFFFFF.toInt()
         if (b is android.view.ViewGroup) for (i in 0 until b.childCount) {
             val c = b.getChildAt(i)
             if (c is android.widget.ImageView) c.imageTintList = ColorStateList.valueOf(col)
@@ -1180,12 +1180,19 @@ class PlayerBar(private val act: Activity, private val live: Boolean, private va
             (panel.layoutParams as? LayoutParams)?.let { it.setMargins(act.dp(40), 0, act.dp(40), act.dp(22)); panel.layoutParams = it }
             for (b in listOf<View>(nfNext, nfEps, nfAudio, nfSpeed)) b.background = Glass.button(b, act.dpf(21f), backdrop = false)
             // «تخطي المقدمة» و«الحلقة التالية»: كبسولة فاتحة، والمحددة عدسة بيضاء بحافة (نفس لغة التحديد)
-            for (f in listOf<View>(introFloat, nextFloat)) f.background = android.graphics.drawable.StateListDrawable().apply {
-                setEnterFadeDuration(110); setExitFadeDuration(110)
-                addState(intArrayOf(android.R.attr.state_pressed), Glass.pressedLens(act.dpf(22f)))
-                addState(intArrayOf(android.R.attr.state_focused), Glass.lens(act.dpf(22f)))
-                addState(intArrayOf(), rounded(0xD9EEF0F4.toInt(), act.dpf(22f)))
+            // زجاج داكن فوق الفيديو، والكتابة بيضاء — والمحدد يزيد عليه أبيض شفاف (نفس القائمة الجانبية)
+            for (f in listOf<View>(introFloat, nextFloat)) {
+                val r = act.dpf(22f)
+                fun layer(top: Int) = android.graphics.drawable.LayerDrawable(arrayOf(Glass.Pane(f, r, dark = true), rounded(top, r)))
+                f.background = android.graphics.drawable.StateListDrawable().apply {
+                    setEnterFadeDuration(110); setExitFadeDuration(110)
+                    addState(intArrayOf(android.R.attr.state_pressed), layer(Glass.PRESSED))
+                    addState(intArrayOf(android.R.attr.state_focused), layer(Glass.FOCUS))
+                    addState(intArrayOf(), Glass.Pane(f, r, dark = true))
+                }
+                tvTintChildren(f, false)
             }
+            (nextCount.background as? android.graphics.drawable.GradientDrawable)?.setStroke(act.dp(2), 0xFFFFFFFF.toInt())
         }
         panel.addView(nfBtns, LinearLayout.LayoutParams(WRAP, WRAP).apply { topMargin = act.dp(16); gravity = Gravity.CENTER_HORIZONTAL })
         if (epsView.parent == null) addView(epsView, LayoutParams(MATCH, MATCH))

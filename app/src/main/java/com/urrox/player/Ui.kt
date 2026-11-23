@@ -115,14 +115,14 @@ fun Context.focusBg(
             // ليكود جلاس (إرشادات Apple TV): المحدد عدسة بيضاء واضحة، والضغط يغمّقها لحظة، والعادي زجاج بحافة
             addState(intArrayOf(android.R.attr.state_pressed), Glass.pressedLens(r))
             addState(intArrayOf(android.R.attr.state_focused), Glass.lens(r))
-            addState(intArrayOf(android.R.attr.state_selected), Glass.Sheet(r, 0x3DFFFFFF, resources.displayMetrics.density))
-            addState(intArrayOf(android.R.attr.state_activated), Glass.Sheet(r, 0x3DFFFFFF, resources.displayMetrics.density))
+            addState(intArrayOf(android.R.attr.state_selected), rounded(Glass.CURRENT, r))
+            addState(intArrayOf(android.R.attr.state_activated), rounded(Glass.CURRENT, r))
             // العادي: شفاف يبقى شفاف — والملوّن ينقسم: «مختار» (أبيض قوي/لون أساسي) = زجاج أوضح، والباقي زجاج خفيف
             val a8 = normal ushr 24
             val strong = normal == C.PRIMARY || ((normal and 0xFFFFFF) == 0xFFFFFF && a8 >= 0x26)
             addState(intArrayOf(), when {
                 normal == Color.TRANSPARENT -> rounded(Color.TRANSPARENT, r)
-                strong -> Glass.Sheet(r, 0x3DFFFFFF, resources.displayMetrics.density)
+                strong -> rounded(Glass.CURRENT, r)          // «مختار» = رمادي (نفس القسم الحالي بالقائمة)
                 else -> Glass.Sheet(r, 0x1FFFFFFF, resources.displayMetrics.density)
             })
             return@apply
@@ -221,7 +221,12 @@ fun Context.sectionHeader(t: String): TextView = text(t, 12.5f, C.MUTED).apply {
 /** خط فاصل رفيع. */
 fun Context.divider(): View = View(this).apply {
     // ليكود جلاس (التلفزيون): بدل الخط مسافة بين الصفوف الزجاج
-    if (isTv() && Glass.on) { layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(8)); return@apply }
+    if (isTv() && Glass.on) {
+        // خط رفيع زي القائمة الجانبية
+        setBackgroundColor(0x2EFFFFFF)
+        layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(1)).apply { setMargins(dp(14), dp(3), dp(14), dp(3)) }
+        return@apply
+    }
     setBackgroundColor(C.BORDER)
     layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1)
 }
@@ -258,7 +263,7 @@ fun Context.listRow(
         isFocusable = true
         isClickable = true
         // التلفزيون: صف مدوّر بنفس تحديد القائمة الجانبية — ليكود جلاس: كل صف زجاج خفيف بحافة، والمحدد عدسة
-        background = if (isTv() && Glass.on) focusBg(normal = 0x1AFFFFFF, radius = 16) else focusBg(radius = if (isTv()) 12 else 0)
+        background = focusBg(radius = if (isTv()) (if (Glass.on) 22 else 12) else 0)
         setOnClickListener { onClick() }
         pressScale(0.985f)
     }
@@ -486,7 +491,8 @@ fun android.app.Activity.installFocusMotion() {
     window.decorView.viewTreeObserver.addOnGlobalFocusChangeListener { old, new ->
         if (isTv() && new != null) roomForFocus(new, window.decorView)       // التحديد (والتكبير) ما ينقص من الأطراف
         if (old != null && old === inked) { ink(old, false); inked = null }
-        if (new != null && new.background is TvFocusDrawable) { inked = new; ink(new, true) }
+        // ليكود جلاس: التحديد أبيض شفاف = الكتابة تبقى بيضاء (ما نقلبها داكنة)
+        if (new != null && new.background is TvFocusDrawable && !Glass.on) { inked = new; ink(new, true) }
         if (eligible(old)) { old!!.raiseOnFocus(false); old.animate().scaleX(1f).scaleY(1f).setDuration(120).setInterpolator(interp).start() }
         if (eligible(new)) {
             val v = new!!

@@ -65,7 +65,7 @@ class TvHero(private val a: MainActivity, private val screenKey: String) {
         addView(ic, LinearLayout.LayoutParams(a.dp(20), a.dp(20))); addView(tx)
         setOnClickListener { onClick() }
         setOnFocusChangeListener { v, has ->
-            val c = if (has) 0xFF111214.toInt() else 0xFFFFFFFF.toInt()
+            val c = if (has && !Glass.on) 0xFF111214.toInt() else 0xFFFFFFFF.toInt()
             ic.imageTintList = android.content.res.ColorStateList.valueOf(c); tx.setTextColor(c)
             v.raiseOnFocus(has)
             v.animate().scaleX(if (has) 1.05f else 1f).scaleY(if (has) 1.05f else 1f).setDuration(120).start()

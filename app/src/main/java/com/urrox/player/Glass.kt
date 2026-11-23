@@ -228,10 +228,7 @@ object Glass {
     }
 
     /** العدسة وقت الضغط: أغمق شوي. */
-    fun pressedLens(radiusPx: Float): Drawable = android.graphics.drawable.GradientDrawable(
-        android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0xFFD9DDE6.toInt(), 0xFFC3C8D3.toInt())).apply {
-        cornerRadius = radiusPx; setStroke(2, 0xFFFFFFFF.toInt())
-    }
+    fun pressedLens(radiusPx: Float): Drawable = rounded(PRESSED, radiusPx)
 
     /**
      * تحديد البطاقات (بوستر/متابعة) بليكود جلاس: بدون خلفية رمادية خلف البطاقة —
@@ -255,8 +252,10 @@ object Glass {
     }
 
     /** المحدد: «عدسة زجاج» مضيئة — أبيض ونصّها الفوق أفتح، بحافة بيضاء. */
-    fun lens(radiusPx: Float): Drawable = android.graphics.drawable.GradientDrawable(
-        android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0xFFFFFFFF.toInt(), 0xEBE6EAF4.toInt())).apply {
-        cornerRadius = radiusPx; setStroke(2, 0xFFFFFFFF.toInt())
-    }
+    fun lens(radiusPx: Float): Drawable = rounded(FOCUS, radiusPx)      // (مثل القائمة الجانبية: أبيض شفاف خفيف والكتابة تبقى بيضاء)
+
+    /** ألوان تحديد ليكود جلاس — نفس القائمة الجانبية بكل الثيم. */
+    const val FOCUS = 0x47FFFFFF
+    const val PRESSED = 0x2EFFFFFF
+    const val CURRENT = 0x4D5A5A64
 }

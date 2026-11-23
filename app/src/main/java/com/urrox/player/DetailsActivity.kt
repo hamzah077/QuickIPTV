@@ -673,14 +673,6 @@ class DetailsActivity : Activity() {
         }
         hero.addView(heroPlotT)
         hero.addView(tvActions(), lp(WRAP, WRAP).apply { topMargin = dp(16) })
-        if (Glass.on) {
-            // ليكود جلاس: المعلومات والأزرار داخل بطاقة زجاج
-            hero.background = Glass.Pane(hero, dpf(28f))
-            hero.setPaddingRelative(dp(26), dp(20), dp(26), dp(22))
-            root.addView(hero, FrameLayout.LayoutParams((sw * 0.52f).toInt(), WRAP, Gravity.TOP or Gravity.RIGHT).apply {
-                topMargin = inT + dp(24); rightMargin = inR + dp(40)
-            })
-        } else
         root.addView(hero, FrameLayout.LayoutParams((sw * 0.58f).toInt(), WRAP, Gravity.TOP or Gravity.RIGHT))      // الكلام يمين (عربي)
 
         // تحت: مثبّت بأسفل الشاشة

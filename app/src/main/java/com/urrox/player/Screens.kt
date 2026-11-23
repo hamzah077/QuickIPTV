@@ -700,6 +700,12 @@ class SettingsScreen(private val a: MainActivity) : Screen {
 
     override fun onShow() {
         col.removeAllViews(); first = null
+        if (a.tv && Glass.on && col.background == null) {
+            // ليكود جلاس: الإعدادات لوح زجاج واحد مثل القائمة الجانبية (خطوط بين الصفوف، والمحدد أبيض شفاف)
+            col.background = Glass.Pane(col, a.dpf(30f), tint = 0x1FFFFFFF, frost = 0xA614161C.toInt())
+            col.setPadding(a.dp(14), a.dp(12), a.dp(14), a.dp(16))
+            (col.layoutParams as? android.widget.FrameLayout.LayoutParams)?.let { it.setMargins(a.dp(4), a.dp(4), a.dp(4), a.dp(24)); col.layoutParams = it }
+        }
         col.addView(a.text(if (a.tv) "الإعدادات" else "المزيد", 22f, C.TEXT, bold = true).apply { setPadding(a.dp(16), a.dp(10), a.dp(16), a.dp(12)) })
 
         // الحساب: سطر واحد فيه الحرف الأول والاسم وتاريخ الانتهاء والاتصالات
