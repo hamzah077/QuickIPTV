@@ -311,7 +311,7 @@ final class PlayerController {
 
     /// يفتح الاتصال بالسيرفر مسبقاً (اسم السيرفر + الاتصال + التحويل) بطلب صغير جداً (بايتين)
     /// — لما تضغط تشغيل، التشغيل يبدأ بدون انتظار هالخطوات
-    @ObservationIgnored private static var warmed: [String: Date] = [:]
+    private static var warmed: [String: Date] = [:]
     @MainActor static func prewarm(_ url: URL) {
         guard !url.isFileURL else { return }
         let k = url.absoluteString
