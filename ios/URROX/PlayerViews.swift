@@ -246,40 +246,83 @@ struct PlayerOverlay: View {
                 .environment(\.layoutDirection, .leftToRight)
                 Spacer()
 
-                // تحت: الوقت (أو مباشر) … تكبير/تصغير + شريط التقدّم
-                VStack(spacing: compact ? 4 : 10) {
-                    HStack {
-                        if pc.isLive {
-                            // ● مباشر (أحمر) = على اللحظة الحالية، ↻ مباشر (رمادي) = متأخر — تضغطه يرجعك للحظة الحالية
-                            let behind = pc.liveBehind
-                            Button { pc.goLive() } label: {
-                                Text(behind ? "↻  مباشر" : "●  مباشر").font(.caption.weight(.bold))
-                                    .foregroundStyle(behind ? Color(white: 0.79) : Theme.red)
-                                    .padding(.horizontal, 10).padding(.vertical, 6)
-                            }.glass()
-                        } else {
-                            PlaybackTime(scrub: scrub)
-                        }
-                        Spacer()
-                        if pc.isLive && !compact && !pc.channels.isEmpty {
-                            Button { showChannels = true; visible = false } label: {
-                                Label("القنوات", systemImage: "list.bullet").font(.caption.weight(.bold))
-                                    .padding(.horizontal, 10).padding(.vertical, 6)
-                            }.glass()
-                        }
-                        iconButton(compact ? "arrow.up.left.and.arrow.down.right" : "arrow.down.right.and.arrow.up.left") { onFullscreen() }
-                    }
-                    // المشغّل الصغير: الخط الأحمر على حافة الفيديو نفسها (نفس الأندرويد)
-                    if !pc.isLive && pc.duration > 0 { scrubber.padding(.horizontal, compact ? -10 : 0).offset(y: compact ? 10 : 0) }
-                }
-                .padding(.horizontal, compact ? 10 : 20)
-                .padding(.bottom, compact ? 4 : 14)
-                .background { if !compact { Color.clear.glass(22).padding(.horizontal, 8) } }
-                .padding(.bottom, compact ? 0 : 8)
-                .environment(\.layoutDirection, .leftToRight)
+                // تحت: ملء الشاشة = كبسولة بسطر واحد (الوقت · شريط التقدّم · المتبقي · تصغير)
+                if compact { bottomCompact } else { bottomCapsule }
             }
             .foregroundStyle(.white)
         }
+    }
+
+    /// المشغّل الصغير/العمودي: نفس الشكل القديم
+    private var bottomCompact: some View {
+                VStack(spacing: compact ? 4 : 10) {
+            HStack {
+                if pc.isLive {
+                    // ● مباشر (أحمر) = على اللحظة الحالية، ↻ مباشر (رمادي) = متأخر — تضغطه يرجعك للحظة الحالية
+                    let behind = pc.liveBehind
+                    Button { pc.goLive() } label: {
+                        Text(behind ? "↻  مباشر" : "●  مباشر").font(.caption.weight(.bold))
+                            .foregroundStyle(behind ? Color(white: 0.79) : Theme.red)
+                            .padding(.horizontal, 10).padding(.vertical, 6)
+                    }.glass()
+                } else {
+                    PlaybackTime(scrub: scrub)
+                }
+                Spacer()
+                if pc.isLive && !compact && !pc.channels.isEmpty {
+                    Button { showChannels = true; visible = false } label: {
+                        Label("القنوات", systemImage: "list.bullet").font(.caption.weight(.bold))
+                            .padding(.horizontal, 10).padding(.vertical, 6)
+                    }.glass()
+                }
+                iconButton(compact ? "arrow.up.left.and.arrow.down.right" : "arrow.down.right.and.arrow.up.left") { onFullscreen() }
+            }
+            // المشغّل الصغير: الخط الأحمر على حافة الفيديو نفسها (نفس الأندرويد)
+            if !pc.isLive && pc.duration > 0 { scrubber.padding(.horizontal, compact ? -10 : 0).offset(y: compact ? 10 : 0) }
+        }
+        .padding(.horizontal, compact ? 10 : 20)
+        .padding(.bottom, compact ? 4 : 14)
+        .background { if !compact { Color.clear.glass(22).padding(.horizontal, 8) } }
+        .padding(.bottom, compact ? 0 : 8)
+        .environment(\.layoutDirection, .leftToRight)
+    }
+
+    /// ملء الشاشة: شريط بيضاوي بسطر واحد
+    private var bottomCapsule: some View {
+        HStack(spacing: 12) {
+            if pc.isLive {
+                let behind = pc.liveBehind
+                Button { pc.goLive() } label: {
+                    Text(behind ? "↻  مباشر" : "●  مباشر").font(.caption.weight(.bold))
+                        .foregroundStyle(behind ? Color(white: 0.79) : Theme.red)
+                        .padding(.horizontal, 6).frame(height: 44)
+                }
+                .buttonStyle(.plain)
+                Spacer()
+                if !pc.channels.isEmpty {
+                    Button { showChannels = true; visible = false } label: {
+                        Label("القنوات", systemImage: "list.bullet").font(.caption.weight(.bold))
+                            .padding(.horizontal, 6).frame(height: 44)
+                    }
+                    .buttonStyle(.plain)
+                }
+            } else if pc.duration > 0 {
+                let cur = scrub ?? pc.position
+                Text(fmtTime(cur)).font(.caption.monospacedDigit()).fixedSize()
+                scrubber
+                Text("-" + fmtTime(max(0, pc.duration - cur))).font(.caption.monospacedDigit()).fixedSize()
+            } else {
+                PlaybackTime(scrub: scrub)
+                Spacer()
+            }
+            iconButton("arrow.down.right.and.arrow.up.left") { onFullscreen() }
+        }
+        .padding(.leading, 22).padding(.trailing, 8)
+        .frame(height: 56)
+        .glass(28)
+        .padding(.horizontal, 40)
+        .padding(.bottom, 16)
+        .environment(\.layoutDirection, .leftToRight)
     }
 
     private var titleLine: String {

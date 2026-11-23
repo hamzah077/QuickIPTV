@@ -1,6 +1,17 @@
 import SwiftUI
 import UIKit
 
+/// الصفحات اللي شريطها مخفي (كبسولة البحث): سحبة الرجوع من الطرف تبقى شغّالة
+extension UINavigationController: @retroactive UIGestureRecognizerDelegate {
+    override open func viewDidLoad() {
+        super.viewDidLoad()
+        interactivePopGestureRecognizer?.delegate = self
+    }
+    public func gestureRecognizerShouldBegin(_ g: UIGestureRecognizer) -> Bool {
+        g == interactivePopGestureRecognizer ? viewControllers.count > 1 : true
+    }
+}
+
 enum AppSection: String, CaseIterable, Identifiable {
     case home, live, movies, series, downloads, history, settings
     var id: String { rawValue }

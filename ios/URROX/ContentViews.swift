@@ -114,7 +114,7 @@ struct LiveView: View {
         }
         .navigationTitle("المباشر")
         .navigationBarTitleDisplayMode(.inline)
-        .modifier(TopBar(query: $q, prompt: "ابحث في القنوات"))
+        .modifier(TopBar(query: $q, prompt: "ابحث في القنوات", title: "المباشر", back: start != nil))
         .task(id: "\(q)|\(cat)|\(model.channels.count)") {
             let t = SearchNorm.tokens(q); guard !t.isEmpty else { return }
             let r = await SearchNorm.filter(inCat, t) { $0.name }
@@ -283,7 +283,7 @@ struct VodGridView: View {
         }
         .navigationTitle(series ? "المسلسلات" : "الأفلام")
         .scrollDismissesKeyboard(.interactively)
-        .modifier(TopBar(query: $q, prompt: series ? "ابحث في المسلسلات" : "ابحث في الأفلام", largeTitle: true))
+        .modifier(TopBar(query: $q, prompt: series ? "ابحث في المسلسلات" : "ابحث في الأفلام", title: series ? "المسلسلات" : "الأفلام", largeTitle: true))
         .task(id: "\(q)|\(cat)|\((series ? model.seriesList : model.movies).count)") {
             let t = SearchNorm.tokens(q); guard !t.isEmpty else { return }
             let r = await SearchNorm.filter(inCat, t) { $0.name }
@@ -634,15 +634,22 @@ struct SearchResults: View {
 
 struct TopBar: ViewModifier {
     @Environment(\.horizontalSizeClass) private var hsize
+    @Environment(\.dismiss) private var dismiss
     @Binding var query: String
     var prompt: String
     var home = false
+    /// عنوان الصفحة (الجوال): كبير تحت الكبسولة (الأفلام/المسلسلات) أو صغير جنبها (المباشر)
+    var title: String? = nil
     var largeTitle = false
+    /// الصفحة مفتوحة من صفحة ثانية (مثلاً قناة من البحث): زر رجوع
+    var back = false
     /// اللي تكتبه: يتحدّث فوراً بالحقل، والصفحة تاخذه بعد ما توقف كتابة (الصفحة ما تنعاد مع كل حرف = بدون لاق)
     @State private var text = ""
     @State private var open = false
     @State private var showSettings = false
     @FocusState private var focused: Bool
+
+    static let barH: CGFloat = 54
 
     @ViewBuilder func body(content: Content) -> some View {
         if hsize == .regular {
@@ -661,26 +668,11 @@ struct TopBar: ViewModifier {
                     .task(id: text) { await push() }
             }
         } else {
-            titled(content)
-                // الحقل داخل شريط التنقّل نفسه (مكان العنوان): ثابت بنفس المكان بكل الصفحات،
-                // والمحتوى تحته ما يتحرك ولا ينعاد ترتيبه (قبل: ينزل تحت العنوان الكبير بالأفلام = مكان مختلف + تقطيع)
-                .toolbar {
-                    if open {
-                        ToolbarItem(placement: .principal) { bar }
-                    }
-                }
-                .toolbar {
-                    ToolbarItemGroup(placement: .topBarTrailing) {
-                        Button { toggle() } label: { Image(systemName: open ? "xmark" : "magnifyingglass").topIcon() }
-                            .accessibilityLabel("بحث")
-                        if home {
-                            NavigationLink { DownloadsView() } label: { Image(systemName: "arrow.down.circle").topIcon() }
-                                .accessibilityLabel("التحميلات")
-                        }
-                        Button { showSettings = true } label: { Image(systemName: "gearshape").topIcon() }
-                            .accessibilityLabel("الإعدادات")
-                    }
-                }
+            // الجوال: كبسولة (بحث · تحميلات · إعدادات) تتمدد ويصير البحث داخلها.
+            // ارتفاع الشريط ثابت (مسكّر ومفتوح) = المحتوى تحته ما يتحرك وقت الفتح، ونفس المكان بكل الصفحات
+            content
+                .toolbar(.hidden, for: .navigationBar)
+                .safeAreaInset(edge: .top, spacing: 0) { header }
                 .task(id: text) { await push() }
                 .sheet(isPresented: $showSettings) {
                     NavigationStack {
@@ -694,39 +686,100 @@ struct TopBar: ViewModifier {
         }
     }
 
-    /// الأفلام والمسلسلات عنوانها كبير، والحقل اللي مكان العنوان ما يطلع مع العنوان الكبير:
-    /// وقت البحث العنوان يصير صغير عشان يبان الحقل (نفس مكانه بالرئيسية والقنوات)
-    @ViewBuilder private func titled(_ c: Content) -> some View {
-        if largeTitle { c.navigationBarTitleDisplayMode(open ? .inline : .large) } else { c }
+    // MARK: الشريط (الجوال)
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            ZStack(alignment: .trailing) {
+                // يمين (RTL): رجوع + العنوان الصغير — يختفي وقت البحث
+                HStack(spacing: 6) {
+                    if back {
+                        Button { dismiss() } label: {
+                            Image(systemName: "chevron.backward").font(.system(size: 18, weight: .semibold))
+                                .frame(width: 44, height: 44).contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain).glassCircle()
+                        .accessibilityLabel("رجوع")
+                    }
+                    if let title, !largeTitle { Text(title).font(.title3.weight(.bold)).lineLimit(1) }
+                    Spacer(minLength: 0)
+                }
+                .opacity(open ? 0 : 1)
+                .allowsHitTesting(!open)
+
+                capsule
+            }
+            .frame(height: Self.barH)
+            if let title, largeTitle {
+                Text(title).font(.largeTitle.weight(.bold)).lineLimit(1)
+                    .opacity(open ? 0 : 1)                       // وقت البحث يختفي (مكانه ثابت = بدون قفزة)
+                    .accessibilityAddTraits(.isHeader)
+            }
+        }
+        .foregroundStyle(.white)
+        .padding(.horizontal, 16)
+        .padding(.top, 2)
+        .padding(.bottom, 6)
+        .background(Theme.bg.ignoresSafeArea(edges: .top))
     }
 
-    private var bar: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "magnifyingglass").foregroundStyle(Theme.muted)
-            TextField(prompt, text: $text)
-                .focused($focused)
-                .submitLabel(.search)
-                .autocorrectionDisabled()
-                .textInputAutocapitalization(.never)
-                .onSubmit { focused = false }
-            if !text.isEmpty {
-                Button { text = ""; query = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(Theme.muted) }
-                    .accessibilityLabel("مسح البحث")
-                    .buttonStyle(.plain)
+    private var capsule: some View {
+        HStack(spacing: 0) {
+            if open {
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass").font(.system(size: 19, weight: .medium)).foregroundStyle(Theme.muted)
+                    TextField(prompt, text: $text)
+                        .focused($focused)
+                        .submitLabel(.search)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                        .onSubmit { focused = false }
+                        .onAppear { Task { @MainActor in focused = true } }     // الكيبورد يطلع على طول
+                    if !text.isEmpty {
+                        Button { text = ""; query = "" } label: {
+                            Image(systemName: "xmark.circle.fill").foregroundStyle(Theme.muted)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("مسح البحث")
+                    }
+                    Rectangle().fill(.white.opacity(0.2)).frame(width: 1, height: 26)
+                    capIcon("xmark", "إغلاق البحث") { toggle() }
+                }
+                .padding(.leading, 16).padding(.trailing, 4)
+                .transition(.opacity)
+            } else {
+                HStack(spacing: 0) {
+                    capIcon("magnifyingglass", "بحث") { toggle() }
+                    Button { showSettings = true } label: { capLabel("gearshape") }
+                        .buttonStyle(.plain).accessibilityLabel("الإعدادات")
+                    if home {
+                        NavigationLink { DownloadsView() } label: { capLabel("arrow.down.to.line") }
+                            .buttonStyle(.plain).accessibilityLabel("التحميلات")
+                    }
+                }
+                .padding(.horizontal, 5)
+                .transition(.opacity)
             }
         }
         .font(.body)
-        .padding(.horizontal, 10)
-        .frame(height: 40)                     // نفس ارتفاع الشريط اللي فوق
-        .frame(maxWidth: .infinity)
-        .glass(12)
-        .onAppear { Task { @MainActor in focused = true } }     // الكيبورد يطلع أول ما يظهر الحقل
+        .frame(height: Self.barH)
+        .frame(maxWidth: open ? .infinity : nil)
+        .glass(Self.barH / 2)
     }
 
-    /// بدون حركة على الصفحة كلها: الحقل يطلع بشريط التنقّل بس
+    private func capLabel(_ sym: String) -> some View {
+        Image(systemName: sym).font(.system(size: 20, weight: .medium))
+            .frame(width: 42, height: Self.barH).contentShape(Rectangle())
+    }
+
+    private func capIcon(_ sym: String, _ label: String, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) { capLabel(sym) }.buttonStyle(.plain).accessibilityLabel(label)
+    }
+
+    /// الكبسولة تتمدد/ترجع بحركة ناعمة (بس الشريط اللي فوق يتحرك، مو الصفحة)
     private func toggle() {
         if open { focused = false; text = ""; query = "" }
-        open.toggle()
+        withAnimation(.calm(.spring(duration: 0.38, bounce: 0.12))) { open.toggle() }
     }
 
     /// ينتظر 200ms من آخر حرف وبعدها يعطي الصفحة النص — المسح فوري
