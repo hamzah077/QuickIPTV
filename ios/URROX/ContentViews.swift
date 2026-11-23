@@ -649,9 +649,9 @@ struct TopBar: ViewModifier {
             if home {
                 content.toolbar {
                     ToolbarItemGroup(placement: .topBarTrailing) {
-                        NavigationLink { DownloadsView() } label: { Image(systemName: "arrow.down.circle") }
+                        NavigationLink { DownloadsView() } label: { Image(systemName: "arrow.down.circle").topIcon() }
                             .accessibilityLabel("التحميلات")
-                        NavigationLink { SettingsView() } label: { Image(systemName: "gearshape") }
+                        NavigationLink { SettingsView() } label: { Image(systemName: "gearshape").topIcon() }
                             .accessibilityLabel("الإعدادات")
                     }
                 }
@@ -670,13 +670,13 @@ struct TopBar: ViewModifier {
                 }
                 .toolbar {
                     ToolbarItemGroup(placement: .topBarTrailing) {
-                        Button { toggle() } label: { Image(systemName: open ? "xmark" : "magnifyingglass") }
+                        Button { toggle() } label: { Image(systemName: open ? "xmark" : "magnifyingglass").topIcon() }
                             .accessibilityLabel("بحث")
                         if home {
-                            NavigationLink { DownloadsView() } label: { Image(systemName: "arrow.down.circle") }
+                            NavigationLink { DownloadsView() } label: { Image(systemName: "arrow.down.circle").topIcon() }
                                 .accessibilityLabel("التحميلات")
                         }
-                        Button { showSettings = true } label: { Image(systemName: "gearshape") }
+                        Button { showSettings = true } label: { Image(systemName: "gearshape").topIcon() }
                             .accessibilityLabel("الإعدادات")
                     }
                 }
@@ -709,10 +709,10 @@ struct TopBar: ViewModifier {
             }
         }
         .font(.body)
-        .padding(.horizontal, 10)
-        .frame(height: 36)                     // مقاس حقل البحث عند آبل (36 نقطة، زوايا 10)
+        .padding(.horizontal, 14)
+        .frame(height: 44)                     // نفس حقل البحث في iOS 26+: كبسولة 44
         .frame(maxWidth: .infinity)
-        .glass(10)
+        .glass(22)
         .onAppear { Task { @MainActor in focused = true } }     // الكيبورد يطلع أول ما يظهر الحقل
     }
 
@@ -727,6 +727,13 @@ struct TopBar: ViewModifier {
         if text.isEmpty { if !query.isEmpty { query = "" }; return }
         try? await Task.sleep(for: .milliseconds(200))
         if !Task.isCancelled, query != text { query = text }
+    }
+}
+
+extension Image {
+    /// أيقونات الشريط اللي فوق (بحث · تحميلات · إعدادات): أكبر بنفس أسلوب iOS 26+ (كبسولة زجاج بأزرار 44)
+    func topIcon() -> some View {
+        font(.system(size: 19, weight: .medium)).frame(width: 44, height: 44).contentShape(Rectangle())
     }
 }
 
