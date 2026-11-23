@@ -362,6 +362,7 @@ struct ContinueCard: View {
                     Poster(url: h.image, radius: 14).frame(width: 170, height: 96).posterDepth()
                     if h.dur > 0 { ProgressLine(value: h.pos / h.dur, height: 4).clipShape(Capsule()).padding(.horizontal, 6).padding(.bottom, 6) }
                 }
+                .frame(width: 170, height: 96)
                 Text(h.title).font(.subheadline).lineLimit(1)
                 Text(sub).font(.caption.monospacedDigit()).foregroundStyle(Theme.muted).lineLimit(1)
             }

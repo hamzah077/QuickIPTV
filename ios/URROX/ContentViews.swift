@@ -433,6 +433,7 @@ struct DetailsView: View {
                     Poster(url: e.image.isEmpty ? vod.icon : e.image, radius: 10).frame(width: 124, height: 70)
                     if let h, h.dur > 0, h.pos > 30, !watched { ProgressLine(value: h.pos / h.dur, height: 3).padding(.horizontal, 4).padding(.bottom, 4) }
                 }
+                .frame(width: 124, height: 70)      // خط التقدّم ما يوسّع الصورة (كان يزحزحها ويطلع برّاها)
                 VStack(alignment: .leading, spacing: 3) {
                     Text("\(e.num). \(e.title.isEmpty ? "الحلقة \(e.num)" : e.title)").font(.subheadline).lineLimit(2).foregroundStyle(.white)
                     Text(playing ? "▶ تعرض الآن" : current ? "آخر حلقة شاهدتها" : watched ? "✓ شاهدتها" : e.duration)
@@ -712,6 +713,7 @@ struct HistoryView: View {
                 Poster(url: h.image, radius: 8, contentMode: h.type == "live" ? .fit : .fill).frame(width: 90, height: 52)
                 if h.dur > 0, !h.finished { ProgressLine(value: h.pos / h.dur, height: 3).padding(.horizontal, 4).padding(.bottom, 3) }
             }
+            .frame(width: 90, height: 52)
             .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(h.title).lineLimit(1)
