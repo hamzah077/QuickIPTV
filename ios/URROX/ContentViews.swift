@@ -661,8 +661,12 @@ struct TopBar: ViewModifier {
             }
         } else {
             content
-                .safeAreaInset(edge: .top, spacing: 0) {
-                    if open { bar.transition(.move(edge: .top).combined(with: .opacity)) }
+                // الحقل داخل شريط التنقّل نفسه (مكان العنوان): ثابت بنفس المكان بكل الصفحات،
+                // والمحتوى تحته ما يتحرك ولا ينعاد ترتيبه (قبل: ينزل تحت العنوان الكبير بالأفلام = مكان مختلف + تقطيع)
+                .toolbar {
+                    if open {
+                        ToolbarItem(placement: .principal) { bar }
+                    }
                 }
                 .toolbar {
                     ToolbarItemGroup(placement: .topBarTrailing) {
@@ -707,19 +711,15 @@ struct TopBar: ViewModifier {
         .font(.body)
         .padding(.horizontal, 10)
         .frame(height: 36)                     // مقاس حقل البحث عند آبل (36 نقطة، زوايا 10)
+        .frame(maxWidth: .infinity)
         .glass(10)
-        .padding(.horizontal, 16)
-        .padding(.vertical, 6)
-        .background(Theme.bg)
+        .onAppear { Task { @MainActor in focused = true } }     // الكيبورد يطلع أول ما يظهر الحقل
     }
 
+    /// بدون حركة على الصفحة كلها: الحقل يطلع بشريط التنقّل بس
     private func toggle() {
-        withAnimation(.snappy(duration: 0.25)) { open.toggle() }
-        if open {
-            Task { try? await Task.sleep(for: .milliseconds(80)); focused = true }
-        } else {
-            text = ""; query = ""; focused = false
-        }
+        if open { focused = false; text = ""; query = "" }
+        open.toggle()
     }
 
     /// ينتظر 200ms من آخر حرف وبعدها يعطي الصفحة النص — المسح فوري
