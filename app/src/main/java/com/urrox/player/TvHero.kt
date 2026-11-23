@@ -185,6 +185,7 @@ class TvHero(private val a: MainActivity, private val screenKey: String) {
         infoJob = a.scope.launch {
             delay(350)          // تتنقل بسرعة بين البوسترات؟ ما نطلب تفاصيل كل واحد
             val inf = withContext(Bg.io) { runCatching { fetch(item.infoId, item.infoSeries) }.getOrNull() } ?: return@launch
+            if (infoCache.size > 300) infoCache.clear()          // ما تكبر بلا حد (ذاكرة التلفزيون محدودة)
             infoCache[ck(item)] = inf
             if (shown !== item) return@launch
             meta.text = listOf(item.meta, inf.meta).filter { it.isNotBlank() }.joinToString(SEP)

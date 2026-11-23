@@ -163,7 +163,8 @@ class MainActivity : Activity() {
                 val bl = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; alpha = 0f }
                 blurView = bl
                 root.addView(bl, FrameLayout.LayoutParams(MATCH, MATCH))
-                Glass.onBlurred = { b -> bl.setImageBitmap(b) }
+                val cb: (android.graphics.Bitmap?) -> Unit = { b -> bl.setImageBitmap(b) }
+                blurCb = cb; Glass.onBlurred = cb
             }
             val bg = C.BG and 0x00FFFFFF
             backdropScrim = FrameLayout(this).apply {
@@ -454,6 +455,7 @@ class MainActivity : Activity() {
     private var railScrim: View? = null
     private var backdropUrl: String? = null
     private var blurView: ImageView? = null
+    private var blurCb: ((android.graphics.Bitmap?) -> Unit)? = null
     private var blurLevel = 0f
 
     /** ليكود جلاس: مقدار تمويه الخلفية (0 واضحة … 1 ممَوّهة). القائمة الجانبية المفتوحة = ممَوّهة كاملة. */
@@ -729,6 +731,8 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
+        // الصفحة انقفلت (مثلاً تغيير الثيم): ما نخلي الزجاج ماسك فيها (تسريب ذاكرة/رسم على صفحة ميتة)
+        if (Glass.onBlurred === blurCb) Glass.onBlurred = null
         scope.cancel()
         super.onDestroy()
     }

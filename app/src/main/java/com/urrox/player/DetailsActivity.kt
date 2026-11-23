@@ -570,9 +570,9 @@ class DetailsActivity : Activity() {
             val resume = Store.resumePoint(key)
             val local = Downloads.localFile(key) != null
             box.addView(button(if (resume > 0) "متابعة · ${fmtTime(resume)}" else if (local) "تشغيل (محمّل)" else "تشغيل", R.drawable.ic_play, primary = true) {
-                play(Session.api!!.vodUrl(id, ext), key, name, "", resume, "movie")
+                Session.api?.let { api -> play(api.vodUrl(id, ext), key, name, "", resume, "movie") }
             }.apply { tag = "primary" }, lp(MATCH, WRAP))
-            if (resume > 0) addSec(button("من البداية", R.drawable.ic_refresh) { play(Session.api!!.vodUrl(id, ext), key, name, "", 0, "movie") }.apply { tag = "restart" })
+            if (resume > 0) addSec(button("من البداية", R.drawable.ic_refresh) { Session.api?.let { api -> play(api.vodUrl(id, ext), key, name, "", 0, "movie") } }.apply { tag = "restart" })
             addSec(button("تحميل", R.drawable.ic_download) { movieDlClick() }.apply { tag = "dl" }.also { dlBtn = it }, 1.3f)
         } else {
             val r = seriesResume()
@@ -766,9 +766,9 @@ class DetailsActivity : Activity() {
             val resume = Store.resumePoint(key)
             val local = Downloads.localFile(key) != null
             row.addView(button(if (resume > 0) "متابعة · ${fmtTime(resume)}" else if (local) "تشغيل (محمّل)" else "تشغيل", R.drawable.ic_play, primary = true) {
-                play(Session.api!!.vodUrl(id, ext), key, name, "", resume, "movie")
+                Session.api?.let { api -> play(api.vodUrl(id, ext), key, name, "", resume, "movie") }
             }.apply { tag = "primary" }, lp(WRAP, WRAP))
-            if (resume > 0) row.addView(button("من البداية", R.drawable.ic_refresh) { play(Session.api!!.vodUrl(id, ext), key, name, "", 0, "movie") }.apply { tag = "restart" },
+            if (resume > 0) row.addView(button("من البداية", R.drawable.ic_refresh) { Session.api?.let { api -> play(api.vodUrl(id, ext), key, name, "", 0, "movie") } }.apply { tag = "restart" },
                 lp(WRAP, WRAP).apply { marginStart = dp(10) })
             row.addView(button("تحميل", R.drawable.ic_download) { movieDlClick() }.apply { tag = "dl" }.also { dlBtn = it },
                 lp(WRAP, WRAP).apply { marginStart = dp(10) })
@@ -981,7 +981,8 @@ class DetailsActivity : Activity() {
     private fun playEpisode(e: Episode) {
         SeriesQueue.set(id, name, seasons, e)          // للحلقة السابقة/التالية
         val key = "ep:${e.id}"
-        play(Session.api!!.episodeUrl(e.id, e.ext), key, name, "الموسم ${e.season} · الحلقة ${e.num}", Store.resumePoint(key), "episode")
+        val api = Session.api ?: return          // الجلسة راحت (التطبيق انقفل بالخلفية): ما نطيح
+        play(api.episodeUrl(e.id, e.ext), key, name, "الموسم ${e.season} · الحلقة ${e.num}", Store.resumePoint(key), "episode")
     }
 
     // =====================================================================
