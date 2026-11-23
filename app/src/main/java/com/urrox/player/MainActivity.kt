@@ -484,7 +484,12 @@ class MainActivity : Activity() {
     private var backdropUrl: String? = null
     private var blurView: ImageView? = null
     private var railHeadText: View? = null
-    private fun railDivider() = View(this).apply { setBackgroundColor(0x2EFFFFFF) }
+    /** خط فاصل بالقائمة: ما يفرض عرضه (View عادي ياخذ عرض الشاشة كلها = القائمة كانت تتمدّد بكامل الصفحة). */
+    private fun railDivider() = object : View(this) {
+        override fun onMeasure(w: Int, h: Int) {
+            setMeasuredDimension(if (MeasureSpec.getMode(w) == MeasureSpec.EXACTLY) MeasureSpec.getSize(w) else 0, dp(1))
+        }
+    }.apply { setBackgroundColor(0x2EFFFFFF) }
     private var blurCb: ((android.graphics.Bitmap?) -> Unit)? = null
     private var blurLevel = 0f
 
@@ -574,8 +579,9 @@ class MainActivity : Activity() {
         // التركيز: كبسولة بيضاء والأيقونة والكتابة داكنة (مثل Google TV) — بدون أزرق
         background = android.graphics.drawable.StateListDrawable().apply {
             setEnterFadeDuration(120); setExitFadeDuration(100)
-            if (Glass.on) addState(intArrayOf(android.R.attr.state_pressed), Glass.pressedLens(dpf(24f)))
-            addState(intArrayOf(android.R.attr.state_focused), if (Glass.on) Glass.lens(dpf(24f)) else rounded(C.FOCUS, dpf(24f)))
+            // ليكود جلاس (iOS 27): المحدد زجاج ساطع بحافة لامعة (مو أبيض)، والضغط يخففه لحظة
+            if (Glass.on) addState(intArrayOf(android.R.attr.state_pressed), Glass.Sheet(dpf(24f), 0x40FFFFFF, resources.displayMetrics.density))
+            addState(intArrayOf(android.R.attr.state_focused), if (Glass.on) Glass.Sheet(dpf(24f), 0x6BFFFFFF, resources.displayMetrics.density) else rounded(C.FOCUS, dpf(24f)))
             // ليكود جلاس: القسم اللي أنت فيه كبسولة زجاج أوضح (بدل الكلام الأحمر)
             if (Glass.on) addState(intArrayOf(android.R.attr.state_selected), Glass.Sheet(dpf(24f), 0x3DFFFFFF, resources.displayMetrics.density))
             addState(intArrayOf(), rounded(android.graphics.Color.TRANSPARENT, dpf(24f)))
@@ -602,7 +608,7 @@ class MainActivity : Activity() {
         val glass = Glass.on
         b.isSelected = glass && key == current
         val col = when {
-            focused -> C.PRIMARY_TEXT
+            focused -> if (glass) 0xFFFFFFFF.toInt() else C.PRIMARY_TEXT
             key == current -> if (glass) C.TEXT else 0xFFE50914.toInt()
             else -> if (glass) 0xFFD3D7DF.toInt() else C.MUTED
         }
